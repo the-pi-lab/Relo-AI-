@@ -1,0 +1,42 @@
+### Project Overview
+
+*   **Frontend:** A React 19 application built with Vite and written in TypeScript. It is hosted on Vercel.
+*   **Backend:** A serverless backend powered by Convex, which manages the database, server functions, and authentication.
+*   **Authentication:** The system uses a passwordless Email+OTP (One-Time Password) flow provided by the `@convex-dev/auth` library. The logic for sending the OTP email is located in a custom provider at `src/convex/auth/emailOtp.ts`.
+
+### The Core Problem
+
+The application's user authentication is failing. When a user enters their email to sign in, the frontend displays a generic error: `[CONVEX A(auth:signIn)] Server Error Called by client`.
+
+The root cause appears to be a **Vercel deployment issue**, where Vercel is serving an old, stale version of the code instead of the latest version from the GitHub repository.
+
+### History of the Issue & Debugging Chronology
+
+1.  **Initial State:** The authentication system was originally hardcoded to use a third-party email service at a `vly.ai` domain.
+
+2.  **Objective:** The goal was to replace `vly.ai` with the **Resend** email API.
+
+3.  **Backend Code Changes:** The file `src/convex/auth/emailOtp.ts` was successfully modified to call the Resend API (`https://api.resend.com/emails`) using a `RESEND_API_KEY` stored as an environment variable in Convex.
+
+4.  **Backend Debugging:** We successfully resolved several backend errors by viewing the Convex logs:
+    *   **Fixed:** An error `Missing environment variable 'JWT_PRIVATE_KEY'` was resolved by generating a secure key and adding it to the Convex environment variables.
+    *   **Fixed:** A TypeScript error related to the function's return type in `emailOtp.ts` was corrected and deployed.
+
+5.  **The "Ghost" Error:** After fixing the backend code, the client-side error persisted, but **no new error logs appeared in the Convex dashboard**. This indicated the frontend was no longer successfully communicating with the backend.
+
+6.  **The Vercel Deployment Issue:** The investigation then shifted to the Vercel deployment.
+    *   **Hypothesis:** The `VITE_CONVEX_URL` environment variable in Vercel was incorrect, pointing the frontend to the wrong backend.
+    *   **Verification:** The user confirmed the `VITE_CONVEX_URL` in Vercel was correct.
+    *   **Debugging Step:** To be certain, a `console.log` statement was added to the frontend's entry point (`src/main.tsx`) to print the Convex URL being used. This change was pushed to GitHub, and the Vercel deployment reported a "Ready" status.
+
+7.  **Current State & The Contradiction:**
+    *   The user reports that even after a hard refresh and using an incognito window, the browser console is completely empty. The `console.log` message is not appearing.
+    *   Most importantly, the user reports that the sign-in flow has reverted to showing behavior related to the old `vly.ai` domain.
+
+### Conclusion & Diagnosis
+
+The evidence strongly points to a **Vercel build cache or deployment configuration problem**.
+
+The code in the GitHub repository is correct and does not contain references to `vly.ai`. However, the live website deployed on Vercel is serving a stale, outdated version of the frontend. This explains both the missing `console.log` and the reappearance of the old `vly.ai` behavior. The Vercel build process is, for some reason, not pulling the latest commits from the `main` branch.
+
+The last action taken was to instruct the user to **redeploy on Vercel with the build cache explicitly disabled** to force a fresh clone and build of the repository.

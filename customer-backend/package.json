@@ -1,0 +1,18 @@
+{
+  "name": "chatflow-customer-backend",
+  "version": "1.0.0",
+  "description": "Customer-owned Instagram DM automation runtime for Chat Flow AI (Postgres queue, embedded worker, no Redis).",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test --test-concurrency=1 test/keyword.test.js test/parse.test.js test/crypto.test.js test/queue.test.js test/ratelimit.test.js test/engine.test.js test/ai.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}

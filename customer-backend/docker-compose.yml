@@ -1,0 +1,33 @@
+# Local development: app + Postgres. Run: docker compose up --build
+# Then copy .env.example to .env and fill in values before starting.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: chatflow
+      POSTGRES_USER: chatflow
+      POSTGRES_PASSWORD: chatflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://chatflow:chatflow@postgres:5432/chatflow
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

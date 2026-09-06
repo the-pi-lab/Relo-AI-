@@ -1,0 +1,25 @@
+# Render blueprint for the Chat Flow AI customer backend (Docker web service).
+# NOTE: Render no longer offers free Postgres — pair this with a free-tier
+# database (Neon, Supabase) and set DATABASE_URL accordingly. Free web
+# services sleep when idle; add a 5-minute UptimeRobot ping on /health.
+services:
+  - type: web
+    name: chatflow-backend
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: BACKEND_AUTH_TOKEN
+        sync: false
+      - key: IG_ACCOUNT_ID
+        sync: false
+      - key: IG_USERNAME
+        sync: false
+      - key: META_ACCESS_TOKEN
+        sync: false
