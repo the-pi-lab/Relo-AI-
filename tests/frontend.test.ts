@@ -70,7 +70,7 @@ console.log("\n[4] Testing Keyboard Tab Navigation Cycling (WCAG AA)...");
 const studioTabs = ["reels", "editor", "leads", "analytics"] as const;
 
 function getNextTab(current: string, key: "ArrowRight" | "ArrowLeft" | "Home" | "End"): string {
-  const idx = studioTabs.indexOf(current as any);
+  const idx = (studioTabs as readonly string[]).indexOf(current);
   if (key === "ArrowRight") return studioTabs[(idx + 1) % studioTabs.length];
   if (key === "ArrowLeft") return studioTabs[(idx - 1 + studioTabs.length) % studioTabs.length];
   if (key === "Home") return studioTabs[0];
