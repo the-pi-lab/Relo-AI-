@@ -8,9 +8,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "env": {
-    "VITE_CONVEX_URL": "@vite_convex_url",
-    "CONVEX_SITE_URL": "@convex_site_url"
-  }
+  ]
 }

@@ -1,7 +1,7 @@
 {
-  "name": "chatflow-customer-backend",
+  "name": "relo-customer-backend",
   "version": "1.0.0",
-  "description": "Customer-owned Instagram DM automation runtime for Chat Flow AI (Postgres queue, embedded worker, no Redis).",
+  "description": "Customer-owned Instagram DM automation runtime for RELO (Postgres queue, embedded worker, no Redis).",
   "type": "module",
   "license": "MIT",
   "engines": {

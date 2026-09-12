@@ -48,15 +48,78 @@ function publicCors(req, res, next) {
   next();
 }
 
+/**
+ * Standard security headers (defense in depth for all ingress).
+ */
+function securityHeaders(req, res, next) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-XSS-Protection", "0");
+  next();
+}
+
+/**
+ * In-memory sliding window IP rate limiter (zero Redis requirement).
+ */
+function createRateLimiter({ windowMs, maxRequests, message = "Too many requests" }) {
+  const requests = new Map();
+
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of requests.entries()) {
+      if (now - entry.resetTime >= windowMs) {
+        requests.delete(ip);
+      }
+    }
+  }, 5 * 60 * 1000);
+  if (timer.unref) timer.unref();
+
+  return (req, res, next) => {
+    const ip = req.ip || req.socket?.remoteAddress || "unknown";
+    const now = Date.now();
+    let entry = requests.get(ip);
+
+    if (!entry || now >= entry.resetTime) {
+      entry = { count: 1, resetTime: now + windowMs };
+      requests.set(ip, entry);
+      return next();
+    }
+
+    if (entry.count >= maxRequests) {
+      res.setHeader("Retry-After", Math.ceil((entry.resetTime - now) / 1000));
+      return res.status(429).json({ ok: false, error: message });
+    }
+
+    entry.count += 1;
+    next();
+  };
+}
+
 export function createApp(config) {
   const app = express();
   app.disable("x-powered-by");
+  app.use(securityHeaders);
   app.use(["/health", "/api/status"], publicCors);
+
+  const webhookRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 300,
+    message: "Instagram webhook rate limit exceeded. Please throttle events.",
+  });
+
+  const configPushRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 60,
+    message: "Config push rate limit exceeded.",
+  });
 
   // --- Instagram webhook ingress (raw body for HMAC) ---
   // Registered BEFORE express.json(): this path must see exact bytes.
   app.post(
     "/webhooks/instagram",
+    webhookRateLimiter,
     express.raw({ type: "application/json", limit: "1mb" }),
     async (req, res) => {
       stats.webhooksReceived += 1;
@@ -122,7 +185,7 @@ export function createApp(config) {
   // Accepts the automation configuration. Tokens arrive ONLY over this
   // server-to-server TLS channel (Phase 5 OAuth handoff) or env bootstrap —
   // never through the browser.
-  app.post("/api/config/push", authed, async (req, res) => {
+  app.post("/api/config/push", configPushRateLimiter, authed, async (req, res) => {
     try {
       const { flows = [], igAccounts = [] } = req.body || {};
       if (!Array.isArray(flows)) {

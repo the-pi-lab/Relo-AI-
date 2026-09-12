@@ -6,14 +6,14 @@ import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default tseslint.config(
-  { ignores: ["dist", "src/convex/_generated/**"] },
+  { ignores: ["dist/**", "backend/**", "customer-backend/**", "scratch/**", "node_modules/**"] },
   {
     extends: [
       js.configs.recommended,
       ...tseslint.configs.recommended,
       eslintConfigPrettier,
     ],
-    files: ["**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,

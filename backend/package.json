@@ -1,0 +1,20 @@
+{
+  "name": "relo-engine",
+  "version": "1.0.0",
+  "description": "RELO production Cloudflare Workers + D1 automation engine",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "npx tsx tests/phase3.test.ts && npx tsx tests/phase4.test.ts && npx tsx tests/phase5.test.ts && npx tsx tests/e2e.test.ts",
+    "d1:migrate": "wrangler d1 execute relo-d1 --file=./schema.sql",
+    "d1:migrate:local": "wrangler d1 execute relo-d1 --local --file=./schema.sql"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "tsx": "^4.19.3",
+    "typescript": "~5.8.3",
+    "wrangler": "^3.111.0"
+  }
+}

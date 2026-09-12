@@ -4,15 +4,15 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: chatflow
-      POSTGRES_USER: chatflow
-      POSTGRES_PASSWORD: chatflow
+      POSTGRES_DB: relo
+      POSTGRES_USER: relo
+      POSTGRES_PASSWORD: relo
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatflow"]
+      test: ["CMD-SHELL", "pg_isready -U relo"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -25,7 +25,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://chatflow:chatflow@postgres:5432/chatflow
+      DATABASE_URL: postgresql://relo:relo@postgres:5432/relo
     ports:
       - "3000:3000"
 

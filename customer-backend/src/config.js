@@ -73,6 +73,11 @@ export function loadConfig() {
     console.warn("[config] AI_PROVIDER=gemini but GEMINI_API_KEY is missing.");
   }
   if (!config.encryptionKey) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "[config] ENCRYPTION_KEY is required when NODE_ENV=production. Provide a 64-hex char AES-256 key."
+      );
+    }
     console.warn(
       "[config] ENCRYPTION_KEY not set — Instagram tokens will be stored " +
         "plaintext in YOUR database. Set it to enable AES-256-GCM encryption."

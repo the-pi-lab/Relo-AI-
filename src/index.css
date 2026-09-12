@@ -1,9 +1,44 @@
-/* DO NOT CHANGE */
 @import "tailwindcss";
 @import "tw-animate-css";
 @custom-variant dark (&:is(.dark *));
 
-/* DO NOT CHANGE */
+/* ChatFlow AI — Porcelain Daylight Aesthetic
+   Strict Zero-Purple Policy: Porcelain white, Soft slate, Sky cyan, Emerald green */
+:root {
+  --radius: 0.75rem;
+
+  --cf-bg: #f8fafc;
+  --cf-surface: #ffffff;
+  --cf-surface-elevated: #ffffff;
+  --cf-text: #0f172a;
+  --cf-muted: #64748b;
+  --cf-border: #e2e8f0;
+  --cf-border-strong: #cbd5e1;
+  --cf-accent-sky: #0284c7;
+  --cf-accent-emerald: #10b981;
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #0284c7;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f8fafc;
+  --muted-foreground: #64748b;
+  --accent: #f0f9ff;
+  --accent-foreground: #0369a1;
+  --destructive: #ef4444;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #38bdf8;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -27,112 +62,31 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
-
-/* Chat Flow AI theme — calm, premium, restrained.
-   Design tokens: radius 10px base, oklch slate/ink palette, single blue
-   primary. Depth comes from borders, not shadows or gradients. */
-:root {
-  --radius: 0.625rem;
-  --background: oklch(0.98 0.005 240);
-  --foreground: oklch(0.15 0.01 240);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.01 240);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.01 240);
-  --primary: oklch(0.35 0.08 240);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.65 0.05 60);
-  --secondary-foreground: oklch(0.15 0.01 240);
-  --muted: oklch(0.96 0.005 240);
-  --muted-foreground: oklch(0.45 0.01 240);
-  --accent: oklch(0.40 0.08 240);
-  --accent-foreground: oklch(0.99 0 0);
-  --destructive: oklch(0.55 0.20 27);
-  --border: oklch(0.90 0.005 240);
-  --input: oklch(0.90 0.005 240);
-  --ring: oklch(0.35 0.08 240);
-  --chart-1: oklch(0.35 0.08 240);
-  --chart-2: oklch(0.45 0.08 240);
-  --chart-3: oklch(0.55 0.08 240);
-  --chart-4: oklch(0.65 0.05 60);
-  --chart-5: oklch(0.50 0.05 240);
-  --sidebar: oklch(0.98 0.005 240);
-  --sidebar-foreground: oklch(0.15 0.01 240);
-  --sidebar-primary: oklch(0.35 0.08 240);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.96 0.005 240);
-  --sidebar-accent-foreground: oklch(0.15 0.01 240);
-  --sidebar-border: oklch(0.90 0.005 240);
-  --sidebar-ring: oklch(0.35 0.08 240);
-}
-
-.dark {
-  --background: oklch(0.12 0.01 240);
-  --foreground: oklch(0.95 0.005 240);
-  --card: oklch(0.15 0.01 240);
-  --card-foreground: oklch(0.95 0.005 240);
-  --popover: oklch(0.15 0.01 240);
-  --popover-foreground: oklch(0.95 0.005 240);
-  --primary: oklch(0.50 0.10 240);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.70 0.05 60);
-  --secondary-foreground: oklch(0.12 0.01 240);
-  --muted: oklch(0.20 0.01 240);
-  --muted-foreground: oklch(0.65 0.01 240);
-  --accent: oklch(0.55 0.10 240);
-  --accent-foreground: oklch(0.99 0 0);
-  --destructive: oklch(0.60 0.20 27);
-  --border: oklch(0.25 0.01 240);
-  --input: oklch(0.25 0.01 240);
-  --ring: oklch(0.50 0.10 240);
-  --chart-1: oklch(0.50 0.10 240);
-  --chart-2: oklch(0.55 0.10 240);
-  --chart-3: oklch(0.60 0.10 240);
-  --chart-4: oklch(0.70 0.05 60);
-  --chart-5: oklch(0.65 0.08 240);
-  --sidebar: oklch(0.15 0.01 240);
-  --sidebar-foreground: oklch(0.95 0.005 240);
-  --sidebar-primary: oklch(0.50 0.10 240);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.20 0.01 240);
-  --sidebar-accent-foreground: oklch(0.95 0.005 240);
-  --sidebar-border: oklch(0.25 0.01 240);
-  --sidebar-ring: oklch(0.50 0.10 240);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
+  }
+  :focus-visible {
+    outline: 2px solid #0284c7;
+    outline-offset: 2px;
+  }
+  html,
+  body {
+    background-color: #f8fafc;
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+    font-family: var(--font-sans);
   }
   button:not([disabled]),
   [role="button"]:not([disabled]) {
     cursor: pointer;
   }
-
-  /* Page titles: single source for hierarchy (tracking-tight semibold). */
-  .page-title {
-    @apply text-2xl font-semibold tracking-tight text-foreground;
-  }
-  .page-description {
-    @apply mt-1 text-sm text-muted-foreground;
+  ::selection {
+    background: rgba(56, 189, 248, 0.35);
+    color: #fff;
   }
 
   @media (prefers-reduced-motion: reduce) {

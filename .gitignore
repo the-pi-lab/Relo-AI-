@@ -15,6 +15,7 @@ dist-ssr
 # Secrets: never commit real env files (covers customer-backend/.env)
 .env
 !.env.example
+.wrangler
 
 # Editor directories and files
 .vscode/*
