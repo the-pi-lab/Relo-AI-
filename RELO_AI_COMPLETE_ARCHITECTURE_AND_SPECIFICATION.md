@@ -31,7 +31,6 @@ We believe in radical engineering transparency. The foundational comment parsing
 ### 1. Primary Upstream Reference: `OpenReply`
 - **GitHub Repository:** [https://github.com/diwenne/openreply](https://github.com/diwenne/openreply)
 - **Creator / Maintainer:** Diwen Huang ([@diwenne](https://github.com/diwenne))
-- **Original Fork Lineage:** Forked from Anish Raj's original `instagram-comment-to-dm` repository ([@im-anishraj](https://github.com/im-anishraj)).
 - **License:** MIT License (100% legal for commercial use, modification, adaptation, and rebranding).
 
 ### 2. What Logic Was Adapted From OpenReply?

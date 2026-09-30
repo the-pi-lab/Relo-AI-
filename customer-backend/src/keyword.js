@@ -1,5 +1,5 @@
 // Keyword matching for automation triggers.
-// Concept adapted from OpenReply (MIT, © 2026 Anish Raj / Diwen Huang):
+// Concept adapted from OpenReply (MIT, © 2026 Diwen Huang):
 // Unicode-aware whole-word match, emoji/symbol stripping, Latin-only
 // diacritic folding (marks in other scripts are load-bearing and preserved).
 
