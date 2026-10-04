@@ -1,98 +1,84 @@
-# ChatFlow AI — Instagram Automation Studio
+# RELO AI
 
-> The $10 One-Time Lifetime Alternative to ManyChat's $180+/Year Recurring Contact Tax. Built on the official Meta Graph API v21.0.
+**Comments in. Customers out.** RELO turns Instagram Reel comments into verified, 3-button Generic-Template DMs — on complete autopilot, with anti-spam human-timing built in.
 
-ChatFlow AI automates Instagram Reels comment-to-DM funnels with 3-button Generic Template cards, Spintax comment rotation, Follow-Gate verification, and 1-click lead capture — without charging recurring monthly contact scaling penalties.
-
----
-
-## 🏗️ System Architecture & Backend Decision Matrix
-
-ChatFlow AI supports two deployment architectures to give creators complete infrastructure sovereignty:
-
-| Feature / Attribute | ⚡ Cloudflare Edge Engine (`backend/`) | 🐳 Self-Hosted Container (`customer-backend/`) |
-| :--- | :--- | :--- |
-| **Target Runtime** | Cloudflare Workers + D1 Database | Node.js (Express 4) + Postgres |
-| **Best For** | Zero-maintenance serverless hosting on Cloudflare's free tier | Self-hosting on private VPS, Railway, Render, or Supabase |
-| **Ingress Latency** | `< 15ms` edge webhook ACK globally | Depends on single-region VPS location (`~50–150ms`) |
-| **Queue Engine** | Cron-as-Queue (1-minute atomic batch worker in D1) | Postgres table-backed queue with atomic `FOR UPDATE` |
-| **Anti-Spam Jitter** | 30–90 second deterministic human-like delay | 30–90 second configurable jitter |
-| **Token Encryption** | AES-256-GCM authenticated encryption | AES-256-GCM authenticated encryption |
-| **Meta Rate Limits** | Proactive token bucket tracking Meta's 750/hr cap | In-memory sliding window + atomic Postgres counter |
-| **Deployment Command** | `npm run deploy` (via Wrangler) | `npm start` / `docker compose up` |
+One product, one runtime: a **Cloudflare Workers edge engine** backed by **D1 (SQLite)** and driven by a 1-minute Cron-as-Queue. No servers to babysit.
 
 ---
 
-## 📦 Repository Structure
+## Architecture
 
 ```
-chatflow-ai-main/
-├── src/                          # Modern React 19 + Tailwind CSS v4 Frontend
-│   ├── components/
-│   │   ├── dashboard/            # Creator Studio (ReelsGrid, AutomationEditor, LeadsTable, AnalyticsCards)
-│   │   ├── landing/              # Porcelain Daylight Landing (SavingsCalculator, Simulator, Comparison, FAQ)
-│   │   └── ui/                   # Minimal design tokens (button.tsx, input.tsx, switch.tsx)
-│   ├── lib/                      # Typed REST client, pricing calculators, URL/keyword sanitization
-│   └── pages/                    # Landing.tsx, Login.tsx, Dashboard.tsx, NotFound.tsx
-├── backend/                      # Cloudflare Workers + D1 Serverless Engine
-│   ├── src/                      # Router, Crypto, Meta Graph API v21.0, Spintax AST, Cron-as-Queue
-│   └── tests/                    # Automated test suites (Phase 3, Phase 4, Phase 5, Phase 7 E2E)
-├── customer-backend/             # Customer-owned Express + Postgres Automation Runtime
-│   ├── src/                      # Ingress webhook, Postgres queue, rate-limiter, HMAC verification
-│   └── test/                     # 27 Node.js native test suites
-├── tests/                        # Frontend unit test suite (pricing tiers, anti-XSS, WAI-ARIA navigation)
-└── package.json                  # Lean dependency footprint (~11 runtime packages)
+┌────────────────────────────┐
+│  React 19 + Vite SPA       │  Landing · Login (OTP) · Creator Studio
+│  (Vercel)                  │
+└─────────────┬──────────────┘
+              │ REST /api/*  (Bearer JWT)
+┌─────────────▼──────────────┐
+│  Cloudflare Worker Engine  │  Auth · OAuth · Automations · Leads · Telemetry
+│  backend/  (Workers + D1)  │
+└───────┬───────────┬────────┘
+        │           │
+  Meta Graph     1-min Cron-as-Queue
+  API v21        webhook → jobs → DM dispatch
 ```
+
+**Core flow:**
+
+1. Creator connects an Instagram Professional account via Meta OAuth (server-side token exchange, AES-256-GCM token vault).
+2. Creator picks a Reel and configures: trigger keywords (Unicode whole-word matching), 3–8 spintax comment-reply variations (mandatory anti-spam), a 3-button Generic Template card, and an optional follow-gate.
+3. A viewer comments a keyword → Meta webhook (HMAC-SHA256 verified) → job enqueued in D1 with atomic deduplication and 30–90s human jitter.
+4. Every minute, the cron claims due jobs and dispatches: public comment reply → private DM with the 3-button card → lead captured.
+5. Manual replies by the creator (echo events) or inbound DMs auto-pause automation on that thread for 30 minutes (Human Takeover).
+
+**Monorepo layout:**
+
+| Path | What it is |
+|---|---|
+| `src/` | React 19 SPA — landing, login, Creator Studio dashboard |
+| `backend/` | Cloudflare Workers engine (TypeScript, D1, cron queue) |
+| `design-system/` | Brand & design tokens |
+| `docs/archive/` | Superseded planning documents |
 
 ---
 
-## 🚀 Quick Start (Development)
+## Security model
 
-### 1. Frontend Setup
+- **Auth**: passwordless email OTP (6 digits, 10-minute expiry, 5-attempt lockout, 60-second resend throttle, per-IP rate limits) → HS256 JWT (7 days, mandatory `exp`, `alg` pinned).
+- **Authorization**: every account-scoped route passes through an ownership gate (`getOwnedAccount`) — cross-tenant access is structurally impossible.
+- **Token vault**: Instagram page tokens encrypted with AES-256-GCM (HKDF-derived key, random IV per encryption, versioned envelopes for rotation). The master key is hard-required — no fallback to the JWT secret.
+- **Webhooks**: HMAC-SHA256 signature verification over the raw body with constant-time comparison; per-event fault isolation.
+- **OAuth**: server-side code→token→long-lived-token exchange; Instagram bindings can never be stolen by a later connect.
+
+See `RELO_AI_COMPLETE_ARCHITECTURE_AND_SPECIFICATION.md` for the full system design.
+
+---
+
+## Development
+
 ```bash
-# Install dependencies
+# Frontend
 npm install
+npm run dev          # Vite dev server
+npm run build        # typecheck + production build
+npm run test         # frontend unit tests
 
-# Run frontend development server
-npm run dev
-
-# Run frontend automated unit tests
-npm test
-
-# Build production bundle
-npm run build
-```
-
-### 2. Cloudflare Edge Engine (`backend/`)
-```bash
+# Engine
 cd backend
-
-# Run automated integration tests (Crypto, Webhook, Cron Worker, REST API, E2E)
-npm test
-
-# Run local Worker emulator
-npx wrangler dev
+npm install
+npm run typecheck    # tsc --noEmit
+npm test             # phases 3/4/5 + e2e integration (in-memory D1)
+npm run dev          # wrangler dev (local D1 + cron)
 ```
 
-### 3. Customer-Hosted Backend (`customer-backend/`)
-```bash
-cd customer-backend
+## Deployment
 
-# Copy environment variables
-cp .env.example .env
+Frontend deploys to Vercel (`vercel.json` included), engine to Cloudflare Workers. Step-by-step: [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md).
 
-# Run automated test suites (27 unit tests)
-npm test
+## Open-source provenance
 
-# Start server
-npm start
-```
+The comment-matching engine and webhook hardening patterns are adapted from [OpenReply](https://github.com/nikhilbhardwaj/openreply) (MIT).
 
 ---
 
-## 🛡️ Security, Privacy & Meta Compliance
-
-1. **Official Meta Graph API v21.0**: Built directly on Meta's official webhook protocols and Messaging API. Supports 3-button Generic Template cards, dynamic username personalization, and Spintax variation to safeguard account authenticity.
-2. **AES-256-GCM Encryption**: Page access tokens are encrypted at rest using AES-256-GCM authenticated encryption. Plaintext storage is rejected in production.
-3. **WCAG 2.1 AA Accessibility**: Full keyboard navigation support (WAI-ARIA tabs and accordions), accessible data table captions with column and row scopes, focus rings, and high contrast ratios ($\ge 4.5:1$).
-4. **Zero Contact Tax**: Contact lists and leads belong 100% to the creator with 1-click RFC 4180 CSV export.
+Built by [The π Lab](https://www.thepilab.in) — software that behaves like magic.

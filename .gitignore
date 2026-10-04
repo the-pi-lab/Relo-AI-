@@ -12,10 +12,14 @@ dist
 dist-ssr
 *.local
 
-# Secrets: never commit real env files (covers customer-backend/.env)
+# Secrets: never commit real env files
 .env
 !.env.example
+!.env.*.example
 .wrangler
+
+# Local tool state
+.freebuff
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +31,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.shots

@@ -1,0 +1,50 @@
+# RELO
+
+> Instagram comment-to-DM automation. RELO turns comments on Instagram Reels into verified, clickable direct messages, using the official Meta Graph API — no scraping.
+
+## What RELO does
+
+When someone comments a trigger keyword on a Reel you connected, RELO:
+
+1. Acknowledges Meta's webhook in under 15 ms.
+2. Waits a randomised 30–90 seconds (anti-spam jitter).
+3. Posts a public reply with the `@username` merged in.
+4. Sends the commenter a direct message with a Meta Generic Template card (title, subtitle, up to 3 tappable buttons).
+5. Records the lead with follower status and timestamp.
+6. Tracks clicks through RELO short-links (301 redirect), producing a Sent → Clicked funnel.
+
+## Key facts
+
+- **Category:** Instagram DM automation / comment-to-DM automation. Frequently compared to ManyChat, Zorcha, SuperProfile and LinkDM.
+- **Platform:** Web app. React 19 SPA. Engine runs on Cloudflare Workers + D1 with a 1-minute cron queue.
+- **API:** Official Meta Graph API only. Instagram Professional (Creator or Business) account required.
+- **Messaging window:** Meta permits DMs within 24 hours of a user's last inbound message. RELO reports how many leads are still reachable.
+- **Pricing:** Free — $0. Pro — $9.99/mo or ₹149/mo. Studio — $24.99/mo or ₹399/mo. Annual: Pro $99/yr, Studio $249/yr. One flat fee, unlimited contacts — unlike per-contact pricing elsewhere.
+- **Payments:** Lemon Squeezy (global, merchant of record) and manual UPI for India.
+
+## Free plan limits
+
+1 automated Reel (burned for the lifetime of that Instagram binding), 2 comment reply variations, 2 own DM buttons plus an appended "Automated by RELO" button, 3 AI credits per month, no follow-up DMs, no campaigns.
+
+## Pro plan
+
+Unlimited automated Reels, 3–8 spintax reply variations, 3 unbranded DM buttons, per-automation follow-up DMs, campaign broadcasts inside the 24-hour window, AI product Q&A (500 credits/month), Sent → Clicked analytics.
+
+## Studio plan
+
+Everything in Pro, plus a canvas node builder, 3 connected Instagram accounts, priority queue, 5,000 AI credits/month.
+
+## Data handling
+
+Access tokens encrypted with AES-256-GCM. Comment text cleared 72 hours after matching. Completed jobs deleted after 30 days. Webhook payloads reduced to metadata and dropped after 7 days. Commenter identities retained so lead lists persist. Full CSV export. RELO never asks commenters for their email or phone number.
+
+## Pages
+
+- https://relo.ai/ — product, pricing, FAQ
+- https://relo.ai/login — passwordless email sign-in
+- https://relo.ai/privacy — privacy policy
+- https://relo.ai/terms — terms of service
+
+## Contact
+
+hello@thepilab.in — The π Lab

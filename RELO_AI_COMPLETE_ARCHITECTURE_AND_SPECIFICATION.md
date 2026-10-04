@@ -274,10 +274,8 @@ RELO AI/
 │   ├── wrangler.toml                # Cloudflare deployment manifest
 │   └── tests/                       # Complete automated integration test suite
 │
-├── customer-backend/                # (Optional) Self-Hosted Docker Runtime
-│   ├── src/                         # Express + Node 20 + Postgres runtime
-│   └── docker-compose.yml           # Self-contained customer container
-│
+│   (The optional self-hosted Docker runtime was removed — RELO ships as a
+│    single Cloudflare Workers engine; see git history for the Express variant)
 ├── src/                             # Creator Studio Frontend Application
 │   ├── components/landing/          # Interactive Simulator, Calculator, Comparison
 │   ├── components/dashboard/        # Reels Grid, Automation Editor, Leads Table

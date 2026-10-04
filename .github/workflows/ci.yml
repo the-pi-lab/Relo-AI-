@@ -33,7 +33,7 @@ jobs:
         run: npm run build
 
   cloudflare-engine:
-    name: Cloudflare Workers Engine (Phases 3, 4, 5, 7 E2E)
+    name: Cloudflare Workers Engine (Typecheck + E2E)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -43,53 +43,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Install root dependencies
-        run: npm ci
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: Typecheck engine
+        working-directory: backend
+        run: npm run typecheck
 
       - name: Run Engine Test Suite
         working-directory: backend
-        run: npm test
-
-  customer-backend:
-    name: Customer Backend (Express + PostgreSQL)
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: chatflow_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install customer-backend dependencies
-        working-directory: customer-backend
-        run: npm ci || npm install
-
-      - name: Run Customer Backend Tests
-        working-directory: customer-backend
-        env:
-          NODE_ENV: test
-          ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-          TEST_DATABASE_URL: postgres://postgres:password@localhost:5432/chatflow_test
         run: npm test
