@@ -11,21 +11,24 @@ import {
   ExternalLink,
   Sliders,
   RefreshCw,
+  Send,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { isValidButtonUrl } from "@/lib/validation";
+import { findMatchingKeyword, mergeUsername } from "@/lib/commentMatcher";
 import type {
   InstagramReelMedia,
   ReelAutomation,
   TemplateCardConfig,
   GenericTemplateButton,
-  WebUrlButton,
 } from "@/types/contracts";
+
+const FOLLOW_UP_PRESETS = [30, 60, 180, 360];
 
 interface AutomationEditorProps {
   reel: InstagramReelMedia;
   accountId: string;
+  plan?: "free" | "pro" | "studio";
   existingAutomation?: ReelAutomation | null;
   onSave: (automationData: {
     id?: string;
@@ -38,38 +41,64 @@ interface AutomationEditorProps {
     followGateEnabled: boolean;
     templateCard: TemplateCardConfig;
     isActive: boolean;
+    followUpEnabled?: boolean;
+    followUpDelayMinutes?: number;
   }) => Promise<void>;
+  onDelete?: () => Promise<void>;
   onCancel: () => void;
 }
 
 export default function AutomationEditor({
   reel,
   accountId,
+  plan = "free",
   existingAutomation,
   onSave,
+  onDelete,
   onCancel,
 }: AutomationEditorProps) {
-  // 1. Keywords state
+  const isEditing = Boolean(existingAutomation);
+  const isFree = plan === "free";
+  const [minVariations, maxVariations] = isFree ? [2, 2] : [3, 8];
+  const maxButtons = isFree ? 2 : 3;
+  const canFollowUp = !isFree;
+
+  // "Preview as commenter" tester state (plan.md §4.1)
+  const [testComment, setTestComment] = useState("guide please");
+  const [testUsername, setTestUsername] = useState("creator_alex");
+
   const [keywords, setKeywords] = useState<string[]>(
     existingAutomation?.triggerKeywords || ["GUIDE", "LINK"]
   );
   const [keywordInput, setKeywordInput] = useState("");
 
-  // 2. Reply variations state (minimum 3 required by Instagram anti-spam)
+  // Instagram anti-spam: rotate variations so identical replies never repeat
   const [replies, setReplies] = useState<string[]>(
-    existingAutomation?.commentReplies || [
-      "Sent to your DMs @username! Check now 🔥",
-      "Check your inbox @username, just sent the link! 🙌",
-      "@username dispatched your requested link to DMs! 🚀",
-    ]
+    existingAutomation?.commentReplies ||
+      (isFree
+        ? [
+            "Sent to your DMs @username! Check now 🔥",
+            "Check your inbox @username, just sent the link! 🙌",
+          ]
+        : [
+            "Sent to your DMs @username! Check now 🔥",
+            "Check your inbox @username, just sent the link! 🙌",
+            "@username dispatched your requested link to DMs! 🚀",
+          ])
   );
 
-  // 3. Follow-Gate state
   const [followGateEnabled, setFollowGateEnabled] = useState<boolean>(
     existingAutomation?.followGateEnabled ?? true
   );
 
-  // 4. Generic Template card state
+  // Follow-up DM (Pro/Studio, plan.md §4.2)
+  const [followUpEnabled, setFollowUpEnabled] = useState<boolean>(
+    canFollowUp && (existingAutomation?.followUpEnabled ?? false)
+  );
+  const [followUpDelay, setFollowUpDelay] = useState<number>(
+    existingAutomation?.followUpDelayMinutes ?? 60
+  );
+
   const [cardTitle, setCardTitle] = useState(
     existingAutomation?.templateCard.title || "Your Free Growth Blueprint"
   );
@@ -81,139 +110,138 @@ export default function AutomationEditor({
   );
   const [buttons, setButtons] = useState<GenericTemplateButton[]>(
     existingAutomation?.templateCard.buttons || [
-      {
-        type: "web_url",
-        title: "Download Blueprint",
-        url: "https://relo.ai/blueprint",
-      },
+      { type: "web_url", title: "Download Blueprint", url: "https://" },
     ]
   );
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Mobile viewport toggle: "editor" vs "preview"
   const [mobileView, setMobileView] = useState<"editor" | "preview">("editor");
 
-  // Live Spintax Tester state
+  // Live Spintax tester
   const sampleUsernames = ["creator_alex", "sarah_growth", "jordan_reels", "viral_agency"];
   const [spintaxSampleIndex, setSpintaxSampleIndex] = useState(0);
 
-  // Keywords handlers
+  /* ── derived preview state ── */
+  const matched = findMatchingKeyword(testComment, keywords);
+
+  /* ── handlers (all immutable) ── */
+
   const handleAddKeyword = () => {
     const raw = keywordInput.trim().toUpperCase();
-    // Security check: alphanumeric, dashes, underscores and spaces only
     const sanitized = raw.replace(/[^A-Z0-9_\- ]/g, "").trim();
-    if (sanitized && !keywords.includes(sanitized)) {
+    if (!sanitized) return;
+    if (sanitized !== raw) {
+      setValidationError(`Only letters, numbers, dashes and spaces are kept — "${raw}" was saved as "${sanitized}".`);
+    } else {
+      setValidationError(null);
+    }
+    if (!keywords.includes(sanitized)) {
       setKeywords([...keywords, sanitized]);
       setKeywordInput("");
     }
   };
 
-  const handleRemoveKeyword = (index: number) => {
-    setKeywords(keywords.filter((_, i) => i !== index));
+  const handleRemoveKeyword = (kw: string) => {
+    setKeywords((prev) => prev.filter((k) => k !== kw));
   };
 
-  // Reply variations handlers
   const handleAddReply = () => {
-    if (replies.length < 8) {
+    if (replies.length < maxVariations)
       setReplies([...replies, "@username check your messages! 🔥"]);
-    }
   };
 
   const handleReplyChange = (index: number, val: string) => {
-    const updated = [...replies];
-    updated[index] = val;
-    setReplies(updated);
+    setReplies((prev) => prev.map((r, i) => (i === index ? val : r)));
   };
 
   const handleRemoveReply = (index: number) => {
-    if (replies.length > 3) {
-      setReplies(replies.filter((_, i) => i !== index));
-    }
+    if (replies.length > minVariations)
+      setReplies((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Template buttons handlers
   const handleAddButton = () => {
-    if (buttons.length < 3) {
-      setButtons([
-        ...buttons,
-        {
-          type: "web_url",
-          title: "Join VIP Community",
-          url: "https://relo.ai/community",
-        },
-      ]);
+    if (buttons.length < maxButtons) {
+      setButtons([...buttons, { type: "web_url", title: "Join VIP Community", url: "https://" }]);
     }
   };
 
-  const handleButtonChange = (
-    index: number,
-    field: "title" | "url",
-    val: string
-  ) => {
-    const updated = [...buttons];
-    if (updated[index].type === "web_url") {
-      if (field === "title") updated[index].title = val;
-      if (field === "url") (updated[index] as WebUrlButton).url = val;
-    }
-    setButtons(updated);
+  const handleButtonChange = (index: number, field: "title" | "url", val: string) => {
+    setButtons((prev) =>
+      prev.map((btn, i) => {
+        if (i !== index || btn.type !== "web_url") return btn;
+        return field === "title" ? { ...btn, title: val } : { ...btn, url: val };
+      })
+    );
   };
 
   const handleRemoveButton = (index: number) => {
-    if (buttons.length > 1) {
-      setButtons(buttons.filter((_, i) => i !== index));
+    if (buttons.length > 1) setButtons((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    const confirmed = window.confirm(
+      "Delete this automation? The reel stops auto-DMing immediately; captured leads are kept."
+    );
+    if (!confirmed) return;
+    setIsDeleting(true);
+    setValidationError(null);
+    try {
+      await onDelete();
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : "Failed to delete automation.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  // Submission handler with comprehensive security validations
+  /* ── submission with full validation ── */
   const handleSubmit = async () => {
     setValidationError(null);
 
-    // 1. Validate Keywords
     if (keywords.length === 0) {
-      setValidationError("Please add at least one trigger keyword.");
+      setValidationError("Add at least one trigger keyword.");
       return;
     }
-
-    // 2. Validate Anti-Spam Variations
-    if (replies.length < 3) {
-      setValidationError("Anti-Spam rule requires at least 3 unique reply variations.");
+    if (replies.length < minVariations || replies.length > maxVariations) {
+      setValidationError(
+        isFree
+          ? "The free tier runs exactly 2 reply variations. Upgrade to Pro for 3–8."
+          : `Between ${minVariations} and ${maxVariations} reply variations are required.`
+      );
       return;
     }
-
-    const uniqueReplies = new Set(replies.map((r) => r.trim().toLowerCase()));
-    if (uniqueReplies.size < 3) {
+    if (new Set(replies.map((r) => r.trim().toLowerCase())).size < minVariations) {
       setValidationError("Reply variations must be distinct to prevent Instagram spam flags.");
       return;
     }
-
-    // 3. Validate Card Title
     if (!cardTitle.trim()) {
-      setValidationError("Card Title is required.");
+      setValidationError("Card title is required.");
       return;
     }
-
-    if (cardTitle.length > 80) {
-      setValidationError("Card Title must not exceed 80 characters (Meta Graph API limit).");
+    if (cardTitle.length > 80 || cardSubtitle.length > 80) {
+      setValidationError("Card title and subtitle must each stay under 80 characters (Meta limit).");
       return;
     }
-
-    if (cardSubtitle.length > 80) {
-      setValidationError("Card Subtitle must not exceed 80 characters (Meta Graph API limit).");
+    if (cardImageUrl.trim() && !isValidButtonUrl(cardImageUrl.trim())) {
+      setValidationError("Card image URL must start with https:// (or http:// for local testing).");
       return;
     }
-
-    // 4. Validate Buttons and URLs (XSS & Protocol check)
-    if (buttons.length === 0) {
-      setValidationError("At least 1 button is required for the Generic Template card.");
+    if (buttons.length > maxButtons) {
+      setValidationError(
+        isFree
+          ? "The free tier allows up to 2 buttons — RELO adds its own as the third."
+          : `Maximum ${maxButtons} buttons per card.`
+      );
       return;
     }
-
     for (let i = 0; i < buttons.length; i++) {
       const btn = buttons[i];
       if (!btn.title.trim()) {
-        setValidationError(`Button #${i + 1} must have a title.`);
+        setValidationError(`Button #${i + 1} needs a title.`);
         return;
       }
       if (btn.title.length > 20) {
@@ -223,17 +251,17 @@ export default function AutomationEditor({
       if (btn.type === "web_url") {
         const urlStr = (btn.url || "").trim();
         if (!urlStr) {
-          setValidationError(`Button #${i + 1} must have a destination URL.`);
+          setValidationError(`Button #${i + 1} needs a destination URL.`);
           return;
         }
         try {
           const parsed = new URL(urlStr);
           if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-            setValidationError(`Button #${i + 1} URL must use https:// or http:// protocol.`);
+            setValidationError(`Button #${i + 1} URL must use https://.`);
             return;
           }
         } catch {
-          setValidationError(`Button #${i + 1} contains an invalid URL: "${urlStr}".`);
+          setValidationError(`Button #${i + 1} has an invalid URL: "${urlStr}".`);
           return;
         }
       }
@@ -252,155 +280,174 @@ export default function AutomationEditor({
         followGateEnabled,
         templateCard: {
           title: cardTitle.trim(),
-          subtitle: cardSubtitle.trim(),
-          imageUrl: cardImageUrl.trim(),
+          subtitle: cardSubtitle.trim() || undefined,
+          imageUrl: cardImageUrl.trim() || undefined,
           buttons: buttons as [GenericTemplateButton, ...GenericTemplateButton[]],
         },
         isActive: true,
+        followUpEnabled: canFollowUp && followUpEnabled,
+        followUpDelayMinutes: followUpDelay,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save automation rule.";
-      setValidationError(message);
+      setValidationError(err instanceof Error ? err.message : "Failed to save automation rule.");
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <div className="space-y-8 font-sans">
-      {/* Top Header & Breadcrumbs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onCancel}
-            className="rounded-xl border-slate-200 hover:bg-slate-100"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1.5" />
-            Back to Reels
-          </Button>
+    <div className="st-editor">
+      {/* header */}
+      <div className="st-editor__top">
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <button type="button" onClick={onCancel} className="st-btn st-btn--ghost st-btn--sm">
+            <ArrowLeft aria-hidden /> Back
+          </button>
           <div>
-            <h2 className="text-xl font-black text-slate-900">Automation Studio</h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Configure comment triggers, anti-spam variations & 3-button Generic Template card.
+            <h2 className="st-editor__title">
+              {isEditing ? "Edit funnel" : "New funnel"}{" "}
+              <span style={{ fontFamily: "var(--font-display)", fontStyle: "italic", fontWeight: 300 }}>
+                — {isEditing ? "tune the machine." : "arm the reel."}
+              </span>
+            </h2>
+            <p className="st-editor__sub">
+              Keywords, anti-spam reply rotation, follow-gate, and the 3-button DM card.
             </p>
           </div>
         </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
+        <div className="st-editor__actions">
+          {isEditing && onDelete && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="st-btn st-btn--ghost st-btn--sm"
+              style={{ color: "var(--accent-ink)" }}
+            >
+              <Trash2 aria-hidden />
+              {isDeleting ? "Deleting…" : "Delete"}
+            </button>
+          )}
+          <button
+            type="button"
             onClick={onCancel}
-            className="rounded-xl font-semibold text-slate-600"
+            className="st-btn st-btn--ghost st-btn--sm"
           >
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
+            type="button"
             onClick={handleSubmit}
             disabled={isSaving}
-            className="rounded-xl font-bold bg-sky-600 hover:bg-sky-500 text-white shadow-md shadow-sky-600/20"
+            className="st-btn st-btn--accent st-btn--sheen"
           >
-            {isSaving ? "Saving Rule..." : "Save Automation"}
-          </Button>
+            {isSaving ? (
+              <RefreshCw style={{ animation: "spin 1.2s linear infinite" }} aria-hidden />
+            ) : (
+              <CheckCircle2 aria-hidden />
+            )}
+            {isSaving ? "Saving…" : isEditing ? "Save Changes" : "Launch Funnel"}
+          </button>
         </div>
       </div>
 
       {validationError && (
-        <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-3 text-sm text-red-700 shadow-xs">
-          <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
-          <span className="font-medium">{validationError}</span>
+        <div className="st-alert" role="alert">
+          <AlertCircle aria-hidden />
+          <span>{validationError}</span>
         </div>
       )}
 
-      {/* Mobile Viewport Toggle (Visible only on screens < lg) */}
-      <div className="flex lg:hidden items-center justify-center p-1 bg-slate-100/90 rounded-xl border border-slate-200 text-xs font-bold shadow-xs">
-        <button
-          type="button"
-          onClick={() => setMobileView("editor")}
-          className={`flex-1 py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-            mobileView === "editor"
-              ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
-              : "text-slate-500 hover:text-slate-900"
-          }`}
-        >
-          <Sliders className="w-4 h-4 text-sky-600" />
-          <span>Editor Controls</span>
+      {/* mobile view toggle */}
+      <div className="st-viewtoggle" style={{ display: "flex" }}>
+        <button type="button" aria-pressed={mobileView === "editor"} onClick={() => setMobileView("editor")}>
+          <Sliders size={15} aria-hidden /> Editor
         </button>
-        <button
-          type="button"
-          onClick={() => setMobileView("preview")}
-          className={`flex-1 py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all min-h-[44px] ${
-            mobileView === "preview"
-              ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
-              : "text-slate-500 hover:text-slate-900"
-          }`}
-        >
-          <Smartphone className="w-4 h-4 text-sky-600" />
-          <span>Live Phone Preview</span>
+        <button type="button" aria-pressed={mobileView === "preview"} onClick={() => setMobileView("preview")}>
+          <Smartphone size={15} aria-hidden /> Preview
         </button>
       </div>
 
-      {/* Main Grid: Form Left, Live Mobile Preview Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Editor Controls */}
+      <div className="st-cardrow">
+        {/* left: controls */}
         <div
-          className={`${
-            mobileView === "editor" ? "block" : "hidden lg:block"
-          } lg:col-span-7 space-y-8`}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 20,
+            ...(mobileView === "preview" ? { display: "none" } : {}),
+          }}
+          className="editor-controls-lg"
         >
-          {/* 1. Selected Reel Banner */}
-          <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center gap-4">
+          {/* reel banner */}
+          <div className="st-card st-reelbanner">
             <img
-              src={reel.thumbnailUrl || reel.mediaUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80"}
-              alt="Reel Preview"
-              className="w-16 h-20 object-cover rounded-xl border border-slate-200 shrink-0"
+              src={reel.thumbnailUrl || reel.mediaUrl}
+              alt="Target reel preview"
+              loading="lazy"
             />
-            <div className="flex-1 min-w-0">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-sky-600">
-                Target Reel Post
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.24em",
+                  textTransform: "uppercase",
+                  color: "var(--accent-ink)",
+                }}
+              >
+                Target reel
               </span>
-              <p className="text-xs text-slate-800 font-medium truncate mt-0.5">
+              <p
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  marginTop: 4,
+                }}
+              >
                 {reel.caption || "Untitled Reel"}
               </p>
               <a
                 href={reel.permalink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-sky-600 font-medium mt-1"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--text-faint)",
+                  marginTop: 5,
+                }}
               >
-                View on Instagram <ExternalLink className="w-3 h-3" />
+                View on Instagram <ExternalLink size={11} aria-hidden />
               </a>
             </div>
           </div>
 
-          {/* 2. Trigger Keywords */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+          {/* keywords */}
+          <section className="st-card st-fieldset">
+            <div className="st-fieldset__head">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Trigger Keywords</h3>
-                <p className="text-xs text-slate-500 font-medium">
-                  When someone comments any of these words on your Reel, automation starts.
+                <h3 className="st-fieldset__title">Trigger keywords</h3>
+                <p className="st-fieldset__hint">
+                  When a viewer comments any of these words, the funnel fires. Matching is
+                  Unicode-aware and whole-word.
                 </p>
               </div>
-              <span className="text-xs font-mono font-bold text-sky-700 bg-sky-50 px-2 py-1 rounded-md border border-sky-100">
-                {keywords.length} active
-              </span>
+              <span className="st-chip st-chip--email">{keywords.length} active</span>
             </div>
-
-            {/* Keyword Chips */}
-            <div className="flex flex-wrap gap-2 pt-1">
-              {keywords.map((kw, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold font-mono border border-slate-200"
-                >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {keywords.map((kw) => (
+                <span className="st-keychip" key={kw}>
                   {kw}
                   <button
                     type="button"
-                    onClick={() => handleRemoveKeyword(i)}
-                    className="text-slate-400 hover:text-red-600 transition-colors p-0.5"
+                    onClick={() => handleRemoveKeyword(kw)}
                     aria-label={`Remove keyword ${kw}`}
                   >
                     ×
@@ -408,12 +455,13 @@ export default function AutomationEditor({
                 </span>
               ))}
             </div>
-
-            {/* Keyword Input */}
-            <div className="flex gap-2">
-              <Input
+            <div className="st-addrow">
+              <input
+                className="st-input"
                 placeholder="Add keyword (e.g. GUIDE, VIP, SEND)"
                 value={keywordInput}
+                maxLength={24}
+                aria-label="New trigger keyword"
                 onChange={(e) => setKeywordInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -421,324 +469,513 @@ export default function AutomationEditor({
                     handleAddKeyword();
                   }
                 }}
-                className="h-10 text-xs font-medium rounded-xl"
               />
-              <Button
-                type="button"
-                onClick={handleAddKeyword}
-                size="sm"
-                className="rounded-xl font-bold bg-sky-600 text-white hover:bg-sky-500 shadow-xs min-h-[40px] px-4"
-              >
-                <Plus className="w-4 h-4 mr-1" /> Add
-              </Button>
+              <button type="button" onClick={handleAddKeyword} className="st-btn st-btn--primary st-btn--sm">
+                <Plus aria-hidden /> Add
+              </button>
             </div>
-          </div>
+          </section>
 
-          {/* 3. Mandatory 3 to 8 Reply Variations */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+          {/* replies */}
+          <section className="st-card st-fieldset">
+            <div className="st-fieldset__head">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Public Comment Replies (Anti-Spam)</h3>
-                <p className="text-xs text-slate-500 font-medium">
-                  Instagram flags accounts that send identical replies. We automatically rotate 3–8 Spintax replies with dynamic @username.
+                <h3 className="st-fieldset__title">Public comment replies</h3>
+                <p className="st-fieldset__hint">
+                  Instagram flags identical replies — RELO rotates {minVariations}
+                  {minVariations === maxVariations ? "" : `–${maxVariations}`} variation
+                  {maxVariations > 1 ? "s" : ""} with
+                  {" "}<code>@username</code> merged per commenter.
                 </p>
               </div>
               <span
-                className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                  replies.length >= 3
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
+                className={`st-chip ${
+                  replies.length > maxVariations
+                    ? "st-chip--over"
+                    : replies.length >= minVariations
+                      ? "st-chip--follower"
+                      : "st-chip--nonfollower"
                 }`}
               >
-                {replies.length >= 3
-                  ? `✓ Compliant (${replies.length}/8)`
-                  : `⚠️ Minimum 3 required (${replies.length}/3)`}
+                {replies.length > maxVariations
+                  ? `${replies.length - maxVariations} over limit · ${replies.length}/${maxVariations}`
+                  : replies.length >= minVariations
+                    ? `✓ compliant · ${replies.length}/${maxVariations}`
+                    : `min ${minVariations} · ${replies.length}/${minVariations}`}
               </span>
             </div>
-
-            <div className="space-y-3">
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {replies.map((reply, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <span className="text-xs font-mono font-bold text-slate-400 w-5 text-right">
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "var(--text-faint)",
+                      width: 22,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
                     #{i + 1}
                   </span>
-                  <Input
+                  <input
+                    className="st-input"
                     value={reply}
                     onChange={(e) => handleReplyChange(i, e.target.value)}
-                    placeholder="e.g. Sent to your DMs @username! 🔥"
-                    className="h-10 text-xs font-medium rounded-xl flex-1"
+                    placeholder="Sent to your DMs @username! 🔥"
+                    aria-label={`Reply variation ${i + 1}`}
                   />
-                  {replies.length > 3 && (
+                  {replies.length > minVariations && (
                     <button
                       type="button"
                       onClick={() => handleRemoveReply(i)}
-                      className="p-2 text-slate-400 hover:text-red-600 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg hover:bg-slate-100"
-                      title="Delete variation"
-                      aria-label={`Delete variation #${i + 1}`}
+                      className="studio__iconbtn"
+                      style={{ flexShrink: 0 }}
+                      aria-label={`Delete variation ${i + 1}`}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 aria-hidden />
                     </button>
                   )}
                 </div>
               ))}
             </div>
-
-            {replies.length < 8 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAddReply}
-                className="w-full rounded-xl border-dashed border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-50 min-h-[40px]"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add Another Reply Variation ({replies.length}/8)
-              </Button>
+            {replies.length < maxVariations && (
+              <button type="button" onClick={handleAddReply} className="st-dashed">
+                <Plus size={13} style={{ verticalAlign: -2 }} /> Add variation (
+                {replies.length}/{maxVariations})
+              </button>
             )}
-
-            {/* Interactive Spintax Tester Widget */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 mt-2 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
-                  Live Spintax Rotation Test:
+            {isFree && (
+              <p className="st-fieldset__hint" style={{ marginTop: 10 }}>
+                <Sparkles size={11} style={{ verticalAlign: -1 }} aria-hidden /> Free tier is
+                capped at 2 variations.{" "}
+                <button
+                  type="button"
+                  className="st-inlineupgrade"
+                  onClick={() =>
+                    window.location.assign("/dashboard/settings#billing")
+                  }
+                >
+                  Upgrade to Pro
+                </button>{" "}
+                for 3–8 and follow-up DMs.
+              </p>
+            )}
+            <div className="st-spintax">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Sparkles size={13} color="var(--accent-ink)" aria-hidden />
+                  Live rotation preview
                 </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    setSpintaxSampleIndex((prev) => (prev + 1) % sampleUsernames.length)
-                  }
-                  className="text-sky-600 hover:text-sky-700 font-bold text-[11px] flex items-center gap-1"
+                  onClick={() => setSpintaxSampleIndex((p) => (p + 1) % sampleUsernames.length)}
+                  style={{
+                    border: 0, background: "none", fontSize: 11, fontWeight: 800,
+                    color: "var(--accent-ink)", display: "flex", alignItems: "center", gap: 4,
+                  }}
                 >
-                  <RefreshCw className="w-3 h-3" />
-                  Test with @{sampleUsernames[(spintaxSampleIndex + 1) % sampleUsernames.length]}
+                  <RefreshCw size={11} aria-hidden />
+                  @{sampleUsernames[(spintaxSampleIndex + 1) % sampleUsernames.length]}
                 </button>
               </div>
-              <p className="text-xs font-mono bg-white p-2.5 rounded-lg border border-slate-200 text-slate-800">
-                💬{" "}
+              <p className="st-spintax__out">
                 {(replies[spintaxSampleIndex % replies.length] || "").replace(
                   /@username/gi,
                   `@${sampleUsernames[spintaxSampleIndex]}`
                 )}
               </p>
             </div>
-          </div>
+          </section>
 
-          {/* 4. Follow-Gate Biometric Switch */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-            <div className="space-y-1 pr-6">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-sm font-bold text-slate-900">Follow-Gate Verification</h3>
-              </div>
-              <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                Only sends the download link if the commenter follows your Instagram account.
-                Includes 1500ms fail-open guarantee so leads are never dropped if Meta is slow.
-              </p>
-            </div>
-            <Switch
-              checked={followGateEnabled}
-              onCheckedChange={setFollowGateEnabled}
-            />
-          </div>
-
-          {/* 5. 3-Button Generic Template Card Builder */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-5">
+          {/* follow gate */}
+          <section
+            className="st-card st-fieldset"
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 18 }}
+          >
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Direct Message Template Card</h3>
-              <p className="text-xs text-slate-500 font-medium">
-                Official Meta Generic Template format with up to 3 interactive clickable action buttons.
+              <h3 className="st-fieldset__title" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <ShieldCheck size={15} color="var(--success)" aria-hidden />
+                Follow-gate verification
+              </h3>
+              <p className="st-fieldset__hint">
+                Only send the card if the commenter follows you. 1500ms fail-open — a slow Meta
+                API never blocks a hot lead.
+              </p>
+            </div>
+            <Switch checked={followGateEnabled} onCheckedChange={setFollowGateEnabled} />
+          </section>
+
+          {/* follow-up DM — Pro/Studio (plan.md §4.2) */}
+          <section
+            className="st-card st-fieldset"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 18,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <h3 className="st-fieldset__title" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <Send size={15} color="var(--accent-ink)" aria-hidden />
+                Follow-up DM
+                {!isFree && <span className="st-chip st-chip--follower">{plan === "studio" ? "Studio" : "Pro"}</span>}
+              </h3>
+              <p className="st-fieldset__hint">
+                If the lead taps nothing, send one gentle nudge — max one, always inside Meta's
+                24-hour window. Never nag.
+              </p>
+            </div>
+            {canFollowUp ? (
+              <Switch checked={followUpEnabled} onCheckedChange={setFollowUpEnabled} />
+            ) : (
+              <button
+                type="button"
+                className="st-btn st-btn--primary st-btn--sm st-locked"
+                onClick={() => window.location.assign("/dashboard/settings#billing")}
+              >
+                <Sparkles size={13} aria-hidden /> Upgrade to unlock
+              </button>
+            )}
+          </section>
+
+          {canFollowUp && followUpEnabled && (
+            <section className="st-card st-fieldset">
+              <div className="st-fieldset__head">
+                <div>
+                  <h3 className="st-fieldset__title">Nudge timing</h3>
+                  <p className="st-fieldset__hint">
+                    Counted from the first DM. The engine never sends a second follow-up.
+                  </p>
+                </div>
+                <span className="st-chip st-chip--email">
+                  {followUpDelay < 60 ? `${followUpDelay} min` : `${followUpDelay / 60} h`}
+                </span>
+              </div>
+              <div className="st-presets" role="group" aria-label="Follow-up delay">
+                {FOLLOW_UP_PRESETS.map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    aria-pressed={followUpDelay === minutes}
+                    className="st-preset"
+                    onClick={() => setFollowUpDelay(minutes)}
+                  >
+                    {minutes < 60 ? `${minutes} min` : `${minutes / 60} h`}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* card builder */}
+          <section className="st-card st-fieldset">
+            <div>
+              <h3 className="st-fieldset__title">DM template card</h3>
+              <p className="st-fieldset__hint">
+                Official Meta Generic Template — cover image, title, subtitle, and up to 3
+                tappable buttons.
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <label className="font-bold text-slate-700">Card Title</label>
-                  <span className={`font-mono ${cardTitle.length > 80 ? "text-red-600 font-bold" : "text-slate-400"}`}>
-                    {cardTitle.length}/80
-                  </span>
-                </div>
-                <Input
-                  maxLength={80}
-                  value={cardTitle}
-                  onChange={(e) => setCardTitle(e.target.value)}
-                  placeholder="e.g. Complete Instagram Growth Playbook"
-                  className="h-10 text-xs font-medium rounded-xl"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <label className="font-bold text-slate-700">Card Subtitle (Optional)</label>
-                  <span className={`font-mono ${cardSubtitle.length > 80 ? "text-red-600 font-bold" : "text-slate-400"}`}>
-                    {cardSubtitle.length}/80
-                  </span>
-                </div>
-                <Input
-                  maxLength={80}
-                  value={cardSubtitle}
-                  onChange={(e) => setCardSubtitle(e.target.value)}
-                  placeholder="e.g. Free breakdown of our viral framework"
-                  className="h-10 text-xs font-medium rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Card Image URL</label>
-                <Input
-                  value={cardImageUrl}
-                  onChange={(e) => setCardImageUrl(e.target.value)}
-                  placeholder="https://yourdomain.com/preview.png"
-                  className="h-10 text-xs font-medium rounded-xl"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 space-y-3">
-                <label className="block text-xs font-bold text-slate-700">
-                  Card Action Buttons (Max 3)
-                </label>
-
-                {buttons.map((btn, i) => (
-                  <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-                      <span>Button #{i + 1}</span>
-                      {buttons.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveButton(i)}
-                          className="text-slate-400 hover:text-red-600 transition-colors p-1"
-                          aria-label={`Remove button #${i + 1}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <Input
-                        value={btn.title}
-                        onChange={(e) => handleButtonChange(i, "title", e.target.value)}
-                        placeholder="Button Title (e.g. Download PDF)"
-                        maxLength={20}
-                        className="h-9 text-xs bg-white rounded-lg"
-                      />
-                      <Input
-                        value={btn.type === "web_url" ? btn.url : ""}
-                        onChange={(e) => handleButtonChange(i, "url", e.target.value)}
-                        placeholder="Destination URL (https://...)"
-                        className="h-9 text-xs bg-white rounded-lg"
-                      />
-                    </div>
-                  </div>
-                ))}
-
-                {buttons.length < 3 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddButton}
-                    className="w-full rounded-xl border-dashed border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-50 min-h-[40px]"
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Another Button ({buttons.length}/3)
-                  </Button>
-                )}
-              </div>
+            <div className="st-field">
+              <label htmlFor="st-card-title">
+                Card title <span className="st-count">{cardTitle.length}/80</span>
+              </label>
+              <input
+                id="st-card-title"
+                className="st-input"
+                maxLength={80}
+                value={cardTitle}
+                onChange={(e) => setCardTitle(e.target.value)}
+                placeholder="Complete Instagram Growth Playbook"
+              />
             </div>
-          </div>
+
+            <div className="st-field">
+              <label htmlFor="st-card-subtitle">
+                Subtitle <span className="st-count">{cardSubtitle.length}/80</span>
+              </label>
+              <input
+                id="st-card-subtitle"
+                className="st-input"
+                maxLength={80}
+                value={cardSubtitle}
+                onChange={(e) => setCardSubtitle(e.target.value)}
+                placeholder="Free breakdown of our viral framework"
+              />
+            </div>
+
+            <div className="st-field">
+              <label htmlFor="st-card-image">Card image URL</label>
+              <input
+                id="st-card-image"
+                className="st-input"
+                value={cardImageUrl}
+                onChange={(e) => setCardImageUrl(e.target.value)}
+                placeholder="https://yourdomain.com/preview.png"
+                inputMode="url"
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4 }}>
+              <span className="st-label">Action buttons (1–{maxButtons})</span>
+              {buttons.map((btn, i) => (
+                <div className="st-btncell" key={i}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "var(--text-soft)",
+                    }}
+                  >
+                    <span>Button #{i + 1}</span>
+                    {buttons.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveButton(i)}
+                        aria-label={`Remove button ${i + 1}`}
+                        style={{ border: 0, background: "none", color: "var(--text-faint)" }}
+                      >
+                        <Trash2 size={13} aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    className="st-input"
+                    value={btn.title}
+                    onChange={(e) => handleButtonChange(i, "title", e.target.value)}
+                    placeholder="Button title (e.g. Download PDF)"
+                    maxLength={20}
+                    aria-label={`Button ${i + 1} title`}
+                  />
+                  {btn.type === "web_url" && (
+                    <input
+                      className="st-input"
+                      value={btn.url}
+                      onChange={(e) => handleButtonChange(i, "url", e.target.value)}
+                      placeholder="https://your-link.com"
+                      inputMode="url"
+                      aria-label={`Button ${i + 1} destination URL`}
+                    />
+                  )}
+                </div>
+              ))}
+              {buttons.length < maxButtons && (
+                <button type="button" onClick={handleAddButton} className="st-dashed">
+                  <Plus size={13} style={{ verticalAlign: -2 }} /> Add button (
+                  {buttons.length}/{maxButtons})
+                </button>
+              )}
+              {isFree && (
+                <div className="st-relobtn" aria-hidden>
+                  <Sparkles size={13} />
+                  <span>
+                    <b>⚡ Automated by RELO</b>
+                    <em>Added automatically at dispatch — it never counts against your{" "}
+                    {maxButtons} slots.</em>
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
 
-        {/* Right Column: Live Instagram DM Mobile Preview */}
+        {/* right: live phone preview */}
         <div
-          className={`${
-            mobileView === "preview" ? "block" : "hidden lg:block"
-          } lg:col-span-5 sticky top-20`}
+          className="editor-preview-lg"
+          style={mobileView === "editor" ? { display: "none" } : undefined}
         >
-          <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xl shadow-slate-200/60">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Smartphone className="w-4 h-4 text-sky-600" />
-                Live Instagram DM Preview
+          <div className="st-card st-previewcard" style={{ position: "sticky", top: 90 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                paddingBottom: 12,
+                marginBottom: 14,
+                borderBottom: "1.5px solid var(--border)",
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
+                <Smartphone size={14} color="var(--accent-ink)" aria-hidden />
+                Live DM preview
               </span>
-              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                Pixel-Accurate
-              </span>
+              <span className="st-chip st-chip--follower">pixel-accurate</span>
             </div>
 
-            {/* Mock Instagram DM Viewport */}
-            <div className="w-full max-w-[320px] mx-auto bg-slate-900 text-white rounded-[2.5rem] p-3 shadow-2xl border-4 border-slate-800">
-              {/* Phone Speaker Notch */}
-              <div className="w-24 h-4 bg-slate-800 rounded-full mx-auto mb-3" />
-
-              {/* Chat Header */}
-              <div className="flex items-center gap-2 px-2 pb-3 border-b border-slate-800 text-xs">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-sky-400 to-emerald-400 flex items-center justify-center font-bold text-[10px] text-slate-950">
-                  IG
+            <div className="st-card st-tester">
+              <div className="st-tester__head">
+                <span className="st-tester__title">
+                  <Sparkles size={13} color="var(--accent-ink)" aria-hidden />
+                  Preview as commenter
+                </span>
+                <span className="st-chip st-chip--email">plan.md §4.1</span>
+              </div>
+              <div className="st-tester__inputs">
+                <div className="st-field">
+                  <label htmlFor="st-test-comment">They comment</label>
+                  <input
+                    id="st-test-comment"
+                    className="st-input"
+                    value={testComment}
+                    onChange={(e) => setTestComment(e.target.value)}
+                    placeholder="guide please"
+                  />
                 </div>
-                <div className="flex flex-col">
-                  <span className="font-bold text-slate-100 flex items-center gap-1">
-                    your_account
-                    <CheckCircle2 className="w-3 h-3 text-sky-400" />
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-sans">Active now</span>
+                <div className="st-field">
+                  <label htmlFor="st-test-username">Their username</label>
+                  <input
+                    id="st-test-username"
+                    className="st-input"
+                    value={testUsername}
+                    onChange={(e) => setTestUsername(e.target.value)}
+                    placeholder="creator_alex"
+                  />
                 </div>
               </div>
 
-              {/* Chat Thread */}
-              <div className="py-4 space-y-3">
-                {/* Outgoing Bot DM Generic Template Card */}
-                <div className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-lg">
-                  {/* Card Image */}
+              {matched ? (
+                <>
+                  <div className="st-tester__verdict st-tester__verdict--hit">
+                    <CheckCircle2 size={13} aria-hidden />
+                    Triggers on{" "}
+                    <b>{matched === "*" ? "* (catch-all)" : `“${matched}”`}</b>
+                    {followGateEnabled
+                      ? " → checks follow status first, then sends the card."
+                      : " → sends the card immediately."}
+                  </div>
+                  <div className="st-tester__preview">
+                    <span className="st-tester__label">Public comment reply</span>
+                    <p className="st-tester__bubble st-tester__bubble--reply">
+                      {mergeUsername(replies[spintaxSampleIndex % replies.length] || "", testUsername) ||
+                        "—"}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="st-tester__verdict st-tester__verdict--miss">
+                  <AlertCircle size={13} aria-hidden />
+                  No trigger keyword matches this comment — RELO stays silent. Add the keyword
+                  above, or use <b>*</b> to catch every comment.
+                </div>
+              )}
+            </div>
+
+            <div className="st-phone" role="img" aria-label="Preview of the Instagram DM your commenter receives">
+              <div className="st-phone__notch" aria-hidden />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "2px 4px 10px",
+                  borderBottom: "1.5px solid #3d2817",
+                  fontSize: 11,
+                }}
+              >
+                <span
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    background: "linear-gradient(135deg, var(--accent), var(--accent-strong))",
+                    display: "grid",
+                    placeItems: "center",
+                    fontWeight: 900,
+                    fontSize: 9,
+                  }}
+                  aria-hidden
+                >
+                  IG
+                </span>
+                <span>
+                  <b style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    your_account <CheckCircle2 size={11} color="var(--accent-text)" aria-hidden />
+                  </b>
+                  <i style={{ fontSize: 9, color: "#a0866c", fontStyle: "normal" }}>Active now</i>
+                </span>
+              </div>
+
+              <div className="st-phone__chat">
+                <div className="st-phone__card">
                   {cardImageUrl ? (
-                    <div className="aspect-[1.91/1] w-full bg-slate-950 overflow-hidden">
+                    <div style={{ aspectRatio: "1.91/1", background: "#170d06", overflow: "hidden" }}>
                       <img
                         src={cardImageUrl}
-                        alt="Preview Card"
-                        className="w-full h-full object-cover"
+                        alt="Card cover preview"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       />
                     </div>
                   ) : (
-                    <div className="aspect-[1.91/1] w-full bg-gradient-to-tr from-sky-900 to-slate-950 flex items-center justify-center text-slate-500 text-xs font-mono">
-                      [Card Preview Image]
+                    <div
+                      style={{
+                        aspectRatio: "1.91/1",
+                        background: "linear-gradient(135deg, #3d2817, #170d06)",
+                        display: "grid",
+                        placeItems: "center",
+                        color: "#a0866c",
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      card cover image
                     </div>
                   )}
-
-                  {/* Card Body */}
-                  <div className="p-3 text-left">
-                    <h4 className="font-bold text-xs text-white leading-snug line-clamp-2">
-                      {cardTitle || "Title goes here..."}
+                  <div style={{ padding: 12 }}>
+                    <h4 style={{ fontWeight: 800, fontSize: 12, lineHeight: 1.35 }}>
+                      {cardTitle || "Title goes here…"}
                     </h4>
                     {cardSubtitle && (
-                      <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 leading-normal">
+                      <p style={{ fontSize: 10.5, color: "#a0866c", marginTop: 4, lineHeight: 1.45 }}>
                         {cardSubtitle}
                       </p>
                     )}
                   </div>
-
-                  {/* Card Buttons */}
-                  <div className="border-t border-slate-700/80 divide-y divide-slate-700/80">
+                  <div className="st-phone__btnrow">
                     {buttons.map((btn, i) => (
-                      <div
-                        key={i}
-                        className="py-2.5 px-3 text-center text-xs font-bold text-sky-400 hover:bg-slate-700/50 cursor-pointer transition-colors"
-                      >
-                        {btn.title || `Button #${i + 1}`}
-                      </div>
+                      <div key={i}>{btn.title || `Button #${i + 1}`}</div>
                     ))}
                   </div>
                 </div>
 
-                {/* Follow Gate Note */}
                 {followGateEnabled && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-[10px] text-emerald-300">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span>Follow-Gate Active: Non-followers are prompted to follow first</span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      background: "rgba(92, 107, 35, 0.22)",
+                      border: "1px solid rgba(92, 107, 35, 0.55)",
+                      color: "#c9d69a",
+                      fontSize: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    <ShieldCheck size={12} aria-hidden />
+                    Follow-gate active — non-followers get a nudge first
                   </div>
                 )}
               </div>
 
-              {/* Phone Home Bar */}
-              <div className="w-24 h-1 bg-slate-700 rounded-full mx-auto mt-4" />
+              <div
+                style={{
+                  width: 96,
+                  height: 4,
+                  background: "#3d2817",
+                  borderRadius: 99,
+                  margin: "14px auto 2px",
+                }}
+                aria-hidden
+              />
             </div>
           </div>
         </div>

@@ -65,28 +65,27 @@ assert.strictEqual(normalizeTriggerKeyword(""), "");
 
 console.log("✓ Keyword normalization strips # prefixes, trims whitespace, and uppercases.");
 
-// [4] Keyboard Tab Navigation Cycling (WCAG AA Tabs Pattern)
-console.log("\n[4] Testing Keyboard Tab Navigation Cycling (WCAG AA)...");
-const studioTabs = ["reels", "editor", "leads", "analytics"] as const;
+// [4] Sidebar Navigation Cycling (roving keyboard pattern)
+console.log("\n[4] Testing Sidebar Navigation Cycling (keyboard pattern)...");
+const sidebarItems = ["home", "automations", "campaigns", "leads", "insights", "products", "settings"] as const;
 
-function getNextTab(current: string, key: "ArrowRight" | "ArrowLeft" | "Home" | "End"): string {
-  const idx = (studioTabs as readonly string[]).indexOf(current);
-  if (key === "ArrowRight") return studioTabs[(idx + 1) % studioTabs.length];
-  if (key === "ArrowLeft") return studioTabs[(idx - 1 + studioTabs.length) % studioTabs.length];
-  if (key === "Home") return studioTabs[0];
-  if (key === "End") return studioTabs[studioTabs.length - 1];
+function getNextSidebarItem(current: string, key: "ArrowDown" | "ArrowUp" | "Home" | "End"): string {
+  const idx = (sidebarItems as readonly string[]).indexOf(current);
+  if (key === "ArrowDown") return sidebarItems[(idx + 1) % sidebarItems.length];
+  if (key === "ArrowUp") return sidebarItems[(idx - 1 + sidebarItems.length) % sidebarItems.length];
+  if (key === "Home") return sidebarItems[0];
+  if (key === "End") return sidebarItems[sidebarItems.length - 1];
   return current;
 }
 
-assert.strictEqual(getNextTab("reels", "ArrowRight"), "editor");
-assert.strictEqual(getNextTab("editor", "ArrowRight"), "leads");
-assert.strictEqual(getNextTab("leads", "ArrowRight"), "analytics");
-assert.strictEqual(getNextTab("analytics", "ArrowRight"), "reels"); // wrap around
-assert.strictEqual(getNextTab("reels", "ArrowLeft"), "analytics"); // wrap backwards
-assert.strictEqual(getNextTab("leads", "Home"), "reels");
-assert.strictEqual(getNextTab("leads", "End"), "analytics");
+assert.strictEqual(getNextSidebarItem("home", "ArrowDown"), "automations");
+assert.strictEqual(getNextSidebarItem("settings", "ArrowDown"), "home"); // wrap around
+assert.strictEqual(getNextSidebarItem("home", "ArrowUp"), "settings"); // wrap backwards
+assert.strictEqual(getNextSidebarItem("insights", "ArrowUp"), "leads");
+assert.strictEqual(getNextSidebarItem("leads", "Home"), "home");
+assert.strictEqual(getNextSidebarItem("leads", "End"), "settings");
 
-console.log("✓ Keyboard tab navigation cycles, wraps boundaries, and handles Home/End.");
+console.log("✓ Sidebar navigation cycles, wraps boundaries, and handles Home/End.");
 
 console.log("\n🎉 ALL FRONTEND UNIT TESTS PASSED WITH 100% SUCCESS!");
 

@@ -1,35 +1,62 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck, Sparkles, AlertCircle, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { useSeo } from "@/lib/seo";
+import "./studio.css";
+
+const EMAIL_PATTERN = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
+
+/** Only allow local, non-protocol-relative paths — blocks open redirects. */
+function sanitizeRedirect(raw: string | null): string {
+  return raw && /^\/(?!\/)/.test(raw) ? raw : "/dashboard";
+}
 
 export default function Login() {
   const navigate = useNavigate();
+  useSeo({
+    title: "Sign in — RELO",
+    description: "Sign in to RELO to connect your Instagram and automate Reel comments into DMs.",
+    path: "/login",
+    index: false,
+  });
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"EMAIL" | "OTP">("EMAIL");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugCode, setDebugCode] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
+  const resendTimer = useRef<number | null>(null);
 
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim() || !email.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
+  useEffect(() => {
+    return () => {
+      if (resendTimer.current) window.clearInterval(resendTimer.current);
+    };
+  }, []);
 
+  const startResendCooldown = () => {
+    setResendIn(45);
+    if (resendTimer.current) window.clearInterval(resendTimer.current);
+    resendTimer.current = window.setInterval(() => {
+      setResendIn((s) => {
+        if (s <= 1 && resendTimer.current) window.clearInterval(resendTimer.current);
+        return Math.max(0, s - 1);
+      });
+    }, 1000);
+  };
+
+  const submitSendOtp = async () => {
     setError(null);
     setIsLoading(true);
 
     try {
       const res = await api.auth.sendOtp(email.trim());
-      if (res.debugCode) {
+      if (import.meta.env.DEV && res.debugCode) {
         setDebugCode(res.debugCode);
-        setCode(res.debugCode); // Auto-fill in dev mode
+        setCode(res.debugCode);
       }
+      startResendCooldown();
       setStep("OTP");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send verification code. Please try again.";
@@ -37,6 +64,15 @@ export default function Login() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !EMAIL_PATTERN.test(email.trim())) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    await submitSendOtp();
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -51,9 +87,21 @@ export default function Login() {
 
     try {
       await api.auth.verifyOtp(email.trim(), code.trim());
+
+      // Referral claim (plan.md §7): ?ref=CODE is carried through the OTP flow.
+      // Best-effort — a failed claim must never block someone's sign-in, and the
+      // server is idempotent, so a retry on the next visit is harmless.
+      const refCode = new URLSearchParams(window.location.search).get("ref");
+      if (refCode) {
+        try {
+          await api.referrals.claim(refCode);
+        } catch {
+          /* referral code not claimed — the signup still succeeded */
+        }
+      }
+
       const searchParams = new URLSearchParams(window.location.search);
-      const redirect = searchParams.get("redirect") || "/dashboard";
-      navigate(redirect);
+      navigate(sanitizeRedirect(searchParams.get("redirect")), { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Invalid or expired verification code. Please request a new one.";
       setError(message);
@@ -63,64 +111,88 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans selection:bg-sky-200 selection:text-sky-900">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center mb-4">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-emerald-500 p-[1px] shadow-sm">
-              <div className="w-full h-full bg-white rounded-[11px] flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-sky-600" />
-              </div>
-            </div>
-            <div className="flex flex-col">
-              <span className="font-black text-xl tracking-tight text-slate-900">
-                RELO <span className="text-sky-600">AI</span>
-              </span>
-              <span className="text-[10px] font-mono font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 w-fit">
-                Creator Studio
-              </span>
-            </div>
+    <div className="studio" style={{ justifyContent: "center", padding: "48px 16px" }}>
+      <div className="studio__panel" style={{ width: "100%", maxWidth: 440, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 26 }}>
+          <Link to="/" className="studio__logo" style={{ justifyContent: "center", display: "inline-flex" }}>
+            <span className="studio__mark">R.</span>
+            <span className="studio__name" style={{ textAlign: "left" }}>
+              RELO
+              <small>Creator Studio</small>
+            </span>
           </Link>
+          <h1
+            style={{
+              marginTop: 26,
+              fontWeight: 900,
+              fontSize: 28,
+              letterSpacing: "-0.025em",
+              lineHeight: 1.1,
+            }}
+          >
+            {step === "EMAIL" ? (
+              <>
+                Sign in.
+                <br />
+                <span style={{ fontFamily: "var(--font-display)", fontStyle: "italic", fontWeight: 300 }}>
+                  no passwords, no rent.
+                </span>
+              </>
+            ) : (
+              "Check your inbox."
+            )}
+          </h1>
+          <p style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: "var(--text-soft)" }}>
+            {step === "EMAIL"
+              ? "Passwordless access for verified creators."
+              : `We sent a 6-digit code to ${email}`}
+          </p>
         </div>
-        <h2 className="text-center text-2xl font-black tracking-tight text-slate-900">
-          {step === "EMAIL" ? "Sign in to your Studio" : "Check your email"}
-        </h2>
-        <p className="mt-1.5 text-center text-sm text-slate-600 font-medium">
-          {step === "EMAIL"
-            ? "Passwordless access for verified creators"
-            : `We sent a 6-digit verification code to ${email}`}
-        </p>
-      </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-white py-8 px-6 sm:px-10 shadow-xl shadow-slate-200/50 rounded-2xl border border-slate-200/80">
+        <div className="st-card" style={{ padding: "30px 28px", borderRadius: 22 }}>
           {error && (
-            <div role="alert" className="mb-6 p-3.5 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2.5 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold">{error}</p>
-              </div>
+            <div className="st-alert" role="alert" style={{ marginBottom: 20 }}>
+              <AlertCircle aria-hidden />
+              <span>{error}</span>
             </div>
           )}
 
           {debugCode && (
-            <div className="mb-6 p-3 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-800 font-mono flex items-center justify-between">
-              <span>Dev Mode OTP Code:</span>
-              <strong className="text-sky-700 text-sm">{debugCode}</strong>
+            <div
+              className="st-alert"
+              style={{
+                marginBottom: 20,
+                background: "var(--surface-2)",
+                borderColor: "var(--border-strong)",
+                fontFamily: "var(--font-display)",
+                fontStyle: "italic",
+              }}
+            >
+              <span style={{ flex: 1, fontWeight: 700 }}>Dev OTP</span>
+              <strong style={{ fontSize: 15, letterSpacing: "0.3em" }}>{debugCode}</strong>
             </div>
           )}
 
           {step === "EMAIL" ? (
-            <form onSubmit={handleSendOtp} className="space-y-5">
+            <form onSubmit={handleSendOtp} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <div>
-                <label htmlFor="creator-email" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                  Creator Email Address
+                <label htmlFor="creator-email" className="st-label">
+                  Creator email
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <Input
+                <div style={{ position: "relative" }}>
+                  <Mail
+                    style={{
+                      width: 15,
+                      height: 15,
+                      position: "absolute",
+                      left: 14,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--text-faint)",
+                    }}
+                    aria-hidden
+                  />
+                  <input
                     id="creator-email"
                     type="email"
                     required
@@ -128,67 +200,93 @@ export default function Login() {
                     placeholder="creator@yourbrand.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-11 bg-slate-50 border-slate-200 focus:bg-white focus:border-sky-500 rounded-xl text-slate-900 font-medium"
+                    className="st-input"
+                    style={{ paddingLeft: 40 }}
                   />
                 </div>
               </div>
 
-              <Button
+              <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-11 rounded-xl font-bold bg-sky-600 hover:bg-sky-500 text-white shadow-md shadow-sky-600/20 min-h-[44px]"
+                className="st-btn st-btn--accent st-btn--sheen"
+                style={{ width: "100%" }}
               >
                 {isLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  <RefreshCw style={{ animation: "spin 1.2s linear infinite" }} aria-hidden />
                 ) : (
                   <>
-                    Send Login Code
-                    <ArrowRight className="w-4 h-4 ml-1.5" />
+                    Send login code <ArrowRight size={15} aria-hidden />
                   </>
                 )}
-              </Button>
+              </button>
             </form>
           ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-5">
+            <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <div>
-                <label htmlFor="otp-code" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                  6-Digit Verification Code
+                <label htmlFor="otp-code" className="st-label">
+                  6-digit code
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <KeyRound className="w-4 h-4" />
-                  </div>
-                  <Input
+                <div style={{ position: "relative" }}>
+                  <KeyRound
+                    style={{
+                      width: 15,
+                      height: 15,
+                      position: "absolute",
+                      left: 14,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--text-faint)",
+                    }}
+                    aria-hidden
+                  />
+                  <input
                     id="otp-code"
                     type="text"
                     required
                     autoComplete="one-time-code"
                     inputMode="numeric"
                     maxLength={6}
-                    placeholder="123456"
+                    placeholder="······"
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                    className="pl-10 h-12 bg-slate-50 border-slate-200 focus:bg-white focus:border-sky-500 rounded-xl text-slate-900 font-mono text-center text-xl font-bold tracking-widest"
+                    className="st-input"
+                    style={{
+                      paddingLeft: 40,
+                      textAlign: "center",
+                      fontSize: 20,
+                      letterSpacing: "0.5em",
+                      fontWeight: 800,
+                      fontFamily: "var(--font-display)",
+                    }}
                   />
                 </div>
               </div>
 
-              <Button
+              <button
                 type="submit"
                 disabled={isLoading || code.length !== 6}
-                className="w-full h-11 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20"
+                className="st-btn st-btn--primary st-btn--sheen"
+                style={{ width: "100%" }}
               >
                 {isLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  <RefreshCw style={{ animation: "spin 1.2s linear infinite" }} aria-hidden />
                 ) : (
                   <>
-                    Verify & Enter Studio
-                    <CheckCircle2 className="w-4 h-4 ml-1.5" />
+                    Verify & enter studio <CheckCircle2 size={15} aria-hidden />
                   </>
                 )}
-              </Button>
+              </button>
 
-              <div className="flex items-center justify-between pt-1 text-xs">
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => {
@@ -196,43 +294,66 @@ export default function Login() {
                     setCode("");
                     setError(null);
                   }}
-                  className="text-slate-500 hover:text-slate-800 font-semibold transition-colors min-h-[36px]"
+                  style={{ border: 0, background: "none", color: "var(--text-soft)", fontWeight: 700 }}
                 >
-                  ← Use different email
+                  ← Different email
                 </button>
-
                 <button
                   type="button"
-                  onClick={async () => {
-                    setError(null);
-                    setIsLoading(true);
-                    try {
-                      const res = await api.auth.sendOtp(email.trim());
-                      if (res.debugCode) {
-                        setDebugCode(res.debugCode);
-                        setCode(res.debugCode);
-                      }
-                    } catch (err) {
-                      const message = err instanceof Error ? err.message : "Failed to resend code.";
-                      setError(message);
-                    } finally {
-                      setIsLoading(false);
-                    }
+                  onClick={() => {
+                    if (resendIn > 0 || isLoading) return;
+                    submitSendOtp();
                   }}
-                  disabled={isLoading}
-                  className="text-sky-600 hover:text-sky-700 font-bold transition-colors min-h-[36px]"
+                  disabled={isLoading || resendIn > 0}
+                  style={{
+                    border: 0,
+                    background: "none",
+                    color: "var(--accent-ink)",
+                    fontWeight: 800,
+                    opacity: resendIn > 0 ? 0.5 : 1,
+                    cursor: resendIn > 0 ? "not-allowed" : "pointer",
+                  }}
                 >
-                  Resend code
+                  {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
                 </button>
               </div>
             </form>
           )}
 
-          <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-500 font-medium">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            Zero passwords. Industry-standard AES-256-GCM token encryption.
+          <div
+            style={{
+              marginTop: 24,
+              paddingTop: 18,
+              borderTop: "1.5px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              fontSize: 11.5,
+              fontWeight: 700,
+              color: "var(--text-faint)",
+              textAlign: "center",
+            }}
+          >
+            <ShieldCheck size={14} color="var(--success)" aria-hidden />
+            Zero passwords · AES-256-GCM token vault
           </div>
         </div>
+
+        <p
+          style={{
+            textAlign: "center",
+            marginTop: 18,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: "var(--text-faint)",
+          }}
+        >
+          <Sparkles size={11} style={{ verticalAlign: -1, color: "var(--accent-ink)" }} aria-hidden />{" "}
+          Comments in — customers out
+        </p>
       </div>
     </div>
   );

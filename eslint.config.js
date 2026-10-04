@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "backend/**", "customer-backend/**", "scratch/**", "node_modules/**"] },
+  { ignores: ["dist/**", "backend/**", "scratch/**", "node_modules/**"] },
   {
     extends: [
       js.configs.recommended,

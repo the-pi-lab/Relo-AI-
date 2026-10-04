@@ -1,67 +1,37 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@custom-variant dark (&:is(.dark *));
 
-/* ChatFlow AI — Porcelain Daylight Aesthetic
-   Strict Zero-Purple Policy: Porcelain white, Soft slate, Sky cyan, Emerald green */
-:root {
-  --radius: 0.75rem;
+/* Dark variant keyed to our theme attribute (see styles/theme.css) */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-  --cf-bg: #f8fafc;
-  --cf-surface: #ffffff;
-  --cf-surface-elevated: #ffffff;
-  --cf-text: #0f172a;
-  --cf-muted: #64748b;
-  --cf-border: #e2e8f0;
-  --cf-border-strong: #cbd5e1;
-  --cf-accent-sky: #0284c7;
-  --cf-accent-emerald: #10b981;
-
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #0284c7;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f8fafc;
-  --muted-foreground: #64748b;
-  --accent: #f0f9ff;
-  --accent-foreground: #0369a1;
-  --destructive: #ef4444;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #38bdf8;
-}
-
+/*
+  Tailwind theme mapping — derived from the semantic tokens in
+  styles/theme.css (single source of truth; light + dark first-class).
+  Only shadcn/ui primitives (src/components/ui/*) consume these classes.
+*/
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
+  --radius-sm: calc(0.75rem - 4px);
+  --radius-md: calc(0.75rem - 2px);
+  --radius-lg: 0.75rem;
+  --radius-xl: calc(0.75rem + 4px);
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-contrast);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--text-soft);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--accent-text);
+  --color-destructive: var(--danger);
   --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-input: var(--border-strong);
+  --color-ring: var(--accent);
 }
 
 @layer base {
@@ -69,24 +39,19 @@
     @apply border-border outline-ring;
   }
   :focus-visible {
-    outline: 2px solid #0284c7;
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
   html,
   body {
-    background-color: #f8fafc;
+    background-color: var(--bg);
   }
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: var(--font-sans);
+    @apply text-foreground antialiased;
   }
   button:not([disabled]),
   [role="button"]:not([disabled]) {
     cursor: pointer;
-  }
-  ::selection {
-    background: rgba(56, 189, 248, 0.35);
-    color: #fff;
   }
 
   @media (prefers-reduced-motion: reduce) {

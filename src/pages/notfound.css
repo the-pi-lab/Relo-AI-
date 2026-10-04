@@ -1,0 +1,163 @@
+/* 404 surface — token-based (plan.md §2), so System/Light/Dark all read correctly.
+   `nf--panel` drops the framed chrome when rendered inside the dashboard shell. */
+
+.nf {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── top bar ───────────────────────────────────────────────── */
+.nf-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px clamp(18px, 5vw, 40px);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.nf-logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+.nf-logo__mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+.nf-logo__name { font-weight: 800; font-size: 16.5px; letter-spacing: -0.01em; }
+
+/* ── main ──────────────────────────────────────────────────── */
+.nf-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: clamp(48px, 9vw, 96px) 24px;
+  gap: 4px;
+}
+
+.nf-code {
+  font-family: var(--font-display);
+  font-size: clamp(72px, 15vw, 132px);
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: var(--accent-text);
+  opacity: 0.14;
+  margin-bottom: 10px;
+}
+
+.nf-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 12px;
+}
+.nf-eyebrow svg { flex-shrink: 0; }
+
+.nf-h1 {
+  margin: 0;
+  font-size: clamp(27px, 4.6vw, 40px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  max-width: 20ch;
+}
+.nf-h1 em { font-family: var(--font-display); font-style: italic; font-weight: 600; color: var(--accent-text); }
+
+.nf-sub {
+  margin: 12px 0 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-soft);
+  line-height: 1.6;
+  max-width: 46ch;
+}
+
+.nf-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 26px; }
+
+.nf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  min-height: 44px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+.nf-btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.nf-btn:active { transform: translateY(1px); }
+.nf-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.nf-btn--primary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: transparent;
+  box-shadow: var(--shadow-sm);
+}
+.nf-btn--primary:hover { background: var(--accent-strong); border-color: transparent; }
+
+/* ── footer ────────────────────────────────────────────────── */
+.nf-foot {
+  padding: 18px 24px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+/* ── inside the dashboard: no frame, just the message ──────── */
+.nf--panel { min-height: auto; background: transparent; }
+.nf--panel .nf-main { padding: clamp(36px, 7vw, 72px) 24px; }
+.nf--panel .nf-code { font-size: clamp(64px, 12vw, 104px); }
+
+/* ── error boundary ────────────────────────────────────────── */
+.nf-trace {
+  margin: 22px 0 0;
+  max-width: 60ch;
+  max-height: 128px;
+  overflow: auto;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-inset);
+  color: var(--text-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── reduced motion ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .nf-btn { transition: none !important; }
+}

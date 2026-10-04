@@ -1,12 +1,40 @@
-import React from "react";
-import {
-  Activity,
-  MessageCircle,
-  Send,
-  TrendingUp,
-  Server,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Activity, MessageCircle, Send, TrendingUp, Server, Database } from "lucide-react";
 import type { SystemTelemetry } from "@/types/contracts";
+
+const reduceMotion = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function useCountUp(target: number, duration = 1200): number {
+  const [value, setValue] = useState(() => (reduceMotion() ? target : 0));
+  useEffect(() => {
+    if (reduceMotion()) {
+      setValue(target);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / duration);
+      setValue(Math.round(target * (1 - Math.pow(1 - p, 4))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
+}
+
+/** Estimated yearly ManyChat cost avoided at the given contact count. */
+function manyChatTaxSaved(leads: number): number {
+  if (leads <= 0) return 0;
+  if (leads <= 500) return 180;
+  if (leads <= 1000) return 300;
+  if (leads <= 2500) return 420;
+  if (leads <= 5000) return 540;
+  if (leads <= 10000) return 780;
+  return 1740;
+}
 
 interface AnalyticsCardsProps {
   telemetry: SystemTelemetry & {
@@ -18,138 +46,123 @@ interface AnalyticsCardsProps {
 }
 
 export default function AnalyticsCards({ telemetry }: AnalyticsCardsProps) {
-  const calculateManyChatTaxSaved = (leads: number) => {
-    if (leads === 0) return 0;
-    if (leads <= 500) return 180;
-    if (leads <= 1000) return 300;
-    if (leads <= 2500) return 420;
-    if (leads <= 5000) return 540;
-    if (leads <= 10000) return 780;
-    return 1740;
-  };
-
-  const estimatedTaxSaved = calculateManyChatTaxSaved(telemetry.totalLeads);
-
-  const statusLabel =
-    telemetry.status === "healthy"
-      ? "Operational"
-      : telemetry.status === "idle"
-      ? "Standby"
-      : "Reconnection Needed";
-
-  const cards = [
-    {
-      title: "System Status",
-      value: statusLabel,
-      description:
-        telemetry.status === "healthy"
-          ? "Cloudflare Edge + Cron-as-Queue active"
-          : "Awaiting incoming webhook activity",
-      icon: Activity,
-      color:
-        telemetry.status === "healthy"
-          ? "text-emerald-600 bg-emerald-50 border-emerald-200"
-          : "text-slate-600 bg-slate-50 border-slate-200",
-      indicator: telemetry.status === "healthy" ? "bg-emerald-500" : undefined,
-    },
-    {
-      title: "Comments Processed",
-      value: telemetry.totalComments.toLocaleString(),
-      description: "Triggered from active Instagram Reels",
-      icon: MessageCircle,
-      color: "text-sky-600 bg-sky-50 border-sky-200",
-    },
-    {
-      title: "Direct Messages Sent",
-      value: telemetry.totalDmsSent.toLocaleString(),
-      description: "Generic Template cards dispatched",
-      icon: Send,
-      color: "text-sky-600 bg-sky-50 border-sky-200",
-    },
-    {
-      title: "Follower Conversion",
-      value: telemetry.totalComments === 0 ? "—" : `${telemetry.followerConversionRate}%`,
-      description:
-        telemetry.totalComments === 0
-          ? "Awaiting first comment activity"
-          : "Commenters verified as active followers",
-      icon: TrendingUp,
-      color: "text-emerald-600 bg-emerald-50 border-emerald-200",
-    },
-  ];
+  const totalComments = useCountUp(telemetry.totalComments);
+  const totalDms = useCountUp(telemetry.totalDmsSent);
+  const conversion = useCountUp(telemetry.followerConversionRate);
+  const taxSaved = useCountUp(manyChatTaxSaved(telemetry.totalLeads));
+  const isHealthy = telemetry.status === "healthy";
 
   return (
-    <div className="space-y-6 font-sans">
-      {/* 4 Primary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {cards.map((card, i) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={i}
-              className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  {card.title}
-                </span>
-                <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${card.color}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-              </div>
+    <div>
+      <div className="st-tel__grid">
+        <div className="st-card st-card--hover st-tel-card">
+          <div className="st-tel-card__icon">
+            <Activity aria-hidden />
+          </div>
+          <span className="st-tel-card__label">System Status</span>
+          <div className="st-tel-card__value">
+            <span className="st-pulse" aria-hidden>
+              <i />
+            </span>
+            {isHealthy ? "Live" : "Strained"}
+          </div>
+          <p className="st-tel-card__foot">
+            {isHealthy
+              ? "Edge worker + cron queue fully operational"
+              : `${telemetry.failed24h} failures in the last 24h — check token validity`}
+          </p>
+        </div>
 
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  {card.indicator && (
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                    </span>
-                  )}
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">
-                    {card.value}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 font-medium">{card.description}</p>
-              </div>
-            </div>
-          );
-        })}
+        <div className="st-card st-card--hover st-tel-card">
+          <div className="st-tel-card__icon">
+            <MessageCircle aria-hidden />
+          </div>
+          <span className="st-tel-card__label">Comments Processed</span>
+          <div className="st-tel-card__value">{totalComments.toLocaleString()}</div>
+          <p className="st-tel-card__foot">Keyword triggers from your active Reels</p>
+        </div>
+
+        <div className="st-card st-card--hover st-tel-card">
+          <div className="st-tel-card__icon">
+            <Send aria-hidden />
+          </div>
+          <span className="st-tel-card__label">DMs Delivered</span>
+          <div className="st-tel-card__value">{totalDms.toLocaleString()}</div>
+          <p className="st-tel-card__foot">3-button Generic Template cards dispatched</p>
+        </div>
+
+        <div className="st-card st-card--hover st-tel-card">
+          <div className="st-tel-card__icon">
+            <TrendingUp aria-hidden />
+          </div>
+          <span className="st-tel-card__label">Follower Conversion</span>
+          <div className="st-tel-card__value">
+            {telemetry.totalComments === 0 ? "—" : `${conversion}%`}
+          </div>
+          <p className="st-tel-card__foot">
+            {telemetry.totalComments === 0
+              ? "Awaiting your first triggered comment"
+              : "Commenters verified as followers at trigger time"}
+          </p>
+        </div>
       </div>
 
-      {/* Edge Diagnostics Breakdown */}
-      <div className="p-6 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
-        <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <Server className="w-4 h-4 text-sky-600" />
-          Cloudflare Edge Diagnostics & Anti-Spam Queue
+      <div className="st-card st-tel-detail">
+        <h4 className="st-tel-detail__title">
+          <Server aria-hidden />
+          Edge Diagnostics &amp; Anti-Spam Queue
         </h4>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
-            <span className="text-xs text-slate-500 font-medium block mb-1">Queue Depth (Pending Jitter)</span>
-            <span className="text-xl font-bold font-mono text-slate-800">
-              {telemetry.pendingJobs} jobs
-            </span>
-            <span className="text-[11px] text-slate-400 block mt-1">30–90s randomized human delay</span>
+        <div className="st-tel-detail__grid">
+          <div className="st-tel-cell">
+            <span className="st-tel-cell__label">Queue Depth</span>
+            <div className="st-tel-cell__value">
+              {telemetry.pendingJobs} <em>jobs</em>
+            </div>
+            <div className="st-meter" aria-hidden>
+              <i style={{ width: `${Math.min(100, telemetry.pendingJobs * 4)}%` }} />
+            </div>
+            <span className="st-tel-cell__note">30–90s randomized human jitter</span>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
-            <span className="text-xs text-slate-500 font-medium block mb-1">Average Edge Response</span>
-            <span className="text-xl font-bold font-mono text-emerald-600">
-              {telemetry.averageLatencyMs > 0 ? `${telemetry.averageLatencyMs}ms` : "<15ms"}
+          <div className="st-tel-cell">
+            <span className="st-tel-cell__label">Last 24 Hours</span>
+            <div className="st-tel-cell__value">
+              {telemetry.completed24h} <em>sent</em>
+            </div>
+            <div
+              className="st-meter"
+              aria-hidden
+            >
+              <i
+                style={{
+                  width: `${
+                    telemetry.completed24h + telemetry.failed24h > 0
+                      ? Math.round(
+                          (telemetry.completed24h /
+                            (telemetry.completed24h + telemetry.failed24h)) *
+                            100
+                        )
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
+            <span className="st-tel-cell__note">
+              {telemetry.failed24h} failed · retry with exponential backoff
             </span>
-            <span className="text-[11px] text-slate-400 block mt-1">Fast edge webhook ingestion</span>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
-            <span className="text-xs text-slate-500 font-medium block mb-1">ManyChat Tax Saved</span>
-            <span className="text-xl font-bold font-mono text-sky-600">
-              ${estimatedTaxSaved.toFixed(2)} / yr
+          <div className="st-tel-cell">
+            <span className="st-tel-cell__label">
+              <Database style={{ width: 11, height: 11, verticalAlign: -1 }} /> Contact Tax Saved
             </span>
-            <span className="text-[11px] text-slate-400 block mt-1">
+            <div className="st-tel-cell__value">
+              <em>${taxSaved.toLocaleString()}</em> /yr
+            </div>
+            <span className="st-tel-cell__note">
               {telemetry.totalLeads > 0
-                ? "Calculated vs ManyChat contact tiers"
-                : "$180/yr savings unlocked on your first 500 leads"}
+                ? `vs. incumbent tiers at ${telemetry.totalLeads.toLocaleString()} contacts`
+                : "Starts at $180/yr once your first 500 leads land"}
             </span>
           </div>
         </div>

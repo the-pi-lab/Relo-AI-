@@ -5,26 +5,207 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/png" href="/logo.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#f8fafc" />
+
+  <!-- ── Core SEO ─────────────────────────────────────────────── -->
+  <title>RELO — Instagram Comment to DM Automation | Official Meta Graph API</title>
   <meta
     name="description"
-    content="RELO turns Instagram Reels comments into verified DMs with 3-button Generic Template cards. Own it for $10 with zero monthly subscriptions."
-  />
-  <meta property="og:title" content="RELO — Instagram Automation Studio" />
+    content="RELO turns comments on your Instagram Reels into verified, clickable DMs automatically. Keyword triggers, 3-button cards, follow-gate and Sent-to-Clicked analytics on the official Meta Graph API. Free plan available." />
+  <meta name="keywords" content="instagram comment to dm automation, instagram dm automation tool, reel to dm, manychat alternative, instagram lead generation, comment triggered dms, meta graph api automation" />
+  <meta name="author" content="The π Lab" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+  <meta name="googlebot" content="index, follow" />
+  <!-- Canonical + OG base. NOTE: update SITE URL when the production domain is final. -->
+  <link rel="canonical" href="https://relo.ai/" />
+
+  <meta property="og:site_name" content="RELO" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:url" content="https://relo.ai/" />
+  <meta property="og:title" content="RELO — Instagram Comment to DM Automation" />
   <meta
     property="og:description"
-    content="Turn Instagram Reels comments into verified DMs with 3-button Generic Template cards. Zero monthly subscriptions, zero contact taxes."
-  />
-  <meta property="og:type" content="website" />
+    content="Turn Reel comments into verified DMs with 3-button cards. Follow-gate, human-timed delivery, one flat subscription — no contact tax." />
+  <meta property="og:image" content="https://relo.ai/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="RELO — an Instagram comment turning into a delivered DM card" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="RELO — Instagram Comment to DM Automation" />
+  <meta
+    name="twitter:description"
+    content="Turn Reel comments into verified DMs with 3-button cards. One flat subscription, unlimited contacts." />
+  <meta name="twitter:image" content="https://relo.ai/og.png" />
+
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d12" />
+  <meta name="geo.region" content="IN" />
+  <meta name="geo.placename" content="India" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <title>RELO — Instagram Automation Studio</title>
-</head>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&display=swap"
+    rel="stylesheet" />
 
+  <!-- ── Structured data (AEO / GEO) ────────────────────────────
+       Kept as static HTML so answer engines and crawlers can read it without
+       executing JavaScript — this app is client-rendered. -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://relo.ai/#organization",
+          "name": "RELO",
+          "legalName": "RELO by The π Lab",
+          "url": "https://relo.ai/",
+          "logo": "https://relo.ai/logo.png",
+          "email": "hello@thepilab.in",
+          "description": "RELO is Instagram DM automation software that turns Reel comments into verified, clickable direct messages using the official Meta Graph API.",
+          "sameAs": [
+            "https://www.thepilab.in",
+            "https://www.linkedin.com/company/the-%CF%80-lab/"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://relo.ai/#website",
+          "url": "https://relo.ai/",
+          "name": "RELO",
+          "publisher": { "@id": "https://relo.ai/#organization" },
+          "inLanguage": "en"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://relo.ai/#app",
+          "name": "RELO",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web",
+          "url": "https://relo.ai/",
+          "description": "Instagram comment-to-DM automation with keyword triggers, follow-gate verification, 3-button DM cards, follow-up DMs and Sent-to-Clicked analytics.",
+          "publisher": { "@id": "https://relo.ai/#organization" },
+          "featureList": [
+            "Instagram comment to DM automation",
+            "Unicode-aware keyword triggers with catch-all",
+            "Follow-gate verification",
+            "3-button Generic Template DM cards",
+            "Follow-up DMs",
+            "RELO short-links and click tracking",
+            "Campaign broadcasts inside the 24-hour window",
+            "CSV lead export"
+          ],
+          "offers": [
+            {
+              "@type": "Offer",
+              "name": "Free",
+              "price": "0",
+              "priceCurrency": "USD",
+              "description": "1 automated reel for life, 2 reply variations, 2 DM buttons plus RELO branding, 3 AI credits per month, lead capture and CSV export."
+            },
+            {
+              "@type": "Offer",
+              "name": "Pro",
+              "price": "9.99",
+              "priceCurrency": "USD",
+              "description": "Unlimited automated reels, 3-8 reply variations, 3 unbranded DM buttons, follow-up DMs, campaigns, AI product Q&A with 500 AI credits per month, Sent to Clicked analytics."
+            },
+            {
+              "@type": "Offer",
+              "name": "Studio",
+              "price": "24.99",
+              "priceCurrency": "USD",
+              "description": "Everything in Pro plus a canvas node builder, 3 connected Instagram accounts, priority queue and 5,000 AI credits per month."
+            }
+          ]
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://relo.ai/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Is Instagram comment-to-DM automation allowed?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. RELO is built entirely on the official Meta Graph API using the Instagram account you connect yourself. There is no scraping and no unofficial automation, which is what makes it compliant."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How fast does RELO send the DM?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "RELO acknowledges Meta's webhook in under 15 milliseconds, then waits a randomised 30 to 90 seconds before sending, so replies read as human rather than bot traffic that gets accounts restricted."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What is the 24-hour messaging window?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Meta only permits an account to send a direct message to a user within 24 hours of that user's most recent inbound message. RELO tracks the last inbound interaction per lead and shows exactly how many commenters are still reachable before any broadcast."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Do I need a Professional Instagram account?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. Meta requires an Instagram Professional account, either Creator or Business, for API messaging access. Switching is free and takes about a minute in the Instagram app."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How does RELO price itself compared to ManyChat?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "RELO charges one flat monthly subscription with unlimited contacts and unlimited direct messages. ManyChat and similar tools bill per contact, so an engaged audience becomes a recurring cost. RELO prices at 9.99 USD or 149 INR per month on Pro."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What happens to my data?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Access tokens are encrypted with AES-256-GCM and can be revoked at any time. Comment text is cleared 72 hours after matching, finished jobs after 30 days and webhook logs after 7 days. Commenter identities are retained so your leads list stays intact, and you can export everything to CSV or delete the account outright."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  </script>
+
+  <script>
+    // Theme bootstrap: resolve before first paint to avoid a flash.
+    (function () {
+      try {
+        var pref = localStorage.getItem("relo_theme") || "system";
+        var dark =
+          pref === "dark" ||
+          (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+</head>
 
 <body>
   <div id="root"></div>
+  <noscript>
+    <div style="max-width: 640px; margin: 48px auto; padding: 0 24px; font-family: system-ui, sans-serif; color: #0f1115">
+      <h1>RELO — Instagram Comment to DM Automation</h1>
+      <p>RELO turns comments on your Instagram Reels into verified, clickable direct messages automatically, using the official Meta Graph API.</p>
+      <p>It offers keyword triggers, follow-gate verification, 3-button DM cards, follow-up DMs, campaigns inside Meta's 24-hour messaging window, and Sent-to-Clicked analytics.</p>
+      <p>Plans: Free (1 automated reel, 2 reply variations, 2 DM buttons, 3 AI credits per month), Pro (9.99 USD / 149 INR per month, unlimited reels, 3-8 variations, follow-ups, campaigns, AI product Q&A) and Studio (24.99 USD / 399 INR per month, canvas builder, 3 accounts).</p>
+      <p>You need JavaScript enabled to use the app.</p>
+    </div>
+  </noscript>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

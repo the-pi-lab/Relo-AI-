@@ -1,346 +1,659 @@
-import React, { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   ArrowRight,
-  ShieldCheck,
-  Zap,
+  BadgeCheck,
+  BarChart3,
+  Briefcase,
+  Check,
+  ChevronDown,
   Layers,
+  LayoutDashboard,
+  MousePointerClick,
+  Send,
+  ShieldCheck,
   Sparkles,
-  CheckCircle2,
-  X,
-  ExternalLink,
+  Timer,
+  Zap,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import ThemeToggle from "@/components/ThemeToggle";
+import { api, ApiError } from "@/lib/api";
+import { useSeo } from "@/lib/seo";
+import { useTilt } from "@/lib/useTilt";
+import { useSpotlight, useCountUp } from "@/lib/motion";
+import "./landing.css";
 
-import InteractiveSimulator from "@/components/landing/InteractiveSimulator";
-import SavingsCalculator from "@/components/landing/SavingsCalculator";
-import ComparisonTable from "@/components/landing/ComparisonTable";
-import FaqAccordion from "@/components/landing/FaqAccordion";
+/* ── pricing data (from plan.md §3) ────────────────────────── */
 
-export default function Landing() {
-  const [legalModal, setLegalModal] = useState<"privacy" | "terms" | null>(null);
+type Currency = "INR" | "USD";
+
+const PRICING: {
+  name: string;
+  tagline: string;
+  monthly: { INR: number; USD: number };
+  annual: { INR: number; USD: number };
+  cta: string;
+  highlight?: boolean;
+  features: string[];
+  missing?: string[];
+}[] = [
+  {
+    name: "Free",
+    tagline: "Taste the autopilot",
+    monthly: { INR: 0, USD: 0 },
+    annual: { INR: 0, USD: 0 },
+    cta: "Start free",
+    features: [
+      "1 automated reel",
+      "2 comment reply variations",
+      "2 DM buttons + “Automated by RELO”",
+      "3 AI credits / month",
+      "Lead capture + CSV export",
+    ],
+    missing: ["Follow-ups & campaigns", "AI product Q&A"],
+  },
+  {
+    name: "Pro",
+    tagline: "For creators who sell",
+    monthly: { INR: 149, USD: 9.99 },
+    annual: { INR: 1499, USD: 99 },
+    cta: "Start free, upgrade in-app",
+    highlight: true,
+    features: [
+      "Unlimited automated reels",
+      "3–8 spintax reply variations",
+      "3 DM buttons, no RELO branding",
+      "Follow-up DMs + campaigns",
+      "AI product Q&A · 500 credits/mo",
+      "Sent → Clicked analytics",
+    ],
+  },
+  {
+    name: "Studio",
+    tagline: "For builders & agencies",
+    monthly: { INR: 399, USD: 24.99 },
+    annual: { INR: 3999, USD: 249 },
+    cta: "Start free, upgrade in-app",
+    features: [
+      "Everything in Pro",
+      "Canvas node builder (bring your own flows)",
+      "3 connected IG accounts",
+      "Priority queue · 5,000 AI credits/mo",
+    ],
+  },
+];
+
+const FAQS = [
+  {
+    q: "Is this allowed by Instagram?",
+    a: "Yes — RELO is built entirely on the official Meta Graph API using your own connected account. No scraping, no unofficial tricks, no bots to ban.",
+  },
+  {
+    q: "How fast do the DMs go out?",
+    a: "We acknowledge Meta's webhook in under 15ms, then deliberately wait 30–90 seconds so the reply feels human — never a bot-blitz that gets accounts flagged.",
+  },
+  {
+    q: "What is the 24-hour window?",
+    a: "Meta only lets an account DM a user within 24 hours of that user's last message. RELO shows you exactly which leads are still reachable before any campaign — so you're never in the dark.",
+  },
+  {
+    q: "Do I need an Instagram Professional account?",
+    a: "Yes. Meta requires an Instagram Professional (Creator or Business) account for API access. Switching is free and takes about a minute in the Instagram app.",
+  },
+  {
+    q: "What happens to my data?",
+    a: "Your access tokens are encrypted with AES-256-GCM and can be revoked anytime. Your leads are yours — export the full list to CSV with one click, or delete everything.",
+  },
+];
+
+/* ── tiny reveal-on-scroll (one-shot, CSS-driven) ───────────── */
+
+function useReveal() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const targets = root.querySelectorAll("[data-reveal]");
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            (entry.target as HTMLElement).classList.add("is-in");
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.15 }
+    );
+    targets.forEach((t) => io.observe(t));
+    return () => io.disconnect();
+  }, []);
+  return rootRef;
+}
+
+/* ── sections ──────────────────────────────────────────────── */
+
+function Nav() {
+  const go = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return (
+    <header className="lm-nav">
+      <div className="lm-nav__inner">
+        <Link to="/" className="lm-logo" aria-label="RELO home">
+          <span className="lm-logo__mark">R.</span>
+          <span className="lm-logo__name">RELO</span>
+        </Link>
+        <nav className="lm-nav__links" aria-label="Primary">
+          <button type="button" onClick={() => go("how")}>How it works</button>
+          <button type="button" onClick={() => go("features")}>Features</button>
+          <button type="button" onClick={() => go("pricing")}>Pricing</button>
+          <button type="button" onClick={() => go("faq")}>FAQ</button>
+        </nav>
+        <div className="lm-nav__right">
+          <ThemeToggle compact />
+          <Link to="/demo" className="lm-btn lm-btn--ghost lm-btn--sm">View demo</Link>
+          <Link to="/login" className="lm-btn lm-btn--ghost lm-btn--sm">Sign in</Link>
+          <Link to="/login" className="lm-btn lm-btn--primary lm-btn--sm">Start free</Link>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+/**
+ * Hero product scene — real CSS 3D, not a fake glow.
+ *
+ * Three cards sit at different depths on a preserve-3d stage and the whole
+ * scene tilts toward the cursor (useTilt). Children are positioned by the
+ * existing .lm-visual layout; each layer just adds translateZ.
+ */
+function ProductVisual() {
+  const { ref, style, pointer, active } = useTilt({ max: 9, scale: 1.015 });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-sky-200 selection:text-sky-900 flex flex-col">
-      {/* Top Navigation Header */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-emerald-500 p-[1px] shadow-sm">
-            <div className="w-full h-full bg-white rounded-[11px] flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-sky-600" />
+    <div className="lm-visual" aria-hidden>
+      <div ref={ref} className="lm-visual__stage" style={style}>
+        {/* ambient depth plate behind everything */}
+        <div className="lm-visual__plate" />
+
+        <div className="lm-visual__comment lm-visual__z1">
+          <span className="lm-visual__avatar">j</span>
+          <div>
+            <span className="lm-visual__user">john.dev</span>
+            <p>Send me the guide please 🔥</p>
+          </div>
+        </div>
+
+        <div className="lm-visual__arrow lm-visual__z2">
+          <span className="lm-visual__arrowline" />
+          <span className="lm-visual__chip">
+            <Zap size={11} strokeWidth={2.6} /> keyword matched
+          </span>
+        </div>
+
+        <div className="lm-visual__dm lm-visual__z3">
+          <div className="lm-visual__dmhead">
+            <span className="lm-visual__avatar lm-visual__avatar--brand">R.</span>
+            <div>
+              <span className="lm-visual__user">your.brand</span>
+              <span className="lm-visual__active">Automated reply · 47s</span>
             </div>
           </div>
-          <div className="flex flex-col">
-            <span className="font-black text-lg tracking-tight text-slate-900">
-              RELO <span className="text-sky-600">AI</span>
-            </span>
-            <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 w-fit">
-              Meta Graph API v21.0
-            </span>
+          <p className="lm-visual__dmtext">Hey john.dev! Your growth blueprint is ready 👇</p>
+          <div className="lm-visual__card">
+            <div className="lm-visual__cardimg" />
+            <strong>Your Growth Blueprint</strong>
+            <span>12 proven funnels + templates</span>
+            <div className="lm-visual__btns">
+              <b>Get it</b>
+              <b>Reviews</b>
+              <b>Chat</b>
+            </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3 sm:gap-4">
-          <Link
-            to="/login"
-            className="text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors hidden sm:block"
-          >
-            Sign In
-          </Link>
-          <span className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            Zero Contact Tax
+          <span className="lm-visual__branding">
+            <Sparkles size={10} strokeWidth={2.6} /> Automated by RELO AI
           </span>
-          <Link to="/login">
-            <Button
-              size="sm"
-              className="rounded-xl font-bold bg-sky-600 hover:bg-sky-500 text-white shadow-md shadow-sky-600/20 min-h-[40px] px-4"
-            >
-              Creator Studio — $10
-              <ArrowRight className="w-4 h-4 ml-1.5" />
-            </Button>
-          </Link>
         </div>
-      </header>
 
-      {/* Hero Section */}
-      <main className="flex-1">
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24 pb-16 text-center">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sky-50 border border-sky-200 text-sky-700 text-xs font-mono font-bold tracking-wide uppercase mb-6 shadow-xs">
-            <Zap className="w-3.5 h-3.5 text-sky-600" />
-            The $10 One-Time ManyChat Alternative
-          </div>
+        {/* cursor spotlight — follows the pointer across the stage */}
+        <div
+          className={`lm-visual__glare${active ? " is-on" : ""}`}
+          style={{
+            background: `radial-gradient(420px circle at ${(pointer.x * 100).toFixed(1)}% ${(
+              pointer.y * 100
+            ).toFixed(1)}%, rgba(255,255,255,0.14), transparent 62%)`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
 
-          {/* Headline */}
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-slate-900 leading-[1.08] max-w-4xl mx-auto mb-6">
-            Stop Paying{" "}
-            <span className="line-through decoration-red-400 text-slate-400 font-extrabold">
-              $180+/Year
-            </span>{" "}
-            for Automation.{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-600 to-emerald-600">
-              Own It for $10. Once.
-            </span>
+function Hero() {
+  return (
+    <section className="lm-hero lm-hero--dark">
+      <div className="lm-container lm-hero__grid">
+        <div className="lm-hero__copy">
+          <span className="lm-eyebrow" data-reveal>Instagram DM Automation</span>
+          <h1 data-reveal>
+            Turn Reel comments into <em>customers.</em>
           </h1>
+          <p className="lm-hero__sub" data-reveal>
+            RELO watches your comments, verifies followers, and delivers your offer as a
+            tappable 3-button DM — human-timed, on the official Meta API. One flat
+            subscription. No contact tax, ever.
+          </p>
+          <div className="lm-hero__actions" data-reveal>
+            <Link to="/login" className="lm-btn lm-btn--primary lm-btn--lg">
+              Start free <ArrowRight size={16} strokeWidth={2.5} />
+            </Link>
+            <button
+              type="button"
+              className="lm-btn lm-btn--ghost lm-btn--lg"
+              onClick={() => document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" })}
+            >
+              See pricing
+            </button>
+            <Link to="/demo" className="lm-btn lm-btn--ghost lm-btn--lg">
+              <LayoutDashboard size={16} strokeWidth={2.4} /> View a live demo
+            </Link>
+          </div>
+          <ul className="lm-proof" data-reveal>
+            <li><ShieldCheck size={13} /> Official Meta API</li>
+            <li><BadgeCheck size={13} /> Follow-gate</li>
+            <li><Timer size={13} /> 30–90s human jitter</li>
+            <li><Layers size={13} /> Unlimited contacts</li>
+          </ul>
+        </div>
+        <ProductVisual />
+      </div>
 
-          {/* Subtitle */}
-          <p className="text-base sm:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed font-medium">
-            Automate Instagram Reels comments into verified DMs with 3-button Generic Template cards.
-            Zero server maintenance, zero contact scaling taxes, and built on the official Meta Graph API v21.0.
+      <StatBand />
+    </section>
+  );
+}
+
+/**
+ * By-the-numbers strip. Every figure is a real product constant, not a
+ * marketing invention — the count-up just draws the eye to it.
+ */
+function StatBand() {
+  const stats = [
+    { n: 15, suffix: "ms", label: "Webhook acknowledged" },
+    { n: 24, suffix: "h", label: "Meta messaging window tracked" },
+    { n: 3, suffix: "", label: "Buttons per DM card" },
+    { n: 8, suffix: "", label: "Reply variations on Pro" },
+  ];
+  return (
+    <div className="lm-stats" data-reveal>
+      {stats.map((s) => (
+        <StatCell key={s.label} {...s} />
+      ))}
+    </div>
+  );
+}
+
+function StatCell({ n, suffix, label }: { n: number; suffix: string; label: string }) {
+  const { ref, display } = useCountUp(n);
+  return (
+    <div className="lm-stat" ref={ref as React.RefObject<HTMLDivElement>}>
+      <b>
+        {display}
+        <span>{suffix}</span>
+      </b>
+      <p>{label}</p>
+    </div>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    {
+      icon: BadgeCheck,
+      title: "Connect",
+      body: "Sign in with an email code and link your Instagram Professional account through Meta. Tokens are encrypted, revocable, and yours.",
+    },
+    {
+      icon: MousePointerClick,
+      title: "Configure",
+      body: "Pick a Reel, set trigger keywords (or catch-all), and design your 3-button card. Follow-gate decides who gets the goods.",
+    },
+    {
+      icon: Send,
+      title: "Autopilot",
+      body: "Every matching comment gets a human-timed public reply and a DM with your offer. Leads are captured, filterable, and CSV-exportable.",
+    },
+  ];
+  return (
+    <section className="lm-section" id="how">
+      <div className="lm-container">
+        <span className="lm-eyebrow" data-reveal>How it works</span>
+        <h2 className="lm-h2" data-reveal>Three steps. <em>Then silence.</em></h2>
+        <div className="lm-steps">
+          {steps.map((s, i) => (
+            <article className="lm-step" key={s.title} data-reveal>
+              <div className="lm-step__icon">
+                <s.icon size={18} strokeWidth={2.2} />
+              </div>
+              <span className="lm-step__num">0{i + 1}</span>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Features() {
+  const spotRef = useSpotlight<HTMLDivElement>();
+  const features = [
+    { icon: Zap, title: "Keyword triggers", body: "Unicode-aware whole-word matching with a catch-all mode — one comment is all it takes." },
+    { icon: BadgeCheck, title: "Follow-gate", body: "Only followers receive your offer; everyone else gets a polite nudge to follow first." },
+    { icon: Layers, title: "3-button cards", body: "Official Meta Generic Templates — image, title, and tappable buttons that feel native." },
+    { icon: Timer, title: "Human-timed delivery", body: "Randomised 30–90s jitter makes every reply read like you, not a script." },
+    { icon: BarChart3, title: "Sent → Clicked", body: "Track every DM from delivery to button tap. Clicks measured, not guessed." },
+    { icon: Send, title: "Campaigns", body: "Re-engage everyone who commented on a Reel — inside Meta's messaging window, with a clear reachable count." },
+  ];
+  return (
+    <section className="lm-section lm-section--tinted" id="features">
+      <div className="lm-container">
+        <span className="lm-eyebrow" data-reveal>Features</span>
+        <h2 className="lm-h2" data-reveal>Everything a funnel needs. <em>Nothing it doesn't.</em></h2>
+        <div className="lm-grid" ref={spotRef}>
+          {features.map((f) => (
+            <article className="lm-card" key={f.title} data-reveal data-spot>
+              <div className="lm-card__icon"><f.icon size={17} strokeWidth={2.2} /></div>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Pricing() {
+  const [currency, setCurrency] = useState<Currency>("INR");
+  const symbol = currency === "INR" ? "₹" : "$";
+
+  const price = (amount: { INR: number; USD: number }) => {
+    const v = amount[currency];
+    return v === 0 ? "0" : currency === "INR" ? v.toLocaleString("en-IN") : String(v);
+  };
+
+  return (
+    <section className="lm-section" id="pricing">
+      <div className="lm-container">
+        <div className="lm-pricing__head" data-reveal>
+          <div>
+            <span className="lm-eyebrow">Pricing</span>
+            <h2 className="lm-h2">One flat fee. <em>Zero contact tax.</em></h2>
+          </div>
+          <div className="lm-currency" role="radiogroup" aria-label="Currency">
+            {(["INR", "USD"] as Currency[]).map((c) => (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={currency === c}
+                className={currency === c ? "is-on" : ""}
+                onClick={() => setCurrency(c)}
+              >
+                {c === "INR" ? "₹ India" : "$ Global"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="lm-tiers">
+          {PRICING.map((tier) => (
+            <article className={`lm-tier${tier.highlight ? " lm-tier--hot" : ""}`} key={tier.name} data-reveal>
+              {tier.highlight && <span className="lm-tier__flag">Most popular</span>}
+              <h3>{tier.name}</h3>
+              <p className="lm-tier__tagline">{tier.tagline}</p>
+              <div className="lm-tier__price">
+                <big>{symbol}{price(tier.monthly)}</big>
+                <span>/mo</span>
+              </div>
+              {tier.monthly[currency] > 0 && (
+                <p className="lm-tier__annual">
+                  or {symbol}{price(tier.annual)}/yr — 2 months free
+                </p>
+              )}
+              <ul>
+                {tier.features.map((f) => (
+                  <li key={f}><Check size={14} strokeWidth={2.6} /> {f}</li>
+                ))}
+                {tier.missing?.map((f) => (
+                  <li key={f} className="is-off">✕ {f}</li>
+                ))}
+              </ul>
+              <Link
+                to="/login"
+                className={`lm-btn ${tier.highlight ? "lm-btn--accent" : "lm-btn--ghost"} lm-btn--block`}
+              >
+                {tier.cta}
+              </Link>
+            </article>
+          ))}
+        </div>
+        <p className="lm-pricing__note" data-reveal>
+          Running more than 3 creators? Agency plans are built personally — white-label and
+          volume pricing are a conversation, not a self-serve toggle.
+        </p>
+        <AgencyContact />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Agency contact flow (plan.md §3). Studio caps self-serve at 3 Instagram
+ * accounts; past that the deal is personal, so we collect enough detail to
+ * quote properly instead of bouncing them to a mailto.
+ */
+function AgencyContact() {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [accounts, setAccounts] = useState("5");
+  const [notes, setNotes] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus("sending");
+    setMessage(null);
+    try {
+      const { message: confirmation } = await api.agency.contact({
+        email: email || undefined,
+        accountCount: Number(accounts) || 5,
+        notes: notes || undefined,
+        plan: "custom",
+      });
+      setMessage(confirmation);
+      setStatus("sent");
+    } catch (err) {
+      setMessage(
+        err instanceof ApiError ? err.message : "Couldn't send that. Email hello@thepilab.in instead."
+      );
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="lm-agency" data-reveal>
+      {!open ? (
+        <button type="button" className="lm-agency__cta" onClick={() => setOpen(true)}>
+          <Briefcase size={16} aria-hidden />
+          <span>
+            <b>Running 4+ accounts?</b> Talk to us about agency pricing.
+          </span>
+          <ArrowRight size={16} aria-hidden />
+        </button>
+      ) : (
+        <form className="lm-agency__form" onSubmit={submit}>
+          <h3 className="lm-agency__title">Tell us what you're running</h3>
+          <p className="lm-agency__blurb">
+            A real person replies — usually within a business day.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
-            <Link to="/login" className="w-full sm:w-auto">
-              <Button
-                size="lg"
-                className="w-full sm:w-auto h-14 px-8 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-base shadow-xl shadow-sky-600/25 transition-all hover:scale-105 active:scale-95"
-              >
-                Enter Creator Studio — $10 Lifetime
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-            </Link>
-
-            <Link to="/dashboard?demo=true" className="w-full sm:w-auto">
-              <Button
-                size="lg"
-                variant="outline"
-                className="w-full sm:w-auto h-14 px-8 rounded-2xl bg-white border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-base shadow-sm"
-              >
-                Explore Studio Demo
-              </Button>
-            </Link>
+          <div className="lm-agency__grid">
+            <label className="lm-agency__field">
+              <span>Work email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@agency.com"
+                autoComplete="email"
+              />
+            </label>
+            <label className="lm-agency__field">
+              <span>How many accounts?</span>
+              <input
+                type="number"
+                min={4}
+                max={500}
+                value={accounts}
+                onChange={(e) => setAccounts(e.target.value)}
+              />
+            </label>
           </div>
 
-          {/* Value Micro-Badges */}
-          <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 font-semibold pt-2">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              No Monthly Subscriptions
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Unlimited Free Contacts
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Cloudflare Edge Cron-as-Queue
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              1500ms Follow-Gate Fail-Open
-            </span>
-          </div>
-        </section>
+          <label className="lm-agency__field">
+            <span>What do you need? (optional)</span>
+            <textarea
+              rows={3}
+              maxLength={1000}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="14 client pages, need white-label + shared reporting."
+            />
+          </label>
 
-        {/* 1. Interactive Live Instagram Simulator */}
-        <InteractiveSimulator />
-
-        {/* 2. ManyChat Tax Savings Calculator */}
-        <SavingsCalculator />
-
-        {/* 3. Feature-by-Feature Comparison Table */}
-        <ComparisonTable />
-
-        {/* 4. Three Architecture Pillars */}
-        <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
-              Engineered for Speed, Reliability & Growth
-            </h2>
-            <p className="text-sm sm:text-base text-slate-600 font-medium mt-2">
-              Why serverless edge architecture beats legacy third-party chatbot wrappers.
+          {message && (
+            <p className={`lm-agency__msg is-${status}`} role="status">
+              {message}
             </p>
-          </div>
+          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
-            <div className="p-8 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center mb-5">
-                  <Zap className="w-6 h-6 text-sky-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">
-                  &lt;15ms ACK + 30–90s Jitter
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
-                  Cloudflare edge workers ingest incoming Instagram webhooks in under 15 milliseconds, then apply randomized 30–90 second human timing jitter before replying. Meta sees natural human interaction, preventing account flags.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-8 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-5">
-                  <ShieldCheck className="w-6 h-6 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">
-                  Biometric Follow-Gate
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
-                  Verify commenter follow status in real time with our 1500ms fail-open window. Encourage casual viewers to become verified profile followers before delivering high-value blueprints or resources.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-8 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center mb-5">
-                  <Layers className="w-6 h-6 text-sky-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">
-                  Official 3-Button Generic Cards
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
-                  Format direct messages with official Meta Messenger Generic Templates. Include a high-res thumbnail, title, subtitle, and up to 3 interactive web and community action buttons with zero coding.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 5. Frequently Asked Questions Accordion */}
-        <FaqAccordion />
-
-        {/* 6. Final Call to Action Card */}
-        <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
-          <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-emerald-600 text-white p-8 sm:p-14 text-center shadow-2xl shadow-sky-600/20 relative overflow-hidden">
-            <div className="max-w-2xl mx-auto relative z-10 space-y-6">
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-sky-100 bg-white/10 px-3.5 py-1 rounded-full border border-white/20">
-                One-Time Lifetime Access License
-              </span>
-              <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
-                Ready to Stop Paying the Monthly ManyChat Tax?
-              </h2>
-              <p className="text-sm sm:text-base text-sky-100 font-medium leading-relaxed">
-                Connect your Instagram account and launch your first automation in minutes with 3-button Generic Template cards, Spintax rotation, and Follow-Gate.
-              </p>
-              <div className="pt-2">
-                <Link to="/login">
-                  <Button
-                    size="lg"
-                    className="h-14 px-8 rounded-2xl bg-white text-slate-900 hover:bg-slate-100 font-bold text-base shadow-lg transition-transform hover:scale-105 active:scale-95"
-                  >
-                    Get RELO for $10
-                    <ArrowRight className="w-5 h-5 ml-2 text-sky-600" />
-                  </Button>
-                </Link>
-              </div>
-              <p className="text-[11px] text-sky-200 font-mono">
-                One-time payment • Unlimited contacts • AES-256-GCM token encryption
-              </p>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* Footer with Legal & Navigation Links */}
-      <footer className="border-t border-slate-200/90 bg-white py-10 px-4 sm:px-8 text-center text-xs font-sans text-slate-500">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-sky-600 flex items-center justify-center shadow-xs">
-              <Sparkles className="w-3.5 h-3.5 text-white" />
-            </div>
-            <span className="font-bold text-slate-800">RELO</span>
-            <span className="text-slate-400">© 2026. All rights reserved.</span>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-slate-600 font-medium text-[11px]">
-            <Link to="/dashboard?demo=true" className="hover:text-sky-600 transition-colors">
-              Studio Demo
-            </Link>
-            <Link to="/login" className="hover:text-sky-600 transition-colors">
-              Sign In
-            </Link>
+          <div className="lm-agency__actions">
             <button
               type="button"
-              onClick={() => setLegalModal("terms")}
-              className="hover:text-sky-600 transition-colors focus-visible:outline-none focus-visible:underline"
+              className="lm-btn lm-btn--ghost"
+              onClick={() => {
+                setOpen(false);
+                setStatus("idle");
+                setMessage(null);
+              }}
             >
-              License Terms
+              Cancel
             </button>
             <button
-              type="button"
-              onClick={() => setLegalModal("privacy")}
-              className="hover:text-sky-600 transition-colors focus-visible:outline-none focus-visible:underline"
+              type="submit"
+              className="lm-btn lm-btn--accent"
+              disabled={status === "sending" || status === "sent"}
             >
-              Privacy Policy
+              {status === "sending" ? "Sending…" : status === "sent" ? "Sent" : "Send enquiry"}
             </button>
-            <a
-              href="https://developers.facebook.com/docs/instagram-platform/instagram-graph-api"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 hover:text-sky-600 transition-colors"
-            >
-              Meta API v21.0
-              <ExternalLink className="w-2.5 h-2.5" />
-            </a>
           </div>
-        </div>
-      </footer>
-
-      {/* Legal Dialog Modal */}
-      {legalModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="legal-modal-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
-        >
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl max-w-lg w-full p-6 sm:p-8 space-y-4 relative text-left">
-            <button
-              type="button"
-              onClick={() => setLegalModal(null)}
-              className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              aria-label="Close dialog"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <h3 id="legal-modal-title" className="text-lg font-black text-slate-900 tracking-tight">
-              {legalModal === "terms" ? "License Terms & Scope ($10 Lifetime)" : "Privacy & Data Sovereignty"}
-            </h3>
-
-            <div className="text-xs text-slate-600 leading-relaxed space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-              {legalModal === "terms" ? (
-                <>
-                  <p>
-                    <strong>1. License Scope:</strong> The $10 lifetime license grants personal and commercial rights to use RELO for the lifetime of the product version. There are zero contact scaling fees, subscriber tier penalties, or recurring monthly charges.
-                  </p>
-                  <p>
-                    <strong>2. Self-Hosted & Serverless Deployment:</strong> RELO executes on Cloudflare Workers and D1 (or your customer-hosted Postgres instance). You maintain full sovereignty over your execution environment and API access keys.
-                  </p>
-                  <p>
-                    <strong>3. Meta Compliance:</strong> Automation uses official Meta Graph API v21.0 endpoints. Creators must adhere to Meta’s Platform Terms, maintain active app authorization, and avoid spamming behaviors.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p>
-                    <strong>1. Data Sovereignty:</strong> We do not sell, rent, or monetize your creator leads, followers, or customer interaction records. All lead data is stored strictly in your dedicated instance.
-                  </p>
-                  <p>
-                    <strong>2. Token Security:</strong> Connected Instagram Page and User Access Tokens are encrypted at rest using industry-standard AES-256-GCM authenticated encryption.
-                  </p>
-                  <p>
-                    <strong>3. Zero Third-Party Trackers:</strong> RELO uses zero third-party advertising SDKs, cross-site trackers, or surveillance scripts.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <Button
-                type="button"
-                onClick={() => setLegalModal(null)}
-                className="rounded-xl font-bold bg-sky-600 text-white hover:bg-sky-500 px-5"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
+        </form>
       )}
+    </div>
+  );
+}
+
+function Faq() {
+  return (
+    <section className="lm-section lm-section--tinted" id="faq">
+      <div className="lm-container lm-container--narrow">
+        <span className="lm-eyebrow" data-reveal>FAQ</span>
+        <h2 className="lm-h2" data-reveal>Asked <em>every time.</em></h2>
+        <div className="lm-faq">
+          {FAQS.map((item) => (
+            <details key={item.q} data-reveal>
+              <summary>
+                {item.q}
+                <ChevronDown size={16} className="lm-faq__chev" aria-hidden />
+              </summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCta() {
+  return (
+    <section className="lm-section lm-cta">
+      <div className="lm-container lm-container--narrow lm-cta__inner" data-reveal>
+        <h2 className="lm-h2">Your next customer <em>already commented.</em></h2>
+        <p>Set up your first funnel in under five minutes. Free — no card needed.</p>
+        <Link to="/login" className="lm-btn lm-btn--accent lm-btn--lg">
+          Start free <ArrowRight size={16} strokeWidth={2.5} />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="lm-footer">
+      <div className="lm-container lm-footer__inner">
+        <div className="lm-logo lm-logo--sm">
+          <span className="lm-logo__mark">R.</span>
+          <span className="lm-logo__name">RELO</span>
+        </div>
+        <span>© 2026 RELO — built by The π Lab</span>
+        <nav aria-label="Footer">
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
+          <a href="https://www.thepilab.in" target="_blank" rel="noreferrer">thepilab.in</a>
+          <a href="https://www.linkedin.com/company/the-%CF%80-lab/" target="_blank" rel="noreferrer">LinkedIn</a>
+        </nav>
+      </div>
+    </footer>
+  );
+}
+
+/* ── root ──────────────────────────────────────────────────── */
+
+export default function Landing() {
+  const rootRef = useReveal();
+
+  useEffect(() => {
+    const prevTitle = document.title;
+    document.title = "RELO — Instagram Comment to DM Automation";
+    return () => {
+      document.title = prevTitle;
+    };
+  }, []);
+
+  useSeo({
+    title: "RELO — Instagram Comment to DM Automation | Official Meta Graph API",
+    description:
+      "RELO turns comments on your Instagram Reels into verified, clickable DMs automatically. Keyword triggers, 3-button cards, follow-gate and Sent-to-Clicked analytics on the official Meta Graph API. Free plan available.",
+    path: "/",
+  });
+
+  return (
+    <div className="lm-page" ref={rootRef}>
+      <Nav />
+      <main>
+        <Hero />
+        <HowItWorks />
+        <Features />
+        <Pricing />
+        <Faq />
+        <FinalCta />
+      </main>
+      <Footer />
     </div>
   );
 }

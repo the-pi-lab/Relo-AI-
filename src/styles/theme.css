@@ -1,0 +1,124 @@
+/* ═══════════════════════════════════════════════════════════════
+   RELO — Design Tokens
+   One semantic token set, two first-class themes.
+   Applied via <html data-theme="light|dark"> — "system" resolves
+   through prefers-color-scheme in lib/theme.ts.
+   Light = default (modern SaaS canvas), Dark = deep slate.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --bg: #ffffff;
+  --surface: #f7f8fa;
+  --surface-2: #eff1f5;
+  --surface-inset: #f7f8fa;
+
+  /* text */
+  --text: #0f1115;
+  --text-soft: #4b5563;
+  --text-faint: #8a919e;
+
+  /* lines */
+  --border: #e7e9ee;
+  --border-strong: #d2d6de;
+
+  /* ── the one accent: VOLT ────────────────────────────────────────
+     A signature lime that no competitor in this category uses (they are all
+     blue / purple / green). It is deliberately two-mode, not one hex:
+       · FILL   -- bright volt + near-black text. Popping, editorial.
+       · INK    -- deep volt for text/borders, where bright lime would
+                  fail contrast on a white canvas.
+     Change the brand here and re-run: python scripts/generate-og.py      */
+  --accent: #c9f94e;          /* fill */
+  --accent-strong: #dcff6b;
+  --accent-soft: #f3fbdc;
+  --accent-ink: #3a5500;      /* text, borders, icons on light surfaces — 4.6:1 on white */
+  --accent-text: #3a5500;
+  --accent-contrast: #0b0d12; /* text sitting ON a volt fill */
+
+  /* status — warm-shifted so green checks never read as the brand lime */
+  --success: #0f7a4a;
+  --success-soft: #e6f5ec;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+
+  /* inverted (high-contrast primary buttons) */
+  --btn-primary-bg: #0f1115;
+  --btn-primary-text: #ffffff;
+
+  /* elevation */
+  --shadow-sm: 0 1px 2px rgba(15, 17, 21, 0.05);
+  --shadow-md: 0 1px 2px rgba(15, 17, 21, 0.05), 0 10px 30px -18px rgba(15, 17, 21, 0.25);
+  --shadow-lg: 0 2px 4px rgba(15, 17, 21, 0.06), 0 24px 48px -24px rgba(15, 17, 21, 0.35);
+
+  /* type */
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+
+  /* motion */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur: 250ms;
+
+  /* radii */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b0d12;
+  --surface: #12151c;
+  --surface-2: #191d26;
+  --surface-inset: #10131a;
+
+  --text: #e6e8ef;
+  --text-soft: #9aa3b2;
+  --text-faint: #626b7c;
+
+  --border: #232833;
+  --border-strong: #323949;
+
+  --accent: #c9f94e;
+  --accent-strong: #dcff6b;
+  --accent-soft: rgba(201, 249, 78, 0.13);
+  --accent-ink: #c9f94e;   /* on dark, bright volt IS the ink */
+  --accent-text: #c9f94e;
+  --accent-contrast: #0b0d12;
+
+  --success: #3ddc84;
+  --success-soft: rgba(61, 220, 132, 0.14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+
+  --btn-primary-bg: #e6e8ef;
+  --btn-primary-text: #0b0d12;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -18px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.4), 0 24px 48px -24px rgba(0, 0, 0, 0.8);
+}
+
+/* Base application — every page sits on these */
+html { background: var(--bg); }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--accent); color: var(--accent-contrast); }
+
+/* Volt is the one loud moment. Used sparingly on purpose. */
+.volt-text { color: var(--accent-ink); }
+.volt-fill { background: var(--accent); color: var(--accent-contrast); }
