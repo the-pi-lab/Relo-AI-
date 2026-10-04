@@ -4,7 +4,6 @@
     "module": "ES2022",
     "moduleResolution": "Bundler",
     "types": ["@cloudflare/workers-types"],
-    "typeRoots": ["../node_modules/@types", "../node_modules"],
     "lib": ["ES2022"],
     "strict": true,
     "noEmit": true,
