@@ -4,6 +4,7 @@ import {
   markJobProcessing,
   markJobCompleted,
   markJobFailedOrRetry,
+  markJobPublicReplyId,
   isThreadPausedByHumanTakeover,
   getAccountById,
   getAutomationById,
@@ -11,7 +12,11 @@ import {
   upsertCapturedLead,
   markAccountTokenExpired,
   recordWebhookAuditLog,
+  insertFollowUpJob,
+  hasLeadRepliedSince,
+  getShortLinksForAutomation,
 } from "../db/queries";
+import { createAutomationId, createCommentId, createJobId } from "../types/ids";
 import { decryptSecret } from "../crypto";
 import { pickCommentReply, spin } from "./spintax";
 import { metaGraphClient } from "../meta/client";
@@ -50,7 +55,13 @@ export async function processDueJobsBatch(
     return result;
   }
 
-  const masterKey = env.ENCRYPTION_MASTER_KEY || env.JWT_SECRET;
+  // Hard-required: no silent fallback to the JWT secret.
+  if (!env.ENCRYPTION_MASTER_KEY) {
+    throw new Error(
+      "ENCRYPTION_MASTER_KEY is not configured. Refusing to dispatch DMs without the token vault key."
+    );
+  }
+  const masterKey = env.ENCRYPTION_MASTER_KEY;
 
   for (const job of dueJobs) {
     // 1. Atomic lock: transition status from 'pending' to 'processing'
@@ -72,6 +83,23 @@ export async function processDueJobsBatch(
         await markJobCompleted(env.DB, job.id, "SKIPPED_HUMAN_TAKEOVER");
         result.skippedCount++;
         continue;
+      }
+
+      // 2b. Follow-up DMs: send only if the lead hasn't messaged us since the
+      // original DM (respecting the human takeover + 24h window).
+      if (job.isFollowUp) {
+        const parentDoneAt = job.createdAt;
+        const replied = await hasLeadRepliedSince(
+          env.DB,
+          job.accountId,
+          job.commenterUserId,
+          parentDoneAt
+        );
+        if (replied) {
+          await markJobCompleted(env.DB, job.id, "SKIPPED_LEAD_REPLIED");
+          result.skippedCount++;
+          continue;
+        }
       }
 
       // 3. Fetch connected Instagram account
@@ -116,8 +144,10 @@ export async function processDueJobsBatch(
       }
 
       // 7. Dispatch Public Comment Reply (if configured)
-      let publicReplyId: string | undefined;
-      if (automation.commentReplies && automation.commentReplies.length > 0) {
+      // Skip when a previous attempt already posted it — re-dispatching would
+      // create visible duplicate comments and spam-flag the account.
+      let publicReplyId: string | undefined = job.publicReplyId;
+      if (!publicReplyId && automation.commentReplies && automation.commentReplies.length > 0) {
         try {
           const selectedReply = pickCommentReply(automation.commentReplies);
           const spunCommentText = spin(selectedReply).replace(
@@ -131,6 +161,9 @@ export async function processDueJobsBatch(
             spunCommentText
           );
           publicReplyId = commentRes.id;
+          // Persist immediately: a retryable failure later in this job must
+          // not produce a second public reply on the next attempt.
+          await markJobPublicReplyId(env.DB, job.id, publicReplyId);
         } catch (commentErr) {
           // If comment was deleted or comment reply blocked, log but don't fail entire DM flow
           console.warn(`[Comment Reply Warning] Job ${job.id}:`, commentErr);
@@ -155,7 +188,32 @@ export async function processDueJobsBatch(
           },
         };
       } else if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
-        // High-converting 3-Button Generic Template Card
+        // High-converting 3-Button Generic Template Card.
+        // Buttons route through RELO short links for Sent → Clicked tracking.
+        const links = await getShortLinksForAutomation(env.DB, automation.id);
+        let buttons = automation.templateCard.buttons.map((btn, i) => {
+          const link = links.find((l) => l.buttonIndex === i);
+          if (btn.type === "web_url" && link) {
+            const base = env.PUBLIC_BASE_URL || "";
+            if (base) {
+              return { ...btn, url: `${base.replace(/\/$/, "")}/l/${link.id}` };
+            }
+          }
+          return btn;
+        });
+
+        // Free tier: RELO branding button occupies the slot AFTER the user's
+        // last button (plan.md §3 — the viral loop, injected at dispatch so
+        // tier changes apply to in-flight jobs immediately).
+        if (account.plan === "free") {
+          const brandingUrl = `${(env.PUBLIC_APP_URL || "https://relo.ai").replace(/\/$/, "")}/?ref=${account.id}`;
+          buttons = [
+            ...buttons,
+            { type: "web_url" as const, title: "⚡ Automated by RELO", url: brandingUrl },
+          ];
+        }
+        const finalButtons = buttons.slice(0, 3) as typeof automation.templateCard.buttons;
+
         dmPayload = {
           recipient: { comment_id: job.commentId },
           message: {
@@ -168,7 +226,7 @@ export async function processDueJobsBatch(
                     title: automation.templateCard.title,
                     subtitle: automation.templateCard.subtitle,
                     image_url: automation.templateCard.imageUrl,
-                    buttons: automation.templateCard.buttons,
+                    buttons: finalButtons,
                   },
                 ],
               },
@@ -198,6 +256,23 @@ export async function processDueJobsBatch(
       // 10. Mark Job as Successfully Completed
       await markJobCompleted(env.DB, job.id, dmResponse.message_id || publicReplyId);
       result.completedCount++;
+
+      // 10b. Schedule the one follow-up DM (Pro/Studio only, plan.md §4.2):
+      // fires N minutes later unless the lead messages us first.
+      if (!job.isFollowUp && automation.followUpEnabled && account.plan !== "free") {
+        const nowSec = Math.floor(Date.now() / 1000);
+        await insertFollowUpJob(env.DB, {
+          id: createJobId(crypto.randomUUID()),
+          accountId: job.accountId,
+          commentId: job.commentId,
+          commenterUserId: job.commenterUserId,
+          commenterUsername: job.commenterUsername,
+          postId: job.postId,
+          matchedAutomationId: automation.id,
+          parentJobId: job.id,
+          sendAt: nowSec + (automation.followUpDelayMinutes ?? 60) * 60,
+        });
+      }
 
       // Audit log success
       await recordWebhookAuditLog(env.DB, {

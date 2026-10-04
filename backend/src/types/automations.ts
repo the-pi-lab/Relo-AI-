@@ -44,4 +44,6 @@ export interface ReelAutomation {
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
+  followUpEnabled: boolean; // Pro/Studio: one no-click nudge after the DM
+  followUpDelayMinutes: number;
 }

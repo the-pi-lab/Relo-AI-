@@ -57,6 +57,7 @@ async function runTests() {
     META_GRAPH_API_VERSION: "v21.0",
     JWT_SECRET: "test_jwt_secret_32_bytes_super_secure!",
     ENCRYPTION_MASTER_KEY: "test_master_encryption_key_32_bytes!",
+    DEBUG_OTPS: "1", // test env echoes the OTP so the flow can be asserted
   };
   console.log("✓ Database initialized.");
 
@@ -154,8 +155,8 @@ async function runTests() {
     .prepare(
       `INSERT INTO connected_accounts (
         id, user_id, instagram_user_id, username, profile_picture_url,
-        access_token_encrypted, token_expires_at, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        access_token_encrypted, token_expires_at, is_active, created_at, updated_at, plan
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'pro')`
     )
     .run(
       accountId,
@@ -242,6 +243,7 @@ async function runTests() {
     }),
   });
   const validAutoRes = await worker.fetch(validAutoReq, env, {} as any);
+  if (validAutoRes.status !== 200) { console.log('DEBUG BODY:', JSON.stringify(await validAutoRes.json())); }
   assert.strictEqual(validAutoRes.status, 200);
   const validAutoJson: any = await validAutoRes.json();
   assert.strictEqual(validAutoJson.success, true);

@@ -87,6 +87,13 @@ export interface GenericTemplateElement {
   buttons?: [GenericTemplateButton, ...GenericTemplateButton[]]; // 1 to 3 buttons max
 }
 
+/**
+ * Meta's approved human-agent messaging tag (plan.md §4.3). It extends the
+ * messaging window from 24 hours to 7 days, but only once the app has been
+ * approved for the tag — an unapproved tag is rejected by the API.
+ */
+export type MessageTag = "HUMAN_AGENT";
+
 export interface GenericTemplatePayload {
   recipient: { comment_id?: string; id?: string };
   message: {
@@ -97,6 +104,7 @@ export interface GenericTemplatePayload {
         elements: [GenericTemplateElement, ...GenericTemplateElement[]];
       };
     };
+    tag?: MessageTag;
   };
 }
 
@@ -104,6 +112,7 @@ export interface PlainTextPayload {
   recipient: { comment_id?: string; id?: string };
   message: {
     text: string;
+    tag?: MessageTag;
   };
 }
 

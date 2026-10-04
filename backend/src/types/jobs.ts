@@ -25,6 +25,9 @@ export type PendingJob = JobBase & {
   status: "pending";
   sendAt: number; // Unix timestamp with 30-90s human anti-spam jitter
   retryCount: number;
+  publicReplyId?: string; // Set once the public reply has been dispatched
+  parentJobId?: string; // Set when this job is a follow-up DM
+  isFollowUp: boolean;
 };
 
 export type ProcessingJob = JobBase & {

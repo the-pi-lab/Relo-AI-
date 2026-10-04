@@ -109,6 +109,7 @@ async function runE2ETests() {
     META_GRAPH_API_VERSION: "v21.0",
     JWT_SECRET: "e2e_jwt_secret_chatflow_super_key_32c",
     ENCRYPTION_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    DEBUG_OTPS: "1", // test env echoes the OTP so the flow can be asserted
   };
 
   // Step 1: Creator signs in via Passwordless Email OTP
@@ -151,8 +152,8 @@ async function runE2ETests() {
     .prepare(
       `INSERT INTO connected_accounts (
         id, user_id, instagram_user_id, username, access_token_encrypted,
-        token_expires_at, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        token_expires_at, is_active, created_at, updated_at, plan
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 'pro')`
     )
     .run(
       testAccountId,

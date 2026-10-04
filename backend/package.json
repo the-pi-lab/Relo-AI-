@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "npx tsx tests/phase3.test.ts && npx tsx tests/phase4.test.ts && npx tsx tests/phase5.test.ts && npx tsx tests/e2e.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "npx tsx tests/phase3.test.ts && npx tsx tests/phase4.test.ts && npx tsx tests/phase5.test.ts && npx tsx tests/phase8-products.test.ts && npx tsx tests/phase9-power-scale.test.ts && npx tsx tests/phase10-growth-engine.test.ts && npx tsx tests/phase11-content-planner.test.ts && npx tsx tests/e2e.test.ts",
     "d1:migrate": "wrangler d1 execute relo-d1 --file=./schema.sql",
     "d1:migrate:local": "wrangler d1 execute relo-d1 --local --file=./schema.sql"
   },

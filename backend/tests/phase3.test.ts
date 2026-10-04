@@ -120,7 +120,8 @@ async function runTests() {
               text: "Tell me more about pricing",
             },
           },
-          // 5. Echo message (sent by bot, should be dropped)
+          // 5. Echo message (sent by the page itself — preserved so Human
+          // Takeover auto-pause can detect the creator replying manually)
           {
             sender: { id: "user_customer_999" },
             recipient: { id: "ig_page_111" },
@@ -147,9 +148,9 @@ async function runTests() {
   };
 
   const parsedEvents = parseWebhookEnvelope(mockWebhookPayload);
-  assert.strictEqual(parsedEvents.length, 2, "Only 2 valid events should pass filters");
+  assert.strictEqual(parsedEvents.length, 3, "2 valid events + 1 creator echo should pass filters");
 
-  const [cEvent, mEvent] = parsedEvents;
+  const [cEvent, mEvent, echoEvent] = parsedEvents;
   assert.strictEqual(cEvent.type, "comment");
   if (cEvent.type === "comment") {
     assert.strictEqual(cEvent.commentId, "comment_valid_1");
@@ -162,8 +163,15 @@ async function runTests() {
   if (mEvent.type === "message") {
     assert.strictEqual(mEvent.mid, "mid_msg_100");
     assert.strictEqual(mEvent.text, "Tell me more about pricing");
+    assert.strictEqual(mEvent.isEcho, false);
   }
-  console.log("✓ Webhook parser passed (self-comments & echoes correctly filtered).");
+
+  assert.strictEqual(echoEvent.type, "message");
+  if (echoEvent.type === "message") {
+    assert.strictEqual(echoEvent.mid, "mid_echo_101");
+    assert.strictEqual(echoEvent.isEcho, true, "Creator manual replies must surface as echoes");
+  }
+  console.log("✓ Webhook parser passed (self-comments filtered, echoes preserved for takeover).");
 
   // 3. KEYWORD ENGINE TESTS (Unicode boundaries & diacritic folding)
   console.log("\n[3] Testing Keyword Engine...");

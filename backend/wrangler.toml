@@ -1,16 +1,21 @@
 name = "relo-engine"
 main = "src/index.ts"
-compatibility_date = "2024-09-23"
+compatibility_date = "2025-01-15"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "production"
 META_GRAPH_API_VERSION = "v21.0"
+# Worker origin used for short links (/l/:id) - set to your deployed URL
+PUBLIC_BASE_URL = "https://relo-engine.YOUR-SUBDOMAIN.workers.dev"
+# Frontend origin used by the RELO branding button redirect (/r/:accountId)
+PUBLIC_APP_URL = "https://YOUR-APP.vercel.app"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "relo-d1"
-database_id = "relo-d1-prod"
+# Replace with the UUID emitted by `wrangler d1 create relo-d1`
+database_id = "REPLACE_WITH_D1_DATABASE_UUID"
 
 [triggers]
 crons = ["* * * * *"] # Executes every 1 minute for Cron-as-Queue batch processing

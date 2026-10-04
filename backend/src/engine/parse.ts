@@ -23,6 +23,9 @@ export interface ParsedMessageEvent {
   mid: string;
   text?: string;
   quickReplyPayload?: string;
+  /** True when the message is an echo of one sent by the account itself —
+   *  i.e. the creator replied manually. Used for Human Takeover pausing. */
+  isEcho: boolean;
   timestamp: number;
 }
 
@@ -146,19 +149,17 @@ function parseMessagingEvent(
   }
 
   const senderId = msg.sender.id as InstagramUserId;
+  const isEcho = Boolean(msg.message?.is_echo);
 
-  // Drop self-sends
-  if (senderId === accountId || (options.ignoreSenderId && senderId === options.ignoreSenderId)) {
+  // Self-sends that are NOT echoes are structurally invalid — drop them.
+  // Echoes (messages the page/account itself sent, e.g. the creator replying
+  // manually) are preserved so Human Takeover auto-pause can key off them.
+  if (!isEcho && (senderId === accountId || (options.ignoreSenderId && senderId === options.ignoreSenderId))) {
     return null;
   }
 
   const message = msg.message;
   if (!message) {
-    return null;
-  }
-
-  // Early filter: Echo messages (sent by the page/bot)
-  if (message.is_echo) {
     return null;
   }
 
@@ -175,8 +176,9 @@ function parseMessagingEvent(
   const text = message.text ? message.text.trim() : undefined;
   const quickReplyPayload = message.quick_reply?.payload;
 
-  // Must contain either text or a quick-reply action payload
-  if (!text && !quickReplyPayload) {
+  // Echoes drive takeover pausing and don't need content; real messages must
+  // contain either text or a quick-reply action payload
+  if (!isEcho && !text && !quickReplyPayload) {
     return null;
   }
 
@@ -188,6 +190,7 @@ function parseMessagingEvent(
     mid,
     text,
     quickReplyPayload,
+    isEcho,
     timestamp: msg.timestamp || Date.now(),
   };
 }

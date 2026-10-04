@@ -69,9 +69,11 @@ export class MetaGraphClient {
     }
 
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${options.token}`,
       Accept: "application/json",
     };
+    if (options.token) {
+      headers.Authorization = `Bearer ${options.token}`;
+    }
 
     let bodyPayload: string | undefined;
     if (options.body) {
@@ -273,6 +275,32 @@ export class MetaGraphClient {
           client_id: appId,
           client_secret: appSecret,
           fb_exchange_token: shortLivedToken,
+        },
+      }
+    );
+  }
+
+  /**
+   * 6b. Exchange the OAuth authorization code for a short-lived user token
+   * (server-side login flow). The redirect_uri must exactly match the one
+   * used when the code was minted.
+   */
+  async exchangeCodeForToken(
+    appId: string,
+    appSecret: string,
+    code: string,
+    redirectUri?: string
+  ): Promise<{ access_token: string; token_type: string }> {
+    return this.request<{ access_token: string; token_type: string }>(
+      `/oauth/access_token`,
+      {
+        method: "GET",
+        token: "",
+        queryParams: {
+          client_id: appId,
+          client_secret: appSecret,
+          code,
+          ...(redirectUri ? { redirect_uri: redirectUri } : {}),
         },
       }
     );

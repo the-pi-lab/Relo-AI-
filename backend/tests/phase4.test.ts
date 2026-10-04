@@ -119,8 +119,8 @@ async function runTests() {
     .prepare(
       `INSERT INTO connected_accounts (
         id, user_id, instagram_user_id, username, access_token_encrypted,
-        token_expires_at, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        token_expires_at, is_active, created_at, updated_at, plan
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 'pro')`
     )
     .run(
       testAccountId,

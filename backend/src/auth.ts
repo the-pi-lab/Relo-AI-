@@ -98,6 +98,10 @@ export async function verifyJwt(
   const signingInput = `${encodedHeader}.${encodedPayload}`;
 
   try {
+    // Reject tokens whose declared algorithm is not HS256 (algorithm confusion)
+    const header = JSON.parse(base64UrlDecode(encodedHeader)) as { alg?: string };
+    if (header.alg !== "HS256") return null;
+
     const key = await getHmacKey(secret);
     const encoder = new TextEncoder();
 
@@ -121,8 +125,12 @@ export async function verifyJwt(
     const payload: JwtPayload = JSON.parse(payloadJson);
 
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      // Token has expired
+    // Tokens without a hard expiry are rejected — never accept immortal tokens
+    if (typeof payload.exp !== "number" || payload.exp < now - 60) {
+      return null;
+    }
+    if (typeof payload.iat === "number" && payload.iat > now + 300) {
+      // Issued in the future beyond clock-skew tolerance
       return null;
     }
 
@@ -148,16 +156,18 @@ export function generateOtpCode(): string {
 }
 
 /**
- * Sends a 6-digit login OTP code via Resend Email API
+ * Sends a 6-digit login OTP code via Resend Email API.
+ * Failures propagate to the caller so the API never reports success when
+ * no email went out — and the raw code is NEVER returned to HTTP clients.
  */
 export async function sendOtpEmail(
   email: string,
   code: string,
   resendApiKey?: string
-): Promise<{ success: boolean; debugCode?: string }> {
+): Promise<{ success: boolean; error?: string }> {
   if (!resendApiKey) {
     console.log(`[Auth Dev Mode] Generated OTP for ${email}: ${code}`);
-    return { success: true, debugCode: code };
+    return { success: true };
   }
 
   try {
@@ -185,13 +195,14 @@ export async function sendOtpEmail(
     });
 
     if (!res.ok) {
-      console.warn(`[Resend Warning] Failed to send email to ${email}. Status: ${res.status}`);
-      return { success: true, debugCode: code };
+      const detail = await res.text().catch(() => "");
+      console.warn(`[Resend Warning] Failed to send email to ${email}. Status: ${res.status}. ${detail}`);
+      return { success: false, error: `Email delivery failed (HTTP ${res.status})` };
     }
 
     return { success: true };
   } catch (err) {
     console.warn(`[Resend Error] Network failure:`, err);
-    return { success: true, debugCode: code };
+    return { success: false, error: "Email delivery failed (network error)" };
   }
 }

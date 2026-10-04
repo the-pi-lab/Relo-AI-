@@ -15,6 +15,7 @@ export type CommentId = Branded<string, "CommentId">;
 export type JobId = Branded<string, "JobId">;
 export type AutomationId = Branded<string, "AutomationId">;
 export type LeadId = Branded<string, "LeadId">;
+export type ProductId = Branded<string, "ProductId">;
 
 // Helper constructors with runtime string validation
 export function createUserId(id: string): UserId {
@@ -47,4 +48,8 @@ export function createAutomationId(id: string): AutomationId {
 
 export function createLeadId(id: string): LeadId {
   return id as LeadId;
+}
+
+export function createProductId(id: string): ProductId {
+  return id as ProductId;
 }
