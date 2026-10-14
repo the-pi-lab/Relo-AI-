@@ -1,0 +1,593 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── RELO design tokens — THE DUSK OBSERVATORY ──────────────────────────
+   A world after sundown: deep violet-ink void, spectral aurora accents,
+   a moon-gold warmth that keeps it cozy. Token names are stable — the
+   whole app (landing + studio) re-tunes through this one block.          */
+:root {
+  --radius: 1rem;
+
+  /* void paper scale — the ground you stand on */
+  --paper: #0d0b16;
+  --paper-2: #14121f;
+  --card: #171523;
+  --card-soft: #1b1930;
+
+  /* bone ink scale — light against the dark */
+  --ink: #eceaf6;
+  --ink-2: #c9c5de;
+  --ink-3: #948fb2;
+  --ink-4: #675f88;
+
+  /* the spectral set — iris leads, moon-gold warms, aurora-mint confirms */
+  --ember: #8b80f9;
+  --ember-hot: #a99dff;
+  --ember-deep: #7366ec;
+  --ember-wash: rgba(139, 128, 249, 0.14);
+  --on-ember: #12101f;
+  --honey: #f2c48d;
+  --moss: #63ddb6;
+  --clay: #ef93ba;
+  --sky: #7cc4f2;
+
+  /* cinematic deeper void */
+  --night: #08070d;
+  --night-2: #100e1b;
+  --bone: #f2f0fb;
+  --bone-dim: #a59ec6;
+
+  --line: rgba(236, 234, 246, 0.08);
+  --line-strong: rgba(236, 234, 246, 0.16);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 28px -10px rgba(4, 3, 9, 0.65);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 44px -14px rgba(4, 3, 9, 0.75);
+  --shadow-ember: 0 10px 34px -10px rgba(139, 128, 249, 0.5);
+
+  /* surfaces the canvases + cursor light read */
+  --plate-bg: #0a0912;
+  --plate-bg-deep: #08070d;
+  --input-focus-bg: #181529;
+  --scanline: rgba(255, 255, 255, 0.026);
+  --grain-opacity: 0.14;
+
+  /* shadcn bridge */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--card);
+  --card-foreground: var(--ink);
+  --popover: #191627;
+  --popover-foreground: var(--ink);
+  --primary: var(--ember);
+  --primary-foreground: #12101f;
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted: rgba(236, 234, 246, 0.05);
+  --muted-foreground: var(--ink-3);
+  --accent: rgba(139, 128, 249, 0.13);
+  --accent-foreground: #beb4ff;
+  --destructive: #f2555a;
+  --destructive-foreground: #fff0f0;
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: rgba(139, 128, 249, 0.5);
+  --chart-1: #8b80f9;
+  --chart-2: #f2c48d;
+  --chart-3: #63ddb6;
+  --chart-4: #7cc4f2;
+  --chart-5: #ef93ba;
+  --sidebar: #100e1b;
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ember);
+  --sidebar-primary-foreground: #12101f;
+  --sidebar-accent: rgba(236, 234, 246, 0.06);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--ring);
+}
+
+/* ── DAYBREAK — the same world at noon ──────────────────────────────────
+   Warm bone paper instead of void; the spectral set deepens for contrast.
+   bg-night / text-bone flip together, so every "deep-void section" becomes
+   a sunlit meadow with ink writing — the world, not a different app.     */
+html.day {
+  --paper: #f4f1e9;
+  --paper-2: #ede9dd;
+  --card: #fbf8f1;
+  --card-soft: #f1ede1;
+
+  --ink: #262038;
+  --ink-2: #45405e;
+  --ink-3: #6d6789;
+  --ink-4: #928caa;
+
+  --ember: #6f61ea;
+  --ember-hot: #5a4be0;
+  --ember-deep: #5648cf;
+  --ember-wash: rgba(111, 97, 234, 0.11);
+  --on-ember: #ffffff;
+  --honey: #b0771f;
+  --moss: #178f68;
+  --clay: #d4548a;
+  --sky: #2d7fc0;
+
+  --night: #efe9db;
+  --night-2: #e6dfcd;
+  --bone: #2a2440;
+  --bone-dim: #6d6789;
+
+  --line: rgba(38, 32, 56, 0.12);
+  --line-strong: rgba(38, 32, 56, 0.22);
+
+  --shadow-soft: 0 1px 2px rgba(48, 40, 20, 0.06), 0 8px 28px -10px rgba(48, 40, 20, 0.16);
+  --shadow-lift: 0 2px 4px rgba(48, 40, 20, 0.07), 0 18px 44px -14px rgba(48, 40, 20, 0.24);
+  --shadow-ember: 0 10px 34px -12px rgba(111, 97, 234, 0.4);
+
+  --plate-bg: #fbf8f1;
+  --plate-bg-deep: #f3efe4;
+  --input-focus-bg: #ffffff;
+  --scanline: rgba(38, 32, 56, 0.03);
+  --grain-opacity: 0.09;
+
+  --popover: #fbf8f1;
+  --popover-foreground: #262038;
+  --primary: var(--ember);
+  --primary-foreground: #ffffff;
+  --muted: rgba(38, 32, 56, 0.05);
+  --accent: rgba(111, 97, 234, 0.1);
+  --accent-foreground: #5648cf;
+  --ring: rgba(111, 97, 234, 0.45);
+  --chart-1: #6f61ea;
+  --chart-2: #b0771f;
+  --chart-3: #178f68;
+  --chart-4: #2d7fc0;
+  --chart-5: #d4548a;
+  --sidebar: #f0ece0;
+  --sidebar-primary: var(--ember);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(38, 32, 56, 0.05);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sans-display), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-sans-mono), ui-monospace, "SFMono-Regular", monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-card-soft: var(--card-soft);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-ember: var(--ember);
+  --color-ember-hot: var(--ember-hot);
+  --color-ember-deep: var(--ember-deep);
+  --color-ember-wash: var(--ember-wash);
+  --color-honey: var(--honey);
+  --color-moss: var(--moss);
+  --color-clay: var(--clay);
+  --color-sky: var(--sky);
+  --color-night: var(--night);
+  --color-night-2: var(--night-2);
+  --color-bone: var(--bone);
+  --color-bone-dim: var(--bone-dim);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans-body), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  font-size: 15.5px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+/* ── typography — the voice of the world, tuned ──────────────────────── */
+p {
+  text-wrap: pretty;
+}
+h1, h2, h3, h4 {
+  text-wrap: balance;
+}
+.font-display {
+  font-family: var(--font-sans-display), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.028em;
+  font-optical-sizing: auto;
+}
+/* the italic voice — Instrument Serif, for words that lean in */
+.serif-accent {
+  font-family: var(--font-serif-accent), Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.text-balance {
+  text-wrap: balance;
+}
+.eyebrow {
+  font-family: var(--font-sans-mono), monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-feature-settings: "tnum";
+}
+.eyebrow--ember {
+  color: var(--ember-hot);
+}
+.eyebrow--bone {
+  color: var(--bone-dim);
+}
+/* ink on ember surfaces — flips with the theme */
+.on-ember {
+  color: var(--on-ember);
+}
+/* numerals that don't jitter when they count */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+/* spectral gradient text — iris → moon-gold, the light of this world */
+.text-spectral {
+  background: linear-gradient(100deg, #a99dff 5%, #cbb9ff 32%, #f2c48d 68%, #ffd9a8 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html.day .text-spectral {
+  background: linear-gradient(100deg, #5648cf 5%, #7a68e8 34%, #a06a15 70%, #8a5c10 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.text-spectral--mint {
+  background: linear-gradient(100deg, #63ddb6 5%, #7cc4f2 55%, #a99dff 105%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html.day .text-spectral--mint {
+  background: linear-gradient(100deg, #0f7d5b 5%, #2273ab 55%, #5648cf 105%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+::selection {
+  background: rgba(139, 128, 249, 0.38);
+  color: var(--bone);
+}
+html.day ::selection {
+  background: rgba(111, 97, 234, 0.22);
+  color: var(--ink);
+}
+
+/* slim scrollbars that match the sky */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-4);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── grain — film noise so the frame feels like celluloid ───────────────
+   Perf note: NO mix-blend-mode here. A blended fullscreen fixed layer
+   forces the compositor to re-blend on every frame of every animation —
+   that alone read as "hover lag everywhere". Plain opacity is nearly free. */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+.grain-fixed {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.3'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+
+/* ── keyframes ──────────────────────────────────────────────────────── */
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes marquee-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes shimmer-x {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes blip {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes ring-ping {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+@keyframes caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+}
+@keyframes drift {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  33% { transform: translate3d(24px, -18px, 0) rotate(2deg); }
+  66% { transform: translate3d(-16px, 12px, 0) rotate(-2deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+.anim-float { animation: float-y 6s ease-in-out infinite; }
+.anim-blip { animation: blip 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.anim-drift { animation: drift 18s ease-in-out infinite; }
+.anim-spin-slow { animation: spin-slow 14s linear infinite; }
+
+/* shimmering headline sheen — moonlight catching the letters */
+.sheen {
+  background: linear-gradient(
+    110deg,
+    var(--ink) 38%,
+    var(--ember-hot) 50%,
+    var(--ink) 62%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-x 7s linear infinite;
+}
+.sheen--bone {
+  background: linear-gradient(
+    110deg,
+    var(--bone) 38%,
+    var(--ember-hot) 50%,
+    var(--bone) 62%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ascii dot-divider */
+.ascii-divider {
+  font-family: var(--font-sans-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--ink-4);
+  user-select: none;
+}
+
+/* dotted blueprint backdrop — star-chart on the void */
+.dotgrid {
+  background-image: radial-gradient(var(--line-strong) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.55;
+}
+.dotgrid--bone {
+  background-image: radial-gradient(var(--line-strong) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.5;
+}
+
+/* glass surfaces — observatory glass, one tint per sky.
+   Kept ONLY on small chrome (nav, rails) — large blurred surfaces cost. */
+.glass {
+  background: color-mix(in srgb, var(--paper) 68%, transparent);
+  backdrop-filter: blur(14px) saturate(1.35);
+  -webkit-backdrop-filter: blur(14px) saturate(1.35);
+}
+.glass-dark {
+  background: color-mix(in srgb, var(--night) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+
+/* ── world ambience ─────────────────────────────────────────────────── */
+
+/* soft interior vignette — the world falls away at its edges */
+.vignette::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    120% 105% at 50% 42%,
+    transparent 52%,
+    color-mix(in srgb, var(--night) 55%, transparent) 84%,
+    color-mix(in srgb, var(--night) 88%, transparent) 100%
+  );
+}
+.vignette-dark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    130% 110% at 50% 38%,
+    transparent 46%,
+    color-mix(in srgb, var(--night) 62%, transparent) 84%,
+    var(--night) 100%
+  );
+}
+
+/* light leak — aurora bleeding into the frame edge */
+.light-leak {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  filter: blur(60px);
+}
+
+/* the world breathes — very slow scale for big ambient pieces */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.025); opacity: 1; }
+}
+.anim-breathe { animation: breathe 9s ease-in-out infinite; }
+
+/* CRT scanlines — for framed ASCII windows (token-driven: day has its own) */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    var(--scanline) 0px,
+    var(--scanline) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* hairline that fades at both ends */
+.hairline-x {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line-strong) 18%, var(--line-strong) 82%, transparent);
+}
+
+/* aurora wash — the CSS light of the world (both skies) */
+.aurora-fallback {
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--ember-wash), transparent 60%),
+    radial-gradient(90% 70% at 82% 28%, rgba(99, 221, 182, 0.08), transparent 55%),
+    radial-gradient(70% 60% at 12% 46%, rgba(242, 196, 141, 0.07), transparent 60%);
+}
+html.day .aurora-fallback {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(111, 97, 234, 0.12), transparent 62%),
+    radial-gradient(90% 70% at 82% 30%, rgba(23, 143, 104, 0.07), transparent 55%),
+    radial-gradient(70% 60% at 12% 46%, rgba(176, 119, 31, 0.08), transparent 60%);
+}
+
+/* nebula wash for deep-void sections without WebGL */
+.nebula-fallback {
+  background:
+    radial-gradient(80% 60% at 50% 110%, rgba(115, 102, 236, 0.3), rgba(242, 196, 141, 0.07) 46%, transparent 72%),
+    radial-gradient(40% 30% at 50% 100%, rgba(169, 157, 255, 0.22), transparent 70%);
+}
+html.day .nebula-fallback {
+  background:
+    radial-gradient(80% 60% at 50% 110%, rgba(111, 97, 234, 0.14), rgba(176, 119, 31, 0.08) 46%, transparent 72%),
+    radial-gradient(40% 30% at 50% 100%, rgba(111, 97, 234, 0.1), transparent 70%);
+}
+/* iris wash */
+.iris-fallback {
+  background:
+    radial-gradient(46% 60% at 50% 48%, rgba(139, 128, 249, 0.16), transparent 70%),
+    radial-gradient(20% 26% at 54% 44%, rgba(242, 196, 141, 0.1), transparent 75%);
+}
+html.day .iris-fallback {
+  background:
+    radial-gradient(46% 60% at 50% 48%, rgba(111, 97, 234, 0.13), transparent 70%),
+    radial-gradient(20% 26% at 54% 44%, rgba(176, 119, 31, 0.08), transparent 75%);
+}
+
+/* Custom cursor: the native pointer is hidden ONLY over interactive ASCII
+   art, where the glyph field itself answers to the hand. Everywhere else the
+   real cursor stays — no custom circle, no lag, no confusion. */
+@media (pointer: fine) {
+  canvas.ascii-live {
+    cursor: none;
+  }
+}
+
+/* hide scrollbars where we manage scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* focus ring — iris, gentle */
+:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .anim-float, .anim-drift, .anim-spin-slow, .sheen, .sheen--bone { animation: none; }
+}

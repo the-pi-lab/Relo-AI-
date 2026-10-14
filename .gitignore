@@ -1,3 +1,8 @@
+# Next.js build output
+.next/
+out/
+build/
+
 # Logs
 logs
 *.log
@@ -18,8 +23,13 @@ dist-ssr
 !.env.*.example
 .wrangler
 
-# Local tool state
+# Local tool state and archives
 .freebuff
+.zcodeignore
+*.zip
+temp_relo_project/
+New folder/
+patch_editor2.py
 
 # Editor directories and files
 .vscode/*
