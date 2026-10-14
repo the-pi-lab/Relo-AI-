@@ -115,9 +115,9 @@ const PILL_TONES: Record<string, string> = {
   live: "bg-moss/15 text-moss border-moss/30",
   active: "bg-moss/15 text-moss border-moss/30",
   sending: "bg-honey/15 text-honey border-honey/40",
-  scheduled: "bg-sky/15 text-[#4a6b82] border-sky/40",
+  scheduled: "bg-sky/15 text-sky border-sky/40",
   draft: "bg-ink/5 text-ink-3 border-line-strong",
-  completed: "bg-sky/15 text-[#4a6b82] border-sky/40",
+  completed: "bg-sky/15 text-sky border-sky/40",
   failed: "bg-ember/12 text-ember-deep border-ember/35",
   paused: "bg-ink/5 text-ink-3 border-line-strong",
 };

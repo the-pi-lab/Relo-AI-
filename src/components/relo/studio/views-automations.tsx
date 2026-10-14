@@ -479,7 +479,7 @@ function AutomationEditor({
                     )}
                     <div className="mt-2 space-y-1.5">
                       {draft.templateCard.buttons.filter((b) => b.title.trim()).map((b, i) => (
-                        <div key={i} className="rounded-lg bg-ember px-3 py-1.5 text-center text-[11.5px] font-medium">
+                        <div key={i} className="rounded-lg bg-ember px-3 py-1.5 text-center text-[11.5px] font-medium on-ember">
                           {b.title}
                         </div>
                       ))}
@@ -684,7 +684,7 @@ export function LeadsView() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase",
-                          l.followerStatusAtTrigger ? "bg-moss/12 text-moss" : "bg-sky/12 text-[#4a6b82]"
+                          l.followerStatusAtTrigger ? "bg-moss/12 text-moss" : "bg-sky/12 text-sky"
                         )}
                       >
                         {l.followerStatusAtTrigger ? "follower" : "new"}

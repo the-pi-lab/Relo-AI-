@@ -867,7 +867,7 @@ export function Preloader({ onDone }: { onDone?: () => void }) {
           />
         </div>
         <GlyphResolve text="RELO" glyphs={glyphs} />
-        <div className="h-px w-44 overflow-hidden bg-white/10">
+        <div className="h-px w-44 overflow-hidden bg-ink/10">
           <motion.div
             className="h-full bg-gradient-to-r from-ember to-honey"
             style={{ width: `${pct}%` }}

@@ -1,7 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/* The app themes through `html.day` (day) vs default (night), NOT `.dark`.
+   Keep the `dark:` variant working for both conventions so UI-kit
+   `dark:` classes never silently die. */
+@custom-variant dark (&:is(.dark *, :not(.day) *));
+@custom-variant day (&:is(.day *));
 
 /* ── RELO design tokens — THE DUSK OBSERVATORY ──────────────────────────
    A world after sundown: deep violet-ink void, spectral aurora accents,
@@ -668,5 +672,30 @@ html.day .iris-fallback {
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .anim-float, .anim-drift, .anim-spin-slow, .sheen, .sheen--bone, .flow-wire-stream, .radar-ring, .btn-shimmer::after { animation: none !important; }
+}
+
+/* ── frontend hardening: overlap + day-mode legibility ───────────────
+   1. Long words / handles / URLs wrap instead of colliding.
+   2. Hardcoded white hairlines (border-white/*, bg-white/*) are invisible
+      on Daybreak paper — remap them to theme tokens in day mode only.
+   3. Corridor cards never push the page sideways on small screens. */
+
+img, video, canvas, svg { max-width: 100%; }
+p, h1, h2, h3, h4, li, span, a, button { overflow-wrap: anywhere; }
+p, h1, h2, h3 { text-wrap: balance; }
+
+html.day .border-white\/10, html.day .border-white\/8, html.day .border-white\/12,
+html.day .border-white\/15, html.day .border-white\/20 {
+  border-color: var(--line-strong) !important;
+}
+html.day .bg-white\/10 { background-color: rgb(38 32 56 / 0.08) !important; }
+html.day .bg-white\/\[0\.05\], html.day .bg-white\/\[0\.06\], html.day .bg-white\/\[0\.07\] {
+  background-color: rgb(38 32 56 / 0.05) !important;
+}
+html.day .via-white\/12 { --tw-gradient-to: transparent; }
+html.day .from-transparent.via-white\/12 { background-image: linear-gradient(to bottom, transparent, rgb(38 32 56 / 0.14), transparent) !important; }
+
+@media (max-width: 640px) {
+  .corridor-piece { left: 50% !important; transform: translateX(-50%); max-width: calc(100vw - 2.5rem); }
 }
 

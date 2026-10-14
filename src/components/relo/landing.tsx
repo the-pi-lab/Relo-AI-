@@ -76,7 +76,7 @@ function Nav({ navigate }: { navigate: (to: string) => void }) {
       <div
         className={`flex w-full max-w-4xl items-center gap-2 rounded-full border px-3 py-2 transition-all duration-500 sm:gap-3 sm:px-4 ${
           scrolled
-            ? "glass border-white/10 shadow-[0_10px_40px_-12px_rgba(4,3,9,0.8)]"
+            ? "glass border-line-strong shadow-[0_10px_40px_-12px_rgba(4,3,9,0.8)]"
             : "border-transparent bg-transparent"
         }`}
       >
@@ -91,7 +91,7 @@ function Nav({ navigate }: { navigate: (to: string) => void }) {
             <button
               key={id}
               onClick={() => go(id)}
-              className="whitespace-nowrap rounded-full px-3 py-1.5 text-[13.5px] font-medium text-ink-3 transition-colors "
+              className="whitespace-nowrap rounded-full px-3 py-1.5 text-[13.5px] font-medium text-ink-3 transition-colors hover:bg-ink/[0.06] hover:text-ink"
             >
               {label}
             </button>
@@ -136,7 +136,7 @@ function Nav({ navigate }: { navigate: (to: string) => void }) {
                 <button
                   key={id}
                   onClick={() => go(id)}
-                  className="block w-full rounded-xl px-3 py-2.5 text-left text-[15px] font-medium text-ink-2 "
+                  className="block w-full rounded-xl px-3 py-2.5 text-left text-[15px] font-medium text-ink-2 hover:bg-ink/[0.06]"
                 >
                   {label}
                 </button>
@@ -194,7 +194,7 @@ const LEAD_ROWS = [
   { user: "meghnabuilds", when: "3m", clicked: false, hue: 24 },
 ];
 
-function Avatar({ hue, size = 30 }: { hue: number; size?: number }) {
+function Avatar({ hue, size = 30, initial = "?" }: { hue: number; size?: number; initial?: string }) {
   return (
     <span
       className="grid shrink-0 place-items-center rounded-full font-display font-bold text-white"
@@ -207,7 +207,7 @@ function Avatar({ hue, size = 30 }: { hue: number; size?: number }) {
       }}
       aria-hidden
     >
-      {""}
+      {initial.slice(0, 1).toUpperCase()}
     </span>
   );
 }
@@ -302,7 +302,7 @@ function HeroConsole() {
       </div>
 
       {/* ── instrument bodies ── */}
-      <div className="relative h-[318px] px-4 py-4 sm:px-5">
+      <div className="relative min-h-[318px] px-4 py-4 sm:px-5">
         <AnimatePresence mode="wait">
           {tab === "feed" && (
             <motion.div
@@ -311,7 +311,7 @@ function HeroConsole() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
-              className="flex h-full flex-col gap-2.5"
+              className="flex min-h-full flex-col gap-2.5"
             >
               {/* the live one — big, breathing */}
               <motion.div
@@ -319,7 +319,7 @@ function HeroConsole() {
                 className="rounded-2xl border border-ember/35 bg-ember-wash/60 p-3.5"
               >
                 <div className="flex items-center gap-2.5">
-                  <Avatar hue={live.hue} />
+                  <Avatar hue={live.hue} initial={live.user} />
                   <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
                     @{live.user}
                   </p>
@@ -385,7 +385,7 @@ function HeroConsole() {
                   transition={{ duration: 0.4, delay: i * 0.05 }}
                   className="flex items-center gap-2.5 rounded-xl border border-line bg-card-soft/70 px-3 py-2"
                 >
-                  <Avatar hue={h.hue} size={22} />
+                  <Avatar hue={h.hue} size={22} initial={h.user} />
                   <p className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
                     <span className="font-semibold text-ink-2">@{h.user}</span> — {h.comment}
                   </p>
@@ -404,7 +404,7 @@ function HeroConsole() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
-              className="mx-auto flex h-full max-w-sm flex-col justify-center"
+              className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center"
             >
               {/* the DM as it lands on a phone */}
               <div className="rounded-[26px] border border-line bg-card-soft p-3.5 shadow-[var(--shadow-soft)]">
@@ -463,7 +463,7 @@ function HeroConsole() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
-              className="flex h-full flex-col"
+              className="flex min-h-full flex-col"
             >
               <div className="flex items-center justify-between rounded-xl bg-ink px-3.5 py-2 font-mono text-[10px] tracking-[0.2em] text-night uppercase">
                 leads.csv
@@ -478,7 +478,7 @@ function HeroConsole() {
                     transition={{ delay: i * 0.07 }}
                     className="flex items-center gap-3 rounded-xl border border-line bg-card-soft/70 px-3 py-2.5"
                   >
-                    <Avatar hue={l.hue} size={26} />
+                    <Avatar hue={l.hue} size={26} initial={l.user} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12.5px] font-semibold text-ink">@{l.user}</p>
                       <p className="font-mono text-[9.5px] text-ink-4">commented {l.when} ago</p>
@@ -1123,7 +1123,7 @@ function FooterCta({ navigate }: { navigate: (to: string) => void }) {
                 <RButton
                   size="lg"
                   variant="outline"
-                  className="border-white/20 text-bone "
+                  className="border-line-strong text-bone hover:border-bone-dim/60 hover:text-bone"
                   onClick={() => navigate("/studio?demo=1")}
                 >
                   <Play className="size-4" /> Tour the studio

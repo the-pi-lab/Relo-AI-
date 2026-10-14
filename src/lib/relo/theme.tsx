@@ -120,7 +120,7 @@ function SunIcon({ dim = false }: { dim?: boolean }) {
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
-      className={dim ? "size-3 text-ink-4" : "size-3.5 text-[#12101f]"}
+      className={dim ? "size-3 text-ink-4" : "size-3.5 text-[var(--on-ember)]"}
       aria-hidden
     >
       <circle cx="12" cy="12" r="4" />
@@ -138,7 +138,7 @@ function MoonIcon({ dim = false }: { dim?: boolean }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={dim ? "size-3 text-ink-4" : "size-3.5 text-[#12101f]"}
+      className={dim ? "size-3 text-ink-4" : "size-3.5 text-[var(--on-ember)]"}
       aria-hidden
     >
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />

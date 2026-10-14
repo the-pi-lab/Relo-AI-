@@ -25,9 +25,10 @@ export function Magnetic({
 
 /* ── buttons ─────────────────────────────────────────────────────────── */
 
-type BtnProps = HTMLMotionProps<"button"> & {
+type BtnProps = Omit<HTMLMotionProps<"button">, "children"> & {
   variant?: "ember" | "ink" | "ghost" | "bone" | "outline";
   size?: "sm" | "md" | "lg";
+  children?: React.ReactNode;
 };
 
 export function RButton({ variant = "ember", size = "md", className, children, ...props }: BtnProps) {

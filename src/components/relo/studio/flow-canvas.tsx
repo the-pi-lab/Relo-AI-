@@ -874,7 +874,7 @@ export function CanvasView() {
               initial={{ y: 24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
-              className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-4 py-2 text-paper shadow-lg"
+              className="absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-4 py-2 text-paper shadow-lg"
             >
               <span className="font-mono text-[10.5px] uppercase tracking-[0.18em]">connection selected</span>
               <button onClick={deleteSel} className="font-mono text-[11px] font-bold text-ember-hot">

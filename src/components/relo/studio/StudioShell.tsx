@@ -163,7 +163,7 @@ function SidebarInner({
 
       {/* user */}
       <div className="mx-3 mb-4 flex items-center gap-2.5 rounded-2xl px-2 py-2">
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-ember to-honey font-display text-[13px] font-bold text-[#12101f]">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-ember to-honey font-display text-[13px] font-bold text-[var(--on-ember)]">
           {(user?.email?.[0] ?? "A").toUpperCase()}
         </span>
         <div className="min-w-0 flex-1">

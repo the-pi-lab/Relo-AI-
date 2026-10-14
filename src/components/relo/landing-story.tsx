@@ -45,9 +45,9 @@ export function StoryScroll() {
       <div className="relative z-[2] mx-auto max-w-6xl px-5 sm:px-8">
         <div className="h-[300vh]">
           {/* sticky stage */}
-          <div className="sticky top-0 flex h-screen flex-col justify-center overflow-hidden">
+          <div className="sticky top-0 flex h-screen min-h-0 flex-col justify-center overflow-hidden">
             {/* heading */}
-            <div className="pt-16 pb-4 sm:pb-6">
+            <div className="shrink-0 pt-20 pb-4 sm:pb-6">
               <Eyebrow tone="dark">The loop</Eyebrow>
               <h2 className="font-display mt-3 max-w-3xl text-3xl font-bold leading-[1.04] tracking-tight sm:text-5xl">
                 One reel. One comment.
@@ -57,7 +57,7 @@ export function StoryScroll() {
             </div>
 
             {/* stage */}
-            <div className="relative mx-auto w-full max-w-4xl flex-1">
+            <div className="relative mx-auto min-h-0 w-full max-w-4xl flex-1">
               <ActComment p={p} />
               <ActKeyword p={p} />
               <ActDm p={p} />
@@ -92,8 +92,8 @@ function ActComment({ p }: { p: MotionValue<number> }) {
     <motion.div style={a} className="absolute inset-0 flex items-center justify-center">
       <div className={ACT_FIT + " w-full max-w-xl"}>
         {/* reel card */}
-        <div className="overflow-hidden rounded-3xl border border-white/10 bg-night-2/90 shadow-2xl">
-          <div className="flex items-center gap-3 border-b border-white/8 px-5 py-3.5">
+        <div className="overflow-hidden rounded-3xl border border-line-strong bg-night-2/90 shadow-2xl">
+          <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
             <div
               className="grid size-9 place-items-center rounded-full font-display text-sm font-bold text-[#12101f]"
               style={{ background: "linear-gradient(135deg,#a99dff,#f2c48d)" }}
@@ -125,7 +125,7 @@ function ActComment({ p }: { p: MotionValue<number> }) {
               className="flex items-start gap-2.5"
             >
               <div className="mt-0.5 size-7 shrink-0 rounded-full bg-sky/40" />
-              <div className="rounded-2xl rounded-tl-md bg-white/[0.06] px-4 py-2.5">
+              <div className="rounded-2xl rounded-tl-md bg-ink/[0.06] px-4 py-2.5">
                 <p className="text-[13px] text-bone-dim">
                   <span className="font-semibold text-bone">@notionwithneha</span>{" "}
                   <motion.span
@@ -164,7 +164,7 @@ function ActKeyword({ p }: { p: MotionValue<number> }) {
     <motion.div style={a} className="absolute inset-0 flex items-center justify-center">
       <div className={ACT_FIT + " w-full max-w-xl space-y-3"}>
         {/* keyword lock-on */}
-        <div className="rounded-3xl border border-white/10 bg-night-2/90 p-4 sm:p-5">
+        <div className="rounded-3xl border border-line-strong bg-night-2/90 p-4 sm:p-5">
           <p className="font-mono text-[10px] tracking-[0.2em] text-bone-dim uppercase">Trigger matched</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {["notion", "template", "send"].map((k, i) => (
@@ -177,21 +177,21 @@ function ActKeyword({ p }: { p: MotionValue<number> }) {
                 className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-mono text-[13px] ${
                   i === 0
                     ? "bg-ember on-ember shadow-[var(--shadow-ember)]"
-                    : "bg-white/[0.07] text-bone-dim"
+                    : "bg-ink/[0.07] text-bone-dim"
                 }`}
               >
                 {i === 0 && <Zap className="size-3" />}
                 {k}
               </motion.span>
             ))}
-            <span className="inline-flex items-center rounded-full border border-dashed border-white/15 px-3.5 py-1.5 font-mono text-[12px] text-bone-dim/70">
+            <span className="inline-flex items-center rounded-full border border-dashed border-line-strong px-3.5 py-1.5 font-mono text-[12px] text-bone-dim/70">
               whole-word · unicode-safe
             </span>
           </div>
         </div>
 
         {/* spintax shuffle */}
-        <div className="rounded-3xl border border-white/10 bg-night-2/90 p-4 sm:p-5">
+        <div className="rounded-3xl border border-line-strong bg-night-2/90 p-4 sm:p-5">
           <div className="flex items-center justify-between">
             <p className="font-mono text-[10px] tracking-[0.2em] text-bone-dim uppercase">Public reply — spintax</p>
             <Repeat2 className="size-4 text-bone-dim" />
@@ -211,7 +211,7 @@ function ActKeyword({ p }: { p: MotionValue<number> }) {
               </motion.p>
             ))}
           </div>
-          <div className="mt-4 flex items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3">
+          <div className="mt-4 flex items-center gap-3 rounded-2xl bg-ink/[0.05] px-4 py-3">
             <Timer className="size-4 shrink-0 text-honey" />
             <p className="text-[13px] text-bone-dim">
               Holding <span className="font-semibold text-bone">30–90s</span> human jitter — never a bot-blitz.
@@ -238,7 +238,7 @@ function ActDm({ p }: { p: MotionValue<number> }) {
     <motion.div style={a} className="absolute inset-0 flex items-center justify-center">
       <div className={ACT_FIT + " w-full max-w-xl"}>
         {/* dm thread */}
-        <div className="rounded-3xl border border-white/10 bg-night-2/90 p-4 sm:p-5">
+        <div className="rounded-3xl border border-line-strong bg-night-2/90 p-4 sm:p-5">
           <p className="font-mono text-[10px] tracking-[0.2em] text-bone-dim uppercase">
             DM delivered · 38s after comment
           </p>
@@ -254,10 +254,10 @@ function ActDm({ p }: { p: MotionValue<number> }) {
               whileInView={{ y: 0, opacity: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.7, delay: 0.25, ease: [0.22, 1, 0.28, 1] }}
-              className="max-w-[85%] rounded-2xl rounded-tl-md bg-white/[0.07] p-3"
+              className="max-w-[85%] rounded-2xl rounded-tl-md bg-ink/[0.07] p-3"
             >
               <div
-                className="mb-2.5 grid h-12 place-items-center rounded-xl border border-white/10"
+                className="mb-2.5 grid h-12 place-items-center rounded-xl border border-line-strong"
                 style={{ background: "linear-gradient(120deg,#1d1936,#2c2550)" }}
               >
                 <span className="font-mono text-[10px] tracking-[0.25em] text-bone-dim uppercase">template pack</span>
@@ -317,8 +317,8 @@ function StoryRail({ p }: { p: MotionValue<number> }) {
   }, [p]);
 
   return (
-    <div className="relative pb-10 pt-8">
-      <div className="h-[3px] w-full overflow-hidden rounded-full bg-white/10">
+    <div className="relative shrink-0 pb-10 pt-8">
+      <div className="h-[3px] w-full overflow-hidden rounded-full bg-ink/10">
         <motion.div
           className="h-full rounded-full"
           style={{
@@ -381,7 +381,7 @@ export function ParallaxCorridor() {
       win: [0.05, 0.55],
       blur: 1.6,
       render: (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3 backdrop-blur-md">
+        <div className="rounded-2xl border border-line-strong bg-ink/[0.05] px-5 py-3 backdrop-blur-md">
           <p className="font-mono text-[9px] tracking-[0.24em] text-bone-dim uppercase">public reply</p>
           <p className="mt-1 text-[14px] text-bone">Just sent it 📬 check your DMs!</p>
         </div>
@@ -407,7 +407,7 @@ export function ParallaxCorridor() {
       win: [0.24, 0.72],
       blur: 0.5,
       render: (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3 backdrop-blur-md">
+        <div className="rounded-2xl border border-line-strong bg-ink/[0.05] px-5 py-3 backdrop-blur-md">
           <p className="font-mono text-[9px] tracking-[0.24em] text-bone-dim uppercase">human jitter</p>
           <p className="mt-1 font-mono text-[15px] font-bold text-honey">00:38 · holding</p>
         </div>
@@ -420,8 +420,8 @@ export function ParallaxCorridor() {
       win: [0.34, 0.84],
       blur: 0,
       render: (
-        <div className="w-64 rounded-3xl border border-white/12 bg-night-2/95 p-4 shadow-[0_30px_80px_-20px_rgba(4,3,9,0.9)] backdrop-blur-md">
-          <div className="mb-2.5 grid h-16 place-items-center rounded-xl border border-white/10"
+        <div className="w-64 rounded-3xl border border-line-strong bg-night-2/95 p-4 shadow-[0_30px_80px_-20px_rgba(4,3,9,0.9)] backdrop-blur-md">
+          <div className="mb-2.5 grid h-16 place-items-center rounded-xl border border-line-strong"
             style={{ background: "linear-gradient(120deg,#1d1936,#2c2550)" }}>
             <span className="font-mono text-[9px] tracking-[0.25em] text-bone-dim uppercase">template pack</span>
           </div>
@@ -467,8 +467,8 @@ export function ParallaxCorridor() {
         <Starfield density={80} opacity={0.7} />
         <DustMotes density={26} tone="bone" opacity={0.55} />
         {/* depth rails — coordinates of the shaft you're falling through */}
-        <div aria-hidden className="absolute inset-y-0 left-[7%] w-px bg-gradient-to-b from-transparent via-white/12 to-transparent" />
-        <div aria-hidden className="absolute inset-y-0 right-[7%] w-px bg-gradient-to-b from-transparent via-white/12 to-transparent" />
+        <div aria-hidden className="absolute inset-y-0 left-[7%] w-px bg-gradient-to-b from-transparent via-line-strong to-transparent" />
+        <div aria-hidden className="absolute inset-y-0 right-[7%] w-px bg-gradient-to-b from-transparent via-line-strong to-transparent" />
 
         {/* the heading rides its own depth */}
         <CorridorHeading p={p} />
@@ -528,7 +528,7 @@ function CorridorPieceView({ p, piece }: { p: MotionValue<number>; piece: Corrid
   return (
     <motion.div
       aria-hidden
-      className="absolute z-[2]"
+      className="corridor-piece absolute z-[2] max-w-[calc(100vw-2.5rem)]"
       style={{
         y,
         opacity,
@@ -695,14 +695,14 @@ function MiniDmCard() {
       />
       <div className="mt-5 rounded-2xl border border-line bg-night-2/60 p-3.5">
         <div
-          className="mb-2.5 grid h-14 place-items-center rounded-lg border border-white/8"
+          className="mb-2.5 grid h-14 place-items-center rounded-lg border border-line"
           style={{ background: "linear-gradient(120deg,#1d1936,#2c2550)" }}
         >
           <span className="font-mono text-[9px] tracking-[0.25em] text-ink-3 uppercase">your art</span>
         </div>
         <p className="text-[13px] font-semibold">Creator OS — free pack</p>
         {["Download free pack", "See all templates"].map((b) => (
-          <div key={b} className="mt-2 rounded-lg bg-ember px-3 py-2 text-center text-[12px] font-medium text-[#12101f]">
+          <div key={b} className="mt-2 rounded-lg bg-ember px-3 py-2 text-center text-[12px] font-medium on-ember">
             {b}
           </div>
         ))}
