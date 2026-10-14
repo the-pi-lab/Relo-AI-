@@ -168,7 +168,11 @@ function SidebarInner({
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[12.5px] font-semibold">{user?.isDemo ? "Demo guest" : user?.email}</p>
-          <p className="flex items-center gap-1 font-mono text-[10px] text-moss">
+          <p className="flex items-center gap-1.5 font-mono text-[10px] text-moss">
+            <span className="relative flex size-2 items-center justify-center">
+              <span className="absolute inline-flex size-full rounded-full bg-moss opacity-75 radar-ring" />
+              <span className="relative inline-flex size-1.5 rounded-full bg-moss" />
+            </span>
             <Instagram className="size-2.5" /> @aarav.makes
           </p>
         </div>

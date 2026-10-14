@@ -587,7 +587,86 @@ html.day .iris-fallback {
   border-radius: 4px;
 }
 
+/* ── 2D Micro-animations & Smooth Interaction Primitives ─────────────── */
+
+/* 1. Animated Bezier Flow Wire Stream */
+@keyframes flowStream {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.flow-wire-stream {
+  animation: flowStream 1.3s linear infinite;
+}
+.flow-wire-stream-fast {
+  animation: flowStream 0.65s linear infinite;
+}
+
+/* 2. Live Status Radar Ripple */
+@keyframes radarPing {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.85;
+  }
+  70%, 100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.radar-ring {
+  animation: radarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* 3. Button Shimmer Sweep */
+@keyframes shimmerSweep {
+  0% {
+    transform: translateX(-120%) skewX(-15deg);
+  }
+  100% {
+    transform: translateX(220%) skewX(-15deg);
+  }
+}
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: -50% -20%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 100%
+  );
+  transform: translateX(-120%) skewX(-15deg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.btn-shimmer:hover::after {
+  opacity: 1;
+  animation: shimmerSweep 0.85s ease-out;
+}
+
+/* 4. Interactive Card Micro-Lift & Soft Border Glow */
+.interactive-card {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease;
+}
+.interactive-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--line-strong);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim-float, .anim-drift, .anim-spin-slow, .sheen, .sheen--bone { animation: none; }
+  .anim-float, .anim-drift, .anim-spin-slow, .sheen, .sheen--bone, .flow-wire-stream, .radar-ring, .btn-shimmer::after { animation: none !important; }
 }
+

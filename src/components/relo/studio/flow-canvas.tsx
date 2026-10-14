@@ -658,6 +658,19 @@ export function CanvasView() {
                     strokeWidth={isSel ? 2.4 : 1.8}
                     markerEnd="url(#fc-arrow)"
                   />
+                  {/* animated 2D signal pulse stream */}
+                  {flow.isActive && (
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke={flowed ? "var(--moss)" : isSel ? "var(--ember-hot)" : "var(--ember)"}
+                      strokeWidth={flowed ? 2.6 : 2}
+                      strokeDasharray="5 9"
+                      strokeLinecap="round"
+                      className={flowed ? "flow-wire-stream-fast" : "flow-wire-stream"}
+                      strokeOpacity={0.85}
+                    />
+                  )}
                 </g>
               );
             })}
@@ -723,13 +736,13 @@ export function CanvasView() {
                 key={n.id}
                 style={{ left: n.x, top: n.y, width: NODE_W }}
                 className={cn(
-                  "absolute cursor-grab rounded-2xl border bg-card shadow-[var(--shadow-soft)] active:cursor-grabbing",
-                  isSel ? "border-ember/70 ring-2 ring-ember/25" : didRun ? "border-moss/60" : "border-line"
+                  "absolute cursor-grab rounded-2xl border bg-card shadow-[var(--shadow-soft)] active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] hover:border-ember/40",
+                  isSel ? "border-ember/70 ring-2 ring-ember/25" : didRun ? "border-moss/60 shadow-[0_0_16px_-2px_rgba(99,221,182,0.3)] ring-1 ring-moss/40" : "border-line"
                 )}
                 onPointerDown={(e) => startNodeDrag(e, n)}
               >
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg border", meta.tile)}>
+                  <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg border transition-transform duration-200 group-hover:scale-105", meta.tile)}>
                     <meta.icon className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -737,7 +750,7 @@ export function CanvasView() {
                     <p className="truncate font-mono text-[9.5px] leading-relaxed text-ink-4">{nodeSummary(n)}</p>
                   </div>
                   {didRun ? (
-                    <CircleCheck className="size-4 shrink-0 text-moss" />
+                    <CircleCheck className="size-4 shrink-0 text-moss animate-in zoom-in-50 duration-300" />
                   ) : meta.hasOut ? (
                     <span className="size-1.5 shrink-0 rounded-full bg-ink-4/50" />
                   ) : null}
@@ -747,7 +760,7 @@ export function CanvasView() {
                 {meta.hasIn && (
                   <span
                     aria-hidden
-                    className="absolute -left-[7px] top-[19px] size-3.5 rounded-full border-2 border-line-strong bg-paper"
+                    className="absolute -left-[7px] top-[19px] size-3.5 rounded-full border-2 border-line-strong bg-paper transition-transform duration-150 hover:scale-125"
                   />
                 )}
                 {meta.hasOut && (
@@ -755,7 +768,7 @@ export function CanvasView() {
                     role="button"
                     aria-label="Drag to connect from this step"
                     onPointerDown={(e) => startConnect(e, n)}
-                    className="absolute -right-[7px] top-[19px] size-3.5 cursor-crosshair rounded-full border-2 border-ember/70 bg-ember shadow-[0_0_10px_-2px_rgba(139,128,249,0.8)]"
+                    className="absolute -right-[7px] top-[19px] size-3.5 cursor-crosshair rounded-full border-2 border-ember/70 bg-ember shadow-[0_0_10px_-2px_rgba(139,128,249,0.8)] transition-transform duration-150 hover:scale-125"
                   />
                 )}
                 {/* quick add — the n8n “+” under the output port */}

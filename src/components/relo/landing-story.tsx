@@ -617,7 +617,7 @@ function CardHead({
   return (
     <div className="relative">
       <div
-        className="grid size-10 place-items-center rounded-xl bg-ember-wash text-ember-hot"
+        className="grid size-10 place-items-center rounded-xl bg-ember-wash text-ember-hot transition-transform duration-200 group-hover:scale-110"
         style={{ boxShadow: "0 0 18px -4px rgba(139,128,249,0.4)" }}
       >
         <Icon className="size-5" />

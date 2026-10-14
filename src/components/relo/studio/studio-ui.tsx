@@ -50,14 +50,14 @@ export function StatCard({
   const up = delta?.startsWith("+");
   return (
     <motion.div
-      
-      transition={{ type: "spring", stiffness: 300, damping: 22 }}
-      className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)]"
+      whileHover={{ y: -3, scale: 1.01 }}
+      transition={{ type: "spring", stiffness: 350, damping: 24 }}
+      className="group relative overflow-hidden rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] transition-all duration-300 hover:border-ember/40 hover:shadow-[var(--shadow-lift)]"
     >
       <div className="flex items-center justify-between">
         <p className="font-mono text-[10px] tracking-[0.18em] text-ink-3 uppercase">{label}</p>
         {Icon && (
-          <span className="grid size-7 place-items-center rounded-lg bg-ember-wash text-ember-deep">
+          <span className="grid size-7 place-items-center rounded-lg bg-ember-wash text-ember-deep transition-transform duration-200 group-hover:scale-110">
             <Icon className="size-3.5" />
           </span>
         )}
@@ -126,13 +126,13 @@ export function StatusPill({ status, pulse }: { status: string; pulse?: boolean 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-medium tracking-wider uppercase",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-medium tracking-wider uppercase transition-all duration-200 hover:scale-105",
         PILL_TONES[status] ?? PILL_TONES.draft
       )}
     >
       {pulse && (
-        <span className="relative flex size-1.5">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
+        <span className="relative flex size-1.5 items-center justify-center">
+          <span className="absolute inline-flex size-full rounded-full bg-current opacity-75 radar-ring" />
           <span className="relative inline-flex size-1.5 rounded-full bg-current" />
         </span>
       )}

@@ -30,26 +30,35 @@ type BtnProps = HTMLMotionProps<"button"> & {
   size?: "sm" | "md" | "lg";
 };
 
-export function RButton({ variant = "ember", size = "md", className, ...props }: BtnProps) {
+export function RButton({ variant = "ember", size = "md", className, children, ...props }: BtnProps) {
   return (
     <motion.button
+      whileHover={{ scale: 1.02, y: -1 }}
       whileTap={{ scale: 0.97 }}
-      transition={{ type: "spring", stiffness: 400, damping: 22 }}
+      transition={{ type: "spring", stiffness: 450, damping: 24 }}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-full font-medium cursor-pointer select-none",
+        "group relative overflow-hidden inline-flex items-center justify-center gap-2 rounded-full font-medium cursor-pointer select-none transition-all duration-300",
         "focus-visible:outline-2 focus-visible:outline-ember",
         size === "sm" && "h-9 px-4 text-[13px]",
         size === "md" && "h-11 px-6 text-sm",
         size === "lg" && "h-[52px] px-8 text-[15px]",
-        variant === "ember" && "bg-ember on-ember shadow-[var(--shadow-ember)]",
-        variant === "ink" && "bg-ink text-night",
-        variant === "bone" && "bg-bone text-night",
-        variant === "outline" && "border border-line-strong bg-transparent text-ink",
-        variant === "ghost" && "bg-ink/[0.05] text-ink",
+        variant === "ember" && "bg-ember on-ember shadow-[var(--shadow-ember)] hover:shadow-[0_12px_36px_-6px_rgba(139,128,249,0.65)]",
+        variant === "ink" && "bg-ink text-night hover:bg-ink/90",
+        variant === "bone" && "bg-bone text-night hover:bg-bone/90",
+        variant === "outline" && "border border-line-strong bg-transparent text-ink hover:border-ember hover:bg-ember/5",
+        variant === "ghost" && "bg-ink/[0.05] text-ink hover:bg-ink/[0.1]",
         className
       )}
       {...props}
-    />
+    >
+      {variant === "ember" && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
+        />
+      )}
+      {children}
+    </motion.button>
   );
 }
 
@@ -133,8 +142,9 @@ export function WordReveal({
   );
 }
 
-/* ── former spotlight card — now a still surface. The interiors inside
-      (equalizer, spintax, DM card) carry the life; the card itself rests. ─ */
+/* ── 2D cursor-following spotlight card ─────────────────────────────────
+      Calculates relative pointer coordinates to illuminate borders and
+      surface with a gentle radial aura in both Dusk and Daybreak modes. ── */
 
 export function SpotlightCard({
   children,
@@ -144,26 +154,93 @@ export function SpotlightCard({
   className?: string;
   glow?: string;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    setPos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
   return (
-    <div className={cn("relative overflow-hidden rounded-3xl", className)}>
-      {children}
+    <div
+      ref={cardRef}
+      onMouseMove={onMouseMove}
+      className={cn(
+        "group relative overflow-hidden rounded-3xl transition-all duration-300",
+        "hover:-translate-y-1 hover:shadow-[var(--shadow-lift)]",
+        className
+      )}
+    >
+      {/* 2D cursor-following spotlight glow layer */}
+      <div
+        className="pointer-events-none absolute -inset-px rounded-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{
+          background: `radial-gradient(380px circle at ${pos.x}px ${pos.y}px, var(--ember-wash), transparent 65%)`,
+        }}
+        aria-hidden
+      />
+      {/* 2D glowing border stroke along cursor */}
+      <div
+        className="pointer-events-none absolute -inset-px rounded-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{
+          background: `radial-gradient(260px circle at ${pos.x}px ${pos.y}px, var(--ember), transparent 70%)`,
+          mask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+          maskComposite: "exclude",
+          WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+          WebkitMaskComposite: "xor",
+          padding: "1px",
+        }}
+        aria-hidden
+      />
+      <div className="relative z-10 h-full">{children}</div>
     </div>
   );
 }
 
-/* ── former tilt card — now a steady frame. Stillness is the luxury. ──── */
+/* ── gentle 2D perspective tilt card ─────────────────────────────────── */
 
 export function TiltCard({
   children,
   className,
+  max = 5,
 }: {
   children: React.ReactNode;
   className?: string;
   max?: number;
   glare?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [rotate, setRotate] = useState({ x: 0, y: 0 });
+
+  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width - 0.5;
+    const py = (e.clientY - rect.top) / rect.height - 0.5;
+    setRotate({ x: -py * max, y: px * max });
+  };
+
+  const onMouseLeave = () => {
+    setRotate({ x: 0, y: 0 });
+  };
+
   return (
-    <div className={cn("h-full", className)}>{children}</div>
+    <motion.div
+      ref={ref}
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}
+      animate={{ rotateX: rotate.x, rotateY: rotate.y }}
+      transition={{ type: "spring", stiffness: 350, damping: 25 }}
+      style={{ transformStyle: "preserve-3d" }}
+      className={cn("h-full transition-shadow duration-300", className)}
+    >
+      {children}
+    </motion.div>
   );
 }
 
