@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button, Container, Logo } from "./chrome";
 import { ThemeToggle } from "@/lib/relo/theme";

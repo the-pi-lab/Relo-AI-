@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useHashRoute, ReloProvider, useRelo } from "@/lib/relo/store";
 import { ThemeProvider } from "@/lib/relo/theme";
 import { LandingPage } from "./landing";

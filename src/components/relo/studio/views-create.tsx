@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { Copy, ExternalLink, Eye, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useRelo } from "@/lib/relo/store";

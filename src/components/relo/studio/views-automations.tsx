@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -39,7 +39,7 @@ function ArmToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       aria-label="Toggle automation"
       onClick={onToggle}
       className={cn(
-        "flex h-5 w-9 shrink-0 items-center rounded-full border px-0.5 transition-colors duration-150 ease-out",
+        "flex h-6 w-11 shrink-0 items-center rounded-full border px-0.5 transition-colors duration-150 ease-out",
         on
           ? "border-ok/40 bg-ok"
           : "border-line-strong bg-surface-2 hover:border-ink-3 hover:bg-surface-3"
@@ -47,8 +47,8 @@ function ArmToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
     >
       <span
         className={cn(
-          "size-4 rounded-full bg-white shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
-          on && "translate-x-3.5"
+          "size-5 rounded-full bg-white shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
+          on && "translate-x-[18px]"
         )}
       />
     </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button, Field, Logo, inputClass } from "./chrome";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";

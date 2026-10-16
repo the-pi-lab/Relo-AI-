@@ -29,7 +29,10 @@
 
   --ink: #16130f;
   --ink-2: #5a544c;
-  --ink-3: #7c7468;
+  /* Dark enough to clear 4.5:1 on surface-3, the lightest surface we put
+     muted text on. Do not lighten this to taste: `.caption`, `.small`,
+     `.meta` and shadcn's muted-foreground all read from it. */
+  --ink-3: #665f52;
   --ink-invert: #ffffff;
 
   --signal: #c93a0e;
@@ -75,7 +78,8 @@
 
   --ink: #f4f0ea;
   --ink-2: #a9a199;
-  --ink-3: #8a8278;
+  /* Light enough to clear 4.5:1 on surface-3, same rule as the light theme. */
+  --ink-3: #9c948a;
   --ink-invert: #100e0c;
 
   --signal: #ff6a3d;

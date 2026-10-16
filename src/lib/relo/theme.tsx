@@ -14,7 +14,7 @@
  * and it corrects itself in an effect once the browser is available.
  */
 
-import React, {
+import {
   createContext,
   useCallback,
   useContext,

@@ -244,7 +244,7 @@ function Sidebar({
 
 /* ── Top bar ────────────────────────────────────────────────────────────── */
 
-function TopBar({ onMenu }: { onMenu: () => void }) {
+function TopBar({ onMenu, onHome }: { onMenu: () => void; onHome: () => void }) {
   const { plan, aiCredits, user, signOut } = useRelo();
   const limit = TIER_CREDIT_LIMITS[plan];
   const pct = limit > 0 ? Math.round((aiCredits / limit) * 100) : 0;
@@ -261,7 +261,7 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
       >
         <Menu className="size-4" aria-hidden />
       </button>
-      <Logo onClick={() => {}} className="lg:hidden" />
+      <Logo onClick={onHome} className="lg:hidden" />
 
       <div className="hidden items-center gap-2 lg:flex">
         <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-2">
@@ -360,7 +360,7 @@ export function StudioShell({
       )}
 
       <div className="lg:pl-[248px]">
-        <TopBar onMenu={() => setDrawer(true)} />
+        <TopBar onMenu={() => setDrawer(true)} onHome={() => go("home")} />
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           {children}
         </div>
