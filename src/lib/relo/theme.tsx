@@ -1,15 +1,17 @@
 "use client";
 
 /**
- * RELO THEME — the world has two times of day.
+ * RELO THEME
  *
- *  · night (default) — the Dusk Observatory: violet void, spectral light
- *  · day             — Daybreak: warm bone paper, the same world at noon
+ * Three choices, one attribute. The visitor can pin light, pin dark, or stay
+ * on "system" and have the OS decide. Whatever the outcome, the resolved
+ * value is written to <html data-theme="light|dark">, which is the single
+ * switch every colour token in globals.css keys off.
  *
- * The entire app re-tunes through the CSS custom properties in globals.css;
- * this provider only flips one class on <html> and remembers the choice.
- * Canvases (shaders, starfields, ASCII plates) read the theme through
- * useTheme() so they can re-palette or stand down gracefully.
+ * The inline script in app/layout.tsx runs before first paint and sets the
+ * same attribute, so there is no flash and no server/client disagreement:
+ * this provider's first render is always the "light" default on both sides,
+ * and it corrects itself in an effect once the browser is available.
  */
 
 import React, {
@@ -21,55 +23,87 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
+import { Monitor, Moon, Sun } from "lucide-react";
 
-export type Theme = "night" | "day";
+export type Theme = "light" | "dark";
+export type ThemeChoice = Theme | "system";
 
-const STORAGE_KEY = "relo-theme";
+export const THEME_KEY = "relo-theme";
 
 const ThemeCtx = createContext<{
+  choice: ThemeChoice;
   theme: Theme;
-  isDay: boolean;
-  toggle: () => void;
-  set: (t: Theme) => void;
-}>({ theme: "night", isDay: false, toggle: () => {}, set: () => {} });
+  isDark: boolean;
+  set: (c: ThemeChoice) => void;
+}>({
+  choice: "system",
+  theme: "light",
+  isDark: false,
+  set: () => {},
+});
+
+function systemTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function readChoice(): ThemeChoice {
+  if (typeof window === "undefined") return "system";
+  try {
+    const v = window.localStorage.getItem(THEME_KEY);
+    return v === "light" || v === "dark" || v === "system" ? v : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function paint(theme: Theme) {
+  const root = document.documentElement;
+  root.setAttribute("data-theme", theme);
+  root.style.colorScheme = theme;
+}
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("night");
+  const [choice, setChoice] = useState<ThemeChoice>("system");
+  const [theme, setTheme] = useState<Theme>("light");
 
-  /* hydrate from storage after mount (SSR-safe, out of the render path) */
+  /* adopt the stored choice after mount */
   useEffect(() => {
-    const id = window.setTimeout(() => {
-      try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved === "day" || saved === "night") setTheme(saved);
-      } catch {
-        /* private mode — night it is */
-      }
-    }, 0);
-    return () => window.clearTimeout(id);
+    const stored = readChoice();
+    const resolved = stored === "system" ? systemTheme() : stored;
+    setChoice(stored);
+    setTheme(resolved);
+    paint(resolved);
   }, []);
 
-  /* reflect onto <html> so every token flips at once */
+  /* while on "system", follow the OS if it changes mid-session */
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("day", theme === "day");
-    root.style.colorScheme = theme === "day" ? "light" : "dark";
-    try {
-      window.localStorage.setItem(STORAGE_KEY, theme);
-    } catch {
-      /* ignore */
-    }
-  }, [theme]);
+    if (choice !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => {
+      const next = systemTheme();
+      setTheme(next);
+      paint(next);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [choice]);
 
-  const set = useCallback((t: Theme) => setTheme(t), []);
-  const toggle = useCallback(
-    () => setTheme((t) => (t === "night" ? "day" : "night")),
-    []
-  );
+  const set = useCallback((next: ThemeChoice) => {
+    const resolved = next === "system" ? systemTheme() : next;
+    setChoice(next);
+    setTheme(resolved);
+    paint(resolved);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* private mode: the choice just does not persist */
+    }
+  }, []);
 
   const value = useMemo(
-    () => ({ theme, isDay: theme === "day", toggle, set }),
-    [theme, toggle, set]
+    () => ({ choice, theme, isDark: theme === "dark", set }),
+    [choice, theme, set]
   );
 
   return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
@@ -79,69 +113,51 @@ export function useTheme() {
   return useContext(ThemeCtx);
 }
 
-/* ── the toggle itself — a small instrument, sun/moon ─────────────────── */
+/* ──────────────────────────────────────────────────────────────────────────
+   The control. A three-way segmented switch rather than a binary toggle,
+   because "follow my system" is a real choice and hiding it is a lie.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const OPTIONS: { value: ThemeChoice; label: string; Icon: typeof Sun }[] = [
+  { value: "light", label: "Light", Icon: Sun },
+  { value: "system", label: "System", Icon: Monitor },
+  { value: "dark", label: "Dark", Icon: Moon },
+];
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const { isDay, toggle } = useTheme();
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      role="switch"
-      aria-checked={isDay}
-      aria-label={isDay ? "Switch to night theme" : "Switch to day theme"}
-      title={isDay ? "Night — the observatory" : "Day — daybreak"}
-      className={`group relative inline-flex h-8 w-[58px] shrink-0 items-center rounded-full border border-line-strong bg-card px-1 transition-colors ${className ?? ""}`}
-    >
-      {/* travelling pill */}
-      <span
-        aria-hidden
-        className="absolute top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full bg-ember shadow-[0_2px_10px_-2px_rgba(139,128,249,0.6)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.28,1)]"
-        style={{ left: isDay ? 26 : 4 }}
-      >
-        {isDay ? <SunIcon /> : <MoonIcon />}
-      </span>
-      {/* the two skies */}
-      <span aria-hidden className="ml-1.5 flex-1 text-left">
-        <MoonIcon dim />
-      </span>
-      <span aria-hidden className="mr-1.5">
-        <SunIcon dim />
-      </span>
-    </button>
-  );
-}
+  const { choice, set } = useTheme();
 
-function SunIcon({ dim = false }: { dim?: boolean }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      className={dim ? "size-3 text-ink-4" : "size-3.5 text-[var(--on-ember)]"}
-      aria-hidden
+    <div
+      role="radiogroup"
+      aria-label="Colour theme"
+      className={
+        "inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5 " +
+        (className ?? "")
+      }
     >
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </svg>
-  );
-}
-
-function MoonIcon({ dim = false }: { dim?: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={dim ? "size-3 text-ink-4" : "size-3.5 text-[var(--on-ember)]"}
-      aria-hidden
-    >
-      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-    </svg>
+      {OPTIONS.map(({ value, label, Icon }) => {
+        const active = choice === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={label}
+            title={label}
+            onClick={() => set(value)}
+            className={
+              "grid size-7 place-items-center rounded-full transition-[background-color,color,box-shadow] duration-150 ease-out " +
+              (active
+                ? "bg-surface text-ink shadow-[var(--sh-1)]"
+                : "text-ink-3 hover:text-ink")
+            }
+          >
+            <Icon className="size-[15px]" strokeWidth={1.75} aria-hidden />
+          </button>
+        );
+      })}
+    </div>
   );
 }

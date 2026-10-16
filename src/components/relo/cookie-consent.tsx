@@ -1,6 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "./chrome";
+import { cn } from "@/lib/utils";
+
+/* ==========================================================================
+   Cookie notice.
+
+   RELO sets no cookies. It keeps three local-storage entries, so the banner
+   says exactly that rather than borrowing the usual vague wording. Both
+   buttons do the same thing; the choice is recorded only so the banner does
+   not come back.
+   ========================================================================== */
 
 export const CONSENT_KEY = "relo-cookie-consent";
 export const CONSENT_EVENT = "relo:consent-open";
@@ -32,16 +43,16 @@ function storeConsent(choice: ConsentChoice) {
   try {
     window.localStorage.setItem(CONSENT_KEY, JSON.stringify(record));
   } catch {
-    /* private mode — the choice simply does not persist */
+    /* private mode: the choice simply does not persist */
   }
-  window.dispatchEvent(new CustomEvent("relo:consent-changed", { detail: record }));
+  window.dispatchEvent(new CustomEvent(CONSENT_EVENT, { detail: { resolved: true } }));
 }
 
 export function CookieConsent({ navigate }: { navigate: (to: string) => void }) {
   const [open, setOpen] = useState(false);
   const acceptRef = useRef<HTMLButtonElement>(null);
 
-  /* show once, on first visit only, after the page has settled */
+  /* appear once, shortly after the page settles */
   useEffect(() => {
     const id = window.setTimeout(() => {
       if (!readConsent()) setOpen(true);
@@ -49,19 +60,21 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
     return () => window.clearTimeout(id);
   }, []);
 
-  /* every footer's "cookie settings" link re-opens the banner */
+  /* the footer link in every legal page re-opens it */
   useEffect(() => {
-    const reopen = () => setOpen(true);
+    const reopen = (e: Event) => {
+      const resolved = (e as CustomEvent<{ resolved?: boolean }>).detail?.resolved;
+      if (!resolved) setOpen(true);
+    };
     window.addEventListener(CONSENT_EVENT, reopen);
     return () => window.removeEventListener(CONSENT_EVENT, reopen);
   }, []);
 
-  /* keyboard: focus the honest default when the banner appears */
+  /* move focus into the notice when it appears */
   useEffect(() => {
-    if (open) {
-      const id = window.setTimeout(() => acceptRef.current?.focus(), 300);
-      return () => window.clearTimeout(id);
-    }
+    if (!open) return;
+    const id = window.setTimeout(() => acceptRef.current?.focus(), 300);
+    return () => window.clearTimeout(id);
   }, [open]);
 
   const choose = useCallback((choice: ConsentChoice) => {
@@ -77,57 +90,49 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
       aria-modal="true"
       aria-labelledby="cookie-title"
       aria-describedby="cookie-desc"
-      className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:max-w-[440px]"
+      className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:w-[440px]"
     >
-      <div className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-lg">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 grid size-7 place-items-center rounded-md bg-accent-wash text-accent font-bold text-xs">
-            !
-          </div>
-          <div className="min-w-0">
-            <h2 id="cookie-title" className="text-sm font-semibold text-text">
-              A word about cookies
-            </h2>
-            <p id="cookie-desc" className="mt-1.5 text-sm text-text-2 leading-relaxed">
-              We keep only what this device needs to run RELO: a sign-in session,
-              your night or day theme, and your studio demo state. No trackers, no
-              ads, no third-party pixels.
-              <br />
-              <button
-                type="button"
-                onClick={() => {
-                  navigate("/cookies");
-                  setOpen(false);
-                }}
-                className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover"
-              >
-                read the full policy
-              </button>
-              .
-            </p>
-          </div>
-        </div>
+      <div className="rounded-xl border border-line bg-surface p-5 shadow-[var(--sh-3)]">
+        <h2 id="cookie-title" className="h4 text-ink">
+          A word about cookies
+        </h2>
 
-        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <p id="cookie-desc" className="mt-2.5 text-[13.5px] leading-relaxed text-ink-2">
+          RELO sets no cookies at all. It keeps three things in this browser: your
+          theme choice, your studio demo state, and the answer you give this banner.
+          No trackers, no advertising, no third-party pixels.{" "}
           <button
-            ref={acceptRef}
             type="button"
+            onClick={() => {
+              navigate("/cookies");
+              setOpen(false);
+            }}
+            className="font-semibold text-signal underline decoration-signal/35 underline-offset-2 transition-colors hover:decoration-signal"
+          >
+            Read the full inventory
+          </button>
+          .
+        </p>
+
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+          <Button
+            ref={acceptRef}
+            variant="ink"
+            className="flex-1"
             onClick={() => choose("all")}
-            className="inline-flex h-10 w-full flex-1 items-center justify-center gap-2 rounded-md bg-accent text-accent-ink px-4 text-sm font-semibold hover:bg-accent-hover transition-colors sm:w-auto"
           >
             Accept all cookies
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
             onClick={() => choose("necessary")}
-            className="inline-flex h-10 w-full flex-1 items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 text-sm font-semibold text-text-2 hover:bg-surface-2 transition-colors sm:w-auto"
           >
             Only what is necessary
-          </button>
+          </Button>
         </div>
-        <p className="mt-4 text-[11px] uppercase tracking-wider text-text-3">
-          change your mind anytime · cookie settings live in every footer
-        </p>
+
+        <p className="caption mt-4">Change your mind from any footer</p>
       </div>
     </div>
   );
@@ -138,7 +143,7 @@ export function CookieSettingsLink({ className }: { className?: string }) {
     <button
       type="button"
       onClick={() => window.dispatchEvent(new CustomEvent(CONSENT_EVENT))}
-      className={className ?? ""}
+      className={cn("transition-colors hover:text-ink", className)}
     >
       Cookie settings
     </button>

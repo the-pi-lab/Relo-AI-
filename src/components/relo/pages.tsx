@@ -1,70 +1,79 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { ArrowRight, Mail, Play } from "lucide-react";
-import { Logo, RButton, SectionHead } from "./chrome";
+import React, { useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import { Button, Container, Logo } from "./chrome";
 import { ThemeToggle } from "@/lib/relo/theme";
 import { CookieSettingsLink } from "./cookie-consent";
+import { cn } from "@/lib/utils";
 
-/* ──────────────────────────────────────────────────────────────────────
-   Shared page shell — header + footer only. No shader sky, no ASCII,
-   no gradient text, no scroll reveals.
-   ───────────────────────────────────────────────────────────────────── */
+/* ==========================================================================
+   Legal documents and the error page.
 
-function PageNav({ navigate }: { navigate: (to: string) => void }) {
+   The policy pages carry real substance, so they get a real reading layout:
+   a sticky contents rail on the left, a measured column on the right, and
+   numbered sections separated by hairlines.
+   ========================================================================== */
+
+function DocNav({ navigate }: { navigate: (to: string) => void }) {
   return (
-    <header className="fixed inset-x-0 top-0 z-30 flex justify-center px-4 pt-3">
-      <div className="flex w-full max-w-5xl items-center gap-3 rounded-lg border border-border bg-surface px-3.5 py-2">
+    <header className="sticky top-0 z-40 border-b border-line bg-canvas">
+      <Container className="flex h-16 items-center gap-3">
         <Logo onClick={() => navigate("/")} />
-        <span className="ml-2 hidden text-xs font-semibold uppercase tracking-wider text-text-3 sm:block">
-          relo
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <ThemeToggle />
-          <RButton variant="ghost" size="sm" onClick={() => navigate("/")}>
-            <ArrowRight className="size-3.5" /> Home
-          </RButton>
+        <span className="caption ml-1 hidden sm:block">Legal</span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <ThemeToggle className="hidden sm:inline-flex" />
+          <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+            Back to site
+          </Button>
         </div>
-      </div>
+      </Container>
     </header>
   );
 }
 
-export function PageFooter({ navigate }: { navigate: (to: string) => void }) {
+function DocFooter({ navigate }: { navigate: (to: string) => void }) {
   return (
-    <footer className="border-t border-border bg-surface">
-      <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 py-10 sm:flex-row sm:px-6 sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Logo onClick={() => navigate("/")} />
-          <span className="text-xs font-semibold text-text">RELO</span>
-        </div>
-        <div className="flex items-center gap-2 font-mono text-[11px] text-text-3 uppercase tracking-wider">
-          <button onClick={() => navigate("/privacy")} className="hover:text-text transition-colors">
+    <footer className="border-t border-line bg-canvas">
+      <Container className="flex flex-col gap-5 py-10 sm:flex-row sm:items-center sm:justify-between">
+        <Logo onClick={() => navigate("/")} />
+        <nav
+          aria-label="Legal"
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-ink-3"
+        >
+          <button
+            type="button"
+            onClick={() => navigate("/privacy")}
+            className="transition-colors hover:text-ink"
+          >
             Privacy
           </button>
-          <span aria-hidden>·</span>
-          <button onClick={() => navigate("/terms")} className="hover:text-text transition-colors">
+          <button
+            type="button"
+            onClick={() => navigate("/terms")}
+            className="transition-colors hover:text-ink"
+          >
             Terms
           </button>
-          <span aria-hidden>·</span>
-          <button onClick={() => navigate("/cookies")} className="hover:text-text transition-colors">
+          <button
+            type="button"
+            onClick={() => navigate("/cookies")}
+            className="transition-colors hover:text-ink"
+          >
             Cookies
           </button>
-          <span aria-hidden>·</span>
           <CookieSettingsLink />
-          <span aria-hidden>·</span>
-          <a href="mailto:hello@thepilab.in" className="text-accent hover:text-accent-hover underline underline-offset-2">
+          <a
+            href="mailto:hello@thepilab.in"
+            className="font-medium text-signal underline decoration-signal/35 underline-offset-2 transition-colors hover:decoration-signal"
+          >
             hello@thepilab.in
           </a>
-        </div>
-      </div>
+        </nav>
+      </Container>
     </footer>
   );
 }
-
-/* ──────────────────────────────────────────────────────────────────────
-   Document page — headline, meta line, numbered sections, plain body.
-   ───────────────────────────────────────────────────────────────────── */
 
 interface DocSection {
   title: string;
@@ -85,58 +94,109 @@ function DocPage({
   intro: string;
   sections: DocSection[];
 }) {
+  const [active, setActive] = useState(0);
+
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, []);
 
+  const goTo = (i: number) => {
+    setActive(i);
+    document.getElementById(`doc-sec-${i}`)?.scrollIntoView({ block: "start" });
+  };
+
   return (
-    <div className="relative min-h-screen bg-surface">
-      <PageNav navigate={navigate} />
+    <div className="min-h-screen bg-canvas">
+      <DocNav navigate={navigate} />
 
-      <main className="relative z-10 mx-auto max-w-3xl px-5 pb-16 pt-32 sm:px-8 sm:pt-40">
-        <h1 className="h1 text-text">{title}</h1>
-        <p className="mt-4 lead">{intro}</p>
-        <p className="mt-4 caption">{updated}</p>
+      <div className="border-b border-line">
+        <Container className="py-14 md:py-20">
+          <p className="caption">Legal · updated {updated}</p>
+          <h1 className="h1 mt-5 max-w-3xl text-ink">{title}</h1>
+          <p className="lead mt-5 max-w-3xl">{intro}</p>
+        </Container>
+      </div>
 
-        <div className="mt-12 space-y-10 border-t border-border pt-8">
+      <Container className="grid gap-12 py-14 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-16 lg:py-20">
+        {/* Contents rail. Sticky, because these are long documents. */}
+        <nav aria-label="Contents" className="lg:sticky lg:top-24 lg:self-start">
+          <p className="caption mb-4">Contents</p>
+          <ol className="space-y-1">
+            {sections.map((s, i) => (
+              <li key={s.title}>
+                <button
+                  type="button"
+                  onClick={() => goTo(i)}
+                  aria-current={active === i ? "true" : undefined}
+                  className={cn(
+                    "flex w-full gap-3 rounded-md px-2.5 py-2 text-left text-[13px] leading-snug transition-colors duration-150 ease-out",
+                    active === i
+                      ? "bg-surface-2 font-semibold text-ink"
+                      : "text-ink-3 hover:bg-surface-2 hover:text-ink"
+                  )}
+                >
+                  <span className="font-mono text-[11px] text-ink-3 tnum">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  {s.title}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <div className="min-w-0">
           {sections.map((s, i) => (
-            <section key={s.title} aria-labelledby={`sec-${i}`}>
-              <div className="flex items-baseline gap-3">
-                <span className="text-xs font-bold text-accent tracking-wider uppercase tnum">
+            <section
+              key={s.title}
+              id={`doc-sec-${i}`}
+              aria-labelledby={`doc-h-${i}`}
+              className="scroll-mt-24 border-t border-line py-10 first:border-t-0 first:pt-0"
+            >
+              <h2 id={`doc-h-${i}`} className="h3 text-ink">
+                <span className="font-mono text-[13px] font-medium text-signal tnum">
                   {String(i + 1).padStart(2, "0")}
                 </span>
-                <h2 id={`sec-${i}`} className="h3 text-text">
-                  {s.title}
-                </h2>
-              </div>
-              <div className="mt-4 space-y-5">
+                <span className="ml-3">{s.title}</span>
+              </h2>
+
+              <div className="mt-5 space-y-4">
                 {s.body.map((p, j) => (
-                  <p key={j} className="text-sm text-text-2 leading-relaxed">{p}</p>
+                  <p key={j} className="max-w-[68ch] text-[15px] leading-relaxed text-ink-2">
+                    {p}
+                  </p>
                 ))}
-                {s.list && (
-                  <ul className="mt-3 space-y-3 pl-6">
-                    {s.list.map((li) => (
-                      <li key={li} className="flex items-start gap-3 text-sm text-text-2 leading-relaxed">
-                        <span className="mt-[3px] size-1.5 shrink-0 rounded-full bg-accent" />
-                        {li}
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
-              {i < sections.length - 1 && <div className="hairline-x mt-10" />}
+
+              {s.list && (
+                <ul className="mt-6 max-w-[68ch] divide-y divide-line border-y border-line">
+                  {s.list.map((li) => (
+                    <li key={li} className="flex gap-3.5 py-3 text-[14.5px] leading-relaxed text-ink-2">
+                      <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-signal" aria-hidden />
+                      {li}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           ))}
-        </div>
 
-        <div className="mt-16 flex flex-col items-center gap-3 border-t border-border pt-10">
-          <p className="text-xs text-text-3 uppercase tracking-wider">
-            questions → hello@thepilab.in
-          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line bg-surface p-5">
+            <p className="text-[13.5px] text-ink-2">
+              Something here unclear? A person reads every message.
+            </p>
+            <a
+              href="mailto:hello@thepilab.in"
+              className="inline-flex items-center gap-2 text-[13.5px] font-semibold text-signal transition-colors hover:text-signal-hover"
+            >
+              hello@thepilab.in
+              <ArrowRight className="size-3.5" aria-hidden />
+            </a>
+          </div>
         </div>
-      </main>
+      </Container>
 
-      <PageFooter navigate={navigate} />
+      <DocFooter navigate={navigate} />
     </div>
   );
 }
@@ -151,24 +211,24 @@ export function PrivacyPage({ navigate }: { navigate: (to: string) => void }) {
       navigate={navigate}
       title="Your data stays yours"
       updated="October 11, 2025"
-      intro="RELO automates conversations you already have permission to have — through Instagram's official API. This policy explains, in plain language, what touches our servers, what never does, and how to take everything back with one click. It complies with India's Digital Personal Data Protection Act, 2023, and we hold ourselves to that standard for everyone, everywhere."
+      intro="RELO automates conversations you already have permission to have, through Instagram's official API. This page explains in plain language what touches our servers, what never does, and how to take everything back in one move. It follows India's Digital Personal Data Protection Act, 2023, and we hold ourselves to that standard for everyone, everywhere."
       sections={[
         {
           title: "Who we are",
           body: [
-            "RELO is built by The π Lab, a software studio based in India. We provide an Instagram automation platform that replies to comments, sends template DMs, and captures leads on behalf of creators. You can reach a human at hello@thepilab.in for anything privacy-related — a person reads every message, not a ticket queue.",
-            "Under the DPDP Act, The π Lab is the Data Fiduciary for your account information, billing records, and the lead data processed through your automations. When you collect leads from your own audience, you decide the purpose of that messaging. We hand you the tools — one-click export, deletion, delivery logs — to meet that responsibility.",
+            "RELO is built by The Pi Lab, a software studio based in India. We provide an Instagram automation platform that replies to comments, sends template DMs, and captures leads on behalf of creators. You can reach a human at hello@thepilab.in for anything privacy related. A person reads every message, not a ticket queue.",
+            "Under the DPDP Act, The Pi Lab is the Data Fiduciary for your account information, billing records, and the lead data processed through your automations. When you collect leads from your own audience, you decide the purpose of that messaging. We hand you the tools to meet that responsibility: one-click export, deletion, and delivery logs.",
           ],
         },
         {
           title: "What we collect",
           body: [
-            "We collect the minimum the product needs to function. When you connect an account, Meta shares your Instagram Professional account ID, display name, and follower relationship status for people who interact with your automations. When someone triggers a flow, we store their username, whether they follow you, which keyword they used, and which DM button they clicked.",
-            "We also keep operational records — automation settings you write, delivery logs, aggregate counters (DMs sent, clicks, replies), and basic device or browser metadata for security and debugging.",
+            "We collect the minimum the product needs to function. When you connect an account, Meta shares your Instagram Professional account ID, display name, and the follower status of people who interact with your automations. When someone triggers a flow, we store their username, whether they follow you, which keyword they used, and which DM button they tapped.",
+            "We also keep operational records: the automation settings you write, delivery logs, aggregate counters such as DMs sent, clicks and replies, and basic device or browser metadata for security and debugging.",
           ],
           list: [
             "Account: email, plan, connected Instagram account ID",
-            "Leads: username, follower status, keyword matched, button clicked",
+            "Leads: username, follower status, keyword matched, button tapped",
             "Content you write: replies, DM cards, follow-up texts, AI prompts",
             "Usage: delivery outcomes, timestamps, error logs",
           ],
@@ -176,36 +236,36 @@ export function PrivacyPage({ navigate }: { navigate: (to: string) => void }) {
         {
           title: "What we never collect",
           body: [
-            "We never ask for your Instagram or Facebook password — connection happens entirely inside Meta's official OAuth screen, and the credentials stay with Meta. We do not read your direct-message history beyond the threads our automations send, we do not scrape profiles, and we do not sell, rent, or trade any data with data brokers or advertising networks.",
-            "Our AI reply feature sends only the prompt and short context you configure to the model provider — never your full lead list, never your followers' identities beyond what the reply needs.",
+            "We never ask for your Instagram or Facebook password. Connection happens entirely inside Meta's official OAuth screen and the credentials stay with Meta. We do not read direct-message history beyond the threads our automations send, we do not scrape profiles, and we do not sell, rent or trade data with brokers or advertising networks.",
+            "The AI reply feature sends only the prompt and the short context you configure to the model provider. It never sends your full lead list, and never your followers' identities beyond what a single reply needs.",
           ],
         },
         {
           title: "How your data is used",
           body: [
-            "Your data is used to run the service you turned on: matching keywords, sending your replies and DM cards, timing follow-ups, and showing you analytics. Lead records power your searchable audience, your CSV export, and campaign delivery inside Meta's 24-hour window.",
-            "We use aggregated, de-identified counters to keep the engine healthy and to price plans honestly. We do not build advertising profiles, and we do not use your content to train models. Nothing collected for one reason is quietly used for another without asking you again.",
+            "Your data is used to run the service you switched on: matching keywords, sending your replies and DM cards, timing follow-ups, and showing you analytics. Lead records power your searchable audience, your CSV export, and campaign delivery inside Meta's 24-hour window.",
+            "We use aggregated and de-identified counters to keep the engine healthy and to price plans honestly. We do not build advertising profiles and we do not train models on your content. Nothing collected for one reason is quietly used for another without asking you again.",
           ],
         },
         {
           title: "Consent, and taking it back",
           body: [
-            "Under the DPDP Act we may process your personal data only with your consent, for the purposes you were told about, and nothing beyond them. You give that consent when you create an account, connect a Meta account through their official screen, or switch on a feature that needs new data. Every consent request tells you what is collected and why. We do not bundle consent into fine print, and we do not make the product conditional on data it does not truly need.",
-            "You can withdraw any consent as easily as you gave it: disconnect the Meta account, delete an automation, wipe a lead list, or delete the whole workspace. Withdrawal stops all processing going forward, takes effect immediately, and costs you nothing. We will never nag or dark-pattern you into staying.",
+            "Under the DPDP Act we may process your personal data only with your consent, only for the purposes you were told about, and nothing beyond them. You give that consent when you create an account, connect a Meta account through their official screen, or switch on a feature that needs new data. Every request tells you what is collected and why. We do not bury consent in fine print and we do not make the product conditional on data it does not truly need.",
+            "You can withdraw any consent as easily as you gave it. Disconnect the Meta account, delete an automation, wipe a lead list, or delete the whole workspace. Withdrawal stops all processing going forward, takes effect immediately, and costs you nothing.",
           ],
         },
         {
           title: "Your rights under the DPDP Act",
           body: [
-            "Your leads are yours — export the complete book to CSV with one click at any time, or delete a single lead from the Leads view. Deleting your workspace removes your account, automations, lead data, and analytics within 30 days, except where we must keep billing records for tax law.",
-            "The Act gives you — the Data Principal — rights we honour without a lawyer's letter: ask what we hold, get a portable copy, correct anything inaccurate, have it erased when the purpose is done, and nominate someone to act for you if you cannot. Write to hello@thepilab.in from your account email; verified requests get a substantive answer within 30 days.",
+            "Your leads are yours. Export the complete book to CSV with one click at any time, or remove a single lead from the Leads view. Deleting your workspace removes your account, automations, lead data and analytics within 30 days, except where tax law requires us to keep billing records.",
+            "The Act gives you, as the Data Principal, rights we honour without a lawyer's letter: ask what we hold, get a portable copy, correct anything inaccurate, have it erased once the purpose is done, and nominate somebody to act for you if you cannot. Write to hello@thepilab.in from your account email and a verified request receives a substantive answer within 30 days.",
           ],
           list: [
-            "Access — a readable summary of everything we hold about you",
-            "Correction — fix inaccurate or incomplete data",
-            "Erasure — delete data the purpose no longer needs",
-            "Grievance redressal — a fast, documented answer to any complaint",
-            "Nomination — choose another individual to act for you if you cannot",
+            "Access: a readable summary of everything we hold about you",
+            "Correction: fix inaccurate or incomplete data",
+            "Erasure: delete data the purpose no longer needs",
+            "Grievance redressal: a fast, documented answer to any complaint",
+            "Nomination: choose another person to act for you if you cannot",
           ],
         },
       ]}
@@ -215,7 +275,7 @@ export function PrivacyPage({ navigate }: { navigate: (to: string) => void }) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    COOKIES
-   ════════════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 export function CookiesPage({ navigate }: { navigate: (to: string) => void }) {
   return (
@@ -223,32 +283,31 @@ export function CookiesPage({ navigate }: { navigate: (to: string) => void }) {
       navigate={navigate}
       title="What this site stores on your device"
       updated="October 11, 2025"
-      intro="This page is the complete inventory of what RELO keeps on your device — nothing hidden behind “and partners”. We use no third-party cookies, no trackers, and no embeds. Everything listed below is first-party, readable only by this site, and erasable by you in one move."
+      intro="This is the complete inventory, taken straight from the code, with nothing hidden behind the phrase and partners. RELO sets no cookies at all. What it does keep lives in your own browser's local storage, is readable only by this site, and can be erased in one move."
       sections={[
         {
           title: "The complete list",
           body: [
-            "There are exactly four things. This is the whole list; if your browser ever shows more on this site, it came from your own typing, not from us.",
+            "There are exactly three entries and they are all local storage, not cookies. This is the whole list. If your browser ever shows anything else on this domain, it came from your own typing or from an extension, not from us.",
           ],
           list: [
-            "relo-session (first-party cookie) — keeps you signed in between visits. Deleted when you sign out.",
-            "relo-theme (local storage) — remembers whether you chose night or day. Contains one word.",
-            "relo-cookie-consent (local storage) — remembers your answer to the cookie banner.",
-            "relo-studio (local storage) — saves your demo workspace so the studio survives a refresh.",
+            "relo-theme: remembers whether you chose light, dark or system. Contains one word.",
+            "relo-cookie-consent: remembers your answer to the banner so it stops appearing.",
+            "relo-studio-v2: saves the demo workspace so the studio survives a page refresh.",
           ],
         },
         {
           title: "What we never store",
           body: [
-            "No analytics cookies — we do not count you, profile you, or watch you scroll. No advertising cookies, no retargeting pixels, no device fingerprinting. No social-media widgets reporting your visit to another company. No third-party embeds of any kind.",
-            "Even our fonts are self-hosted, so your browser never contacts Google Fonts or any other third party while you read. Your visit stays between you and this site.",
+            "No analytics cookies, so we do not count you, profile you or watch you scroll. No advertising cookies, no retargeting pixels, no device fingerprinting. No social widgets reporting your visit to another company, and no third-party embeds of any kind.",
+            "Even the fonts are self-hosted through the application bundle, so your browser never contacts Google Fonts or anybody else while you read. Your visit stays between you and this site.",
           ],
         },
         {
           title: "Your consent, and withdrawing it",
           body: [
-            "The banner offers exactly two buttons and no tricks: “Accept all cookies” and “Only what is necessary”. Both work identically here, because we set nothing beyond what is necessary anyway. Accepting exists so you can tell us you read and agreed; the choice is recorded so the banner does not return.",
-            "To change your mind at any time, open “Cookie settings” in the footer of every legal page and choose again, or clear this site's data in your browser. That erases every item above and signs you out.",
+            "The banner offers two buttons and no tricks: Accept all cookies, and Only what is necessary. Both behave identically here, because we set nothing beyond what is necessary anyway. Accepting simply records that you read it, so the banner does not return.",
+            "To change your mind, open Cookie settings in the footer of any legal page and choose again, or clear this site's data in your browser. That erases all three entries above and signs you out.",
           ],
         },
       ]}
@@ -258,7 +317,7 @@ export function CookiesPage({ navigate }: { navigate: (to: string) => void }) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TERMS
-   ════════════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 export function TermsPage({ navigate }: { navigate: (to: string) => void }) {
   return (
@@ -266,53 +325,53 @@ export function TermsPage({ navigate }: { navigate: (to: string) => void }) {
       navigate={navigate}
       title="The rules of the house"
       updated="October 11, 2025"
-      intro="These terms are the agreement between you and The π Lab for using RELO. We have kept them short and readable on purpose. They set out what the service does, what you promise in return, and what happens when things go wrong."
+      intro="These terms are the agreement between you and The Pi Lab for using RELO. They are kept short and readable on purpose. They set out what the service does, what you promise in return, and what happens when something goes wrong."
       sections={[
         {
           title: "Acceptance",
           body: [
-            "By creating an account, connecting an Instagram account, or using any part of RELO, you agree to these terms. If you are agreeing on behalf of a company or agency, you confirm you have the authority to bind that entity. If you do not agree with anything here, please do not use the service — we would rather lose a signup than argue later.",
-            "You must be at least 16 years old, or the minimum digital-consent age in your country, to use RELO.",
+            "By creating an account, connecting an Instagram account, or using any part of RELO, you agree to these terms. If you are agreeing on behalf of a company or agency, you confirm you have the authority to bind that entity. If you disagree with anything here, please do not use the service. We would rather lose a signup than argue later.",
+            "You must be at least 16 years old, or the minimum digital consent age in your country, to use RELO.",
           ],
         },
         {
           title: "What the service does",
           body: [
-            "RELO watches the comments on reels you choose, matches keywords you define, publishes public replies and 3-button template DM cards through Instagram's official API, captures leads, and lets you message reachable audiences inside Meta's 24-hour window. Studio-tier features — the node canvas, extra accounts, and higher AI credit limits — are described on the pricing page.",
-            "We may add, change, or retire features as the product grows. If we retire something you rely on, we will give you at least 30 days of notice by email.",
+            "RELO watches the comments on the Reels you choose, matches the keywords you define, publishes public replies and three-button template DM cards through Instagram's official API, captures leads, and lets you message reachable audiences inside Meta's 24-hour window. Studio-tier features, namely the node canvas, extra connected accounts and higher AI credit limits, are described on the pricing page.",
+            "We may add, change or retire features as the product grows. If we retire something you rely on, we will give you at least 30 days of notice by email.",
           ],
         },
         {
           title: "Your account and Meta permissions",
           body: [
-            "You need an Instagram Professional (Creator or Business) account connected through Meta's official OAuth flow. You are responsible for keeping your account secure, for the accuracy of the information you provide, and for everything done through your connection.",
-            "You grant RELO the Meta permissions required to deliver the features you enable — nothing broader. You can shrink or revoke those permissions at any time, understanding that revoked permissions stop the automations that need them.",
+            "You need an Instagram Professional account, Creator or Business, connected through Meta's official OAuth flow. You are responsible for keeping your account secure, for the accuracy of the information you provide, and for everything done through your connection.",
+            "You grant RELO the Meta permissions required to deliver the features you enable, and nothing broader. You can shrink or revoke those permissions at any time, understanding that revoked permissions stop the automations that depend on them.",
           ],
         },
         {
           title: "Acceptable use",
           body: [
-            "RELO exists to make conversations more human, not less. You agree to use it lawfully and kindly, and specifically not to use it for spam, harassment, hate speech, scams, misleading financial schemes, or anything that violates Meta's Platform Terms, Community Standards, or applicable law.",
-            "We built human-jitter timing, rate ceilings, and delivery caps into the engine to protect your account. You agree not to circumvent them, resell raw API access, or run RELO on accounts you do not own or administer.",
+            "RELO exists to make conversations more human, not less. You agree to use it lawfully and kindly, and specifically not for spam, harassment, hate speech, scams, misleading financial schemes, or anything that violates Meta's Platform Terms, Community Standards or applicable law.",
+            "Human pacing, rate ceilings and delivery caps are built into the engine to protect your account. You agree not to circumvent them, not to resell raw API access, and not to run RELO on accounts you do not own or administer.",
           ],
           list: [
             "No bulk unsolicited DMs outside the audiences and windows Meta allows",
             "No impersonating people or brands, and no AI replies pretending to be a human you are not",
-            "No harvesting leads for use outside RELO's campaign tools",
+            "No harvesting leads for use outside RELO's own campaign tools",
             "One business per workspace unless you are on Studio or an agency plan",
           ],
         },
         {
           title: "Automation risk and your Meta account",
           body: [
-            "RELO is an independent product built by The π Lab. We are not affiliated with, endorsed by, or sponsored by Meta Platforms, Instagram, or any of their subsidiaries. All trademarks belong to their owners, and references to them describe compatibility, not partnership.",
-            "Automating any Instagram activity carries inherent risk set by Meta — not by us. Our human-jitter timing, rate ceilings, and delivery caps are engineered to keep your account safe, but no tool can promise zero risk, and we will never claim otherwise. You remain responsible for complying with Meta's Platform Terms and Community Standards, for what your automations send, and for the content you publish.",
+            "RELO is an independent product built by The Pi Lab. We are not affiliated with, endorsed by or sponsored by Meta Platforms, Instagram, or any of their subsidiaries. All trademarks belong to their owners, and any reference to them describes compatibility, not partnership.",
+            "Automating any Instagram activity carries inherent risk, and that risk is set by Meta rather than by us. Our pacing, rate ceilings and delivery caps are engineered to keep your account safe, but no tool can promise zero risk and we will never claim otherwise. You remain responsible for complying with Meta's Platform Terms and Community Standards, for what your automations send, and for the content you publish.",
           ],
         },
         {
           title: "Suspension and termination",
           body: [
-            "You can stop using RELO and delete your workspace at any time from Settings. We may suspend or terminate an account that breaks these terms — especially spam or Meta-policy violations — with notice where the law and the situation allow it, and immediately where abuse threatens other users or the platform.",
+            "You can stop using RELO and delete your workspace at any time from Settings. We may suspend or terminate an account that breaks these terms, especially for spam or Meta policy violations, with notice where the law and the situation allow it, and immediately where abuse threatens other users or the platform.",
             "If we terminate you for breach, no refund is due for the current period. If we retire the service entirely, we will give you at least 60 days to export your data.",
           ],
         },
@@ -323,7 +382,7 @@ export function TermsPage({ navigate }: { navigate: (to: string) => void }) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    NOT FOUND
-   ════════════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 export function NotFoundPage({ navigate }: { navigate: (to: string) => void }) {
   useEffect(() => {
@@ -331,24 +390,38 @@ export function NotFoundPage({ navigate }: { navigate: (to: string) => void }) {
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-surface flex flex-col">
-      <PageNav navigate={navigate} />
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-5 pt-32 text-center sm:px-8">
-        <h1 className="h1 text-text">This page is not here.</h1>
-        <p className="mt-4 text-sm text-text-2 leading-relaxed max-w-md mx-auto">
-          The coordinates you followed do not point at anything we built. Let us walk
-          you back to the studio.
-        </p>
-        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <RButton onClick={() => navigate("/")}>
-            Back home <span className="text-accent-hover">→</span>
-          </RButton>
-          <RButton variant="outline" onClick={() => navigate("/studio?demo=1")}>
-            <Play className="size-4" /> Tour the studio
-          </RButton>
-        </div>
-      </main>
-      <PageFooter navigate={navigate} />
+    <div className="flex min-h-screen flex-col bg-canvas">
+      <DocNav navigate={navigate} />
+
+      <div className="flex flex-1 items-center">
+        <Container className="py-20">
+          <p className="font-mono text-[13px] font-semibold tracking-[0.12em] text-signal">
+            404
+          </p>
+          <h1 className="h1 mt-5 max-w-2xl text-ink">
+            This page is not here.
+          </h1>
+          <p className="lead mt-5 max-w-xl">
+            The link you followed does not point at anything we built. The studio is
+            still exactly where you left it.
+          </p>
+          <div className="mt-9 flex flex-wrap items-center gap-3">
+            <Button variant="signal" size="lg" onClick={() => navigate("/")}>
+              Back home
+              <ArrowRight className="size-4" aria-hidden />
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => navigate("/studio?demo=1")}
+            >
+              Open the demo studio
+            </Button>
+          </div>
+        </Container>
+      </div>
+
+      <DocFooter navigate={navigate} />
     </div>
   );
 }

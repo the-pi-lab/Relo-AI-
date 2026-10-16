@@ -1,5 +1,5 @@
 /**
- * RELO demo data layer — field-compatible with the production contracts
+ * RELO demo data layer, field-compatible with the production contracts
  * (src/types/contracts.ts of the Cloudflare engine) but typed simply and
  * seeded so the whole Studio works with zero backend.
  */
@@ -93,7 +93,7 @@ export interface FlowNode {
   y: number;
   label: string;
   detail?: string;
-  /** editor parameters (keyword lists, texts, timings) — optional for
+  /** editor parameters (keyword lists, texts, timings), optional for
       backward compatibility with flows persisted before the editor */
   params?: Record<string, string>;
 }
@@ -174,7 +174,7 @@ export const uid = (prefix: string) =>
 export const DEMO_REELS: Reel[] = [
   {
     id: "reel_1",
-    caption: "3 Notion templates that replaced my ₹40,000 productivity stack 🤯",
+    caption: "3 Notion templates that replaced my ₹40,000 productivity stack",
     thumbnailHue: 18,
     commentsCount: 1284,
     likeCount: 24100,
@@ -205,13 +205,13 @@ export const DEMO_AUTOMATIONS: Automation[] = [
     reelCaption: DEMO_REELS[0].caption,
     triggerKeywords: ["notion", "template", "send"],
     commentReplies: [
-      "Just sent it 📬 check your DMs!",
-      "On its way — peek at your requests 💬",
-      "Fired over! Grab it from your inbox ✨",
+      "Just sent it. Check your DMs.",
+      "On its way. Peek at your requests.",
+      "Sent. Grab it from your inbox.",
     ],
     followGateEnabled: true,
     templateCard: {
-      title: "The Creator OS — free pack",
+      title: "The Creator OS free pack",
       subtitle: "3 templates · No email needed",
       buttons: [
         { type: "web_url", title: "Download free pack", url: "https://aarav.so/creator-os" },
@@ -234,9 +234,9 @@ export const DEMO_AUTOMATIONS: Automation[] = [
     reelCaption: DEMO_REELS[1].caption,
     triggerKeywords: ["dashboard", "free"],
     commentReplies: [
-      "Sent! Check your DMs 🚀",
-      "DM'd you the link 💜",
-      "It's in your inbox — go build!",
+      "Sent. Check your DMs.",
+      "DM'd you the link.",
+      "It's in your inbox. Go build.",
     ],
     followGateEnabled: false,
     templateCard: {
@@ -261,7 +261,7 @@ export const DEMO_AUTOMATIONS: Automation[] = [
     reelId: "reel_3",
     reelCaption: DEMO_REELS[2].caption,
     triggerKeywords: ["portfolio", "site", "me"],
-    commentReplies: ["Check your DMs — it's live 🔥", "Link sent! Go claim yours ✉️"],
+    commentReplies: ["Check your DMs. It's live.", "Link sent. Go claim yours."],
     followGateEnabled: true,
     templateCard: {
       title: "Portfolio-in-a-weekend",
@@ -316,7 +316,7 @@ export const DEMO_CAMPAIGNS: Campaign[] = [
     audienceSize: 743,
     status: "completed",
     kind: "card",
-    cardTitle: "Creator OS v2 — 40% off for past grabbers",
+    cardTitle: "Creator OS v2, 40% off for past grabbers",
     scheduledAt: Date.now() - 6 * DAY,
     sentCount: 691,
     failedCount: 12,
@@ -329,7 +329,7 @@ export const DEMO_CAMPAIGNS: Campaign[] = [
     audienceSize: 512,
     status: "sending",
     kind: "text",
-    text: "Yo! I'm hosting a free 45-min workshop on Notion dashboards this Sunday 7pm. Want a seat? 🎟️",
+    text: "I'm hosting a free 45-minute workshop on Notion dashboards this Sunday at 7pm. Want a seat?",
     scheduledAt: Date.now() - 2 * HOUR,
     sentCount: 214,
     failedCount: 3,
@@ -342,7 +342,7 @@ export const DEMO_CAMPAIGNS: Campaign[] = [
     audienceSize: 0,
     status: "draft",
     kind: "card",
-    cardTitle: "You're on the list ⚡",
+    cardTitle: "You're on the list",
     scheduledAt: Date.now() + 12 * DAY,
     sentCount: 0,
     failedCount: 0,
@@ -354,12 +354,12 @@ export const DEMO_CAMPAIGNS: Campaign[] = [
 export const DEMO_FLOWS: Flow[] = [
   {
     id: "flow_1",
-    name: "Free pack → upsell",
+    name: "Free pack to upsell",
     isActive: true,
     isPublished: true,
     nodes: [
       { id: "n1", type: "trigger_comment", x: 30, y: 130, label: "Comment: “notion”", detail: "Whole-word match" },
-      { id: "n2", type: "action_reply", x: 240, y: 50, label: "Public reply", detail: "“Just sent it 📬”" },
+      { id: "n2", type: "action_reply", x: 240, y: 50, label: "Public reply", detail: "“Just sent it.”" },
       { id: "n3", type: "action_dm_card", x: 240, y: 215, label: "DM: free pack", detail: "3-button card" },
       { id: "n4", type: "action_wait", x: 460, y: 215, label: "Wait 60 min", detail: "Human-paced" },
       { id: "n5", type: "action_dm_text", x: 670, y: 215, label: "Follow-up text", detail: "“Made it useful?”" },
@@ -396,7 +396,7 @@ export const DEMO_PRODUCTS: Product[] = [
     id: "prod_3",
     name: "Client Dashboard Kit",
     priceText: "₹999",
-    description: "Freelancer command centre — invoices, projects, pipeline.",
+    description: "Freelancer command centre: invoices, projects, pipeline.",
     link: "https://aarav.so/dashboard",
     isActive: true,
     clicks: 301,
@@ -413,38 +413,38 @@ export const DEMO_PRODUCTS: Product[] = [
 ];
 
 export const DEMO_LINK_PAGE: LinkPageData = {
-  headline: "Aarav makes Notion feel like magic ✨",
+  headline: "Aarav makes Notion feel like magic",
   bio: "Templates, sprints and the occasional 3am reel. Everything I make, one tap away.",
   slug: "aarav",
   theme: "volt",
   isPublished: true,
   blocks: [
-    { id: "lb1", label: "⚡ Creator OS — free pack", targetUrl: "https://aarav.so/creator-os", productId: "prod_1", clickCount: 1204, isActive: true },
-    { id: "lb2", label: "🧠 Second Brain Pro", targetUrl: "https://aarav.so/second-brain", productId: "prod_2", clickCount: 566, isActive: true },
-    { id: "lb3", label: "🗂 Client Dashboard Kit", targetUrl: "https://aarav.so/dashboard", productId: "prod_3", clickCount: 431, isActive: true },
-    { id: "lb4", label: "🎙 The Build Log (podcast)", targetUrl: "https://aarav.so/podcast", clickCount: 190, isActive: true },
-    { id: "lb5", label: "💌 Join 42k readers", targetUrl: "https://aarav.so/newsletter", clickCount: 878, isActive: false },
+    { id: "lb1", label: "Creator OS free pack", targetUrl: "https://aarav.so/creator-os", productId: "prod_1", clickCount: 1204, isActive: true },
+    { id: "lb2", label: "Second Brain Pro", targetUrl: "https://aarav.so/second-brain", productId: "prod_2", clickCount: 566, isActive: true },
+    { id: "lb3", label: "Client Dashboard Kit", targetUrl: "https://aarav.so/dashboard", productId: "prod_3", clickCount: 431, isActive: true },
+    { id: "lb4", label: "The Build Log (podcast)", targetUrl: "https://aarav.so/podcast", clickCount: 190, isActive: true },
+    { id: "lb5", label: "Join 42k readers", targetUrl: "https://aarav.so/newsletter", clickCount: 878, isActive: false },
   ],
 };
 
 export const DEMO_CONTENT: ContentPlan[] = [
-  { id: "cp1", title: "“I automated my DMs for 30 days — here's what happened”", hook: "Day 1 vs Day 30 numbers side by side", status: "published", plannedFor: Date.now() - 3 * DAY },
-  { id: "cp2", title: "Notion template teardown: my ₹40k stack", hook: "Show, don't tell — screen recording", status: "published", plannedFor: Date.now() - 9 * DAY },
+  { id: "cp1", title: "“I automated my DMs for 30 days. Here's what happened”", hook: "Day 1 vs Day 30 numbers side by side", status: "published", plannedFor: Date.now() - 3 * DAY },
+  { id: "cp2", title: "Notion template teardown: my ₹40k stack", hook: "Show, don't tell: screen recording", status: "published", plannedFor: Date.now() - 9 * DAY },
   { id: "cp3", title: "“The DM is the new landing page”", hook: "Cold open with a real DM screenshot", status: "scheduled", plannedFor: Date.now() + 2 * DAY },
   { id: "cp4", title: "Client dashboard in 9 minutes", hook: "Timelapse + downloadable at the end", status: "drafting", plannedFor: Date.now() + 5 * DAY },
-  { id: "cp5", title: "Steal my launch week checklist", hook: "Carousel → reel hybrid", status: "idea", plannedFor: Date.now() + 9 * DAY },
+  { id: "cp5", title: "Steal my launch week checklist", hook: "Carousel and reel hybrid", status: "idea", plannedFor: Date.now() + 9 * DAY },
   { id: "cp6", title: "“Why I turned off link comments”", hook: "Contrarian take, soft CTA", status: "idea", plannedFor: Date.now() + 12 * DAY },
 ];
 
 export const DEMO_ACTIVITY: ActivityEvent[] = [
   { id: "ev1", at: Date.now() - 42_000, kind: "comment", text: "@notionwithneha commented “notion”", meta: "Reel · Creator OS" },
   { id: "ev2", at: Date.now() - 51_000, kind: "dm", text: "DM delivered to @meghnabuilds", meta: "3-button card · 38s human delay" },
-  { id: "ev3", at: Date.now() - 96_000, kind: "lead", text: "New lead captured — @priya.designs", meta: "Follower · via “template”" },
+  { id: "ev3", at: Date.now() - 96_000, kind: "lead", text: "New lead captured: @priya.designs", meta: "Follower · via “template”" },
   { id: "ev4", at: Date.now() - 140_000, kind: "click", text: "@meghnabuilds clicked “Download free pack”", meta: "short link · aarav.so/c/os" },
   { id: "ev5", at: Date.now() - 240_000, kind: "comment", text: "@rohitcodes commented “dashboard”", meta: "Reel · Client Dashboard" },
   { id: "ev6", at: Date.now() - 320_000, kind: "dm", text: "DM delivered to @rohitcodes", meta: "2-button card · 61s human delay" },
   { id: "ev7", at: Date.now() - 480_000, kind: "system", text: "Human takeover on @wanderlustsha", meta: "Manual reply · auto-paused 30 min" },
-  { id: "ev8", at: Date.now() - 620_000, kind: "lead", text: "New lead captured — @arjun.exe", meta: "Non-follower · followed after gate" },
+  { id: "ev8", at: Date.now() - 620_000, kind: "lead", text: "New lead captured: @arjun.exe", meta: "Non-follower · followed after gate" },
 ];
 
 /* 14-day chart series (comments, dms, clicks) */

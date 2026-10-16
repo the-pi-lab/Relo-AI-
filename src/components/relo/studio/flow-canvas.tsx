@@ -1,18 +1,14 @@
 "use client";
 
 /**
- * RELO FLOW CANVAS — the automation editor, built native.
+ * The flow canvas: a node editor for automations.
  *
- * A working node editor in the n8n lineage, dressed in the observatory:
- *   · pannable / zoomable dotted canvas (scroll = zoom-to-cursor)
- *   · draggable step cards with real input/output ports
- *   · drag-from-port to connect — or the “+” chip to add a wired step
- *   · searchable step library (left), parameter inspector (right)
+ *   · pannable, zoomable dotted canvas (scroll zooms to the cursor)
+ *   · draggable step cards with real input and output ports
+ *   · drag from a port to connect, or use the add chip under it
+ *   · searchable step library on the left, inspector on the right
  *   · Test workflow lights the graph up in execution order
- *   · Save / Active toggle, autosave on leave, Delete / Esc keys
- *
- * No hover effects — everything answers clicks, drags and keys,
- * except the ASCII plates which keep their glyph-resolve.
+ *   · Save and Active controls, autosave on leave, Delete and Esc keys
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -36,14 +32,13 @@ import {
   Check,
   Minus,
   Maximize,
-  Workflow,
   CircleCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRelo } from "@/lib/relo/store";
 import { uid, type Flow, type FlowNode, type FlowNodeType } from "@/lib/relo/data";
-import { Field, inputCls } from "./studio-ui";
-import { RButton } from "../chrome";
+import { Field, ViewHead, inputCls } from "./studio-ui";
+import { Button } from "../chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 
@@ -62,7 +57,9 @@ const NODE_META: Record<
     icon: typeof MessageCircle;
     label: string;
     sub: string;
-    tile: string;
+    /* Icon colour only. Step identity is carried by the glyph, never by a
+       filled tile, so a canvas full of steps stays calm to scan. */
+    tone: string;
     group: string;
     hasIn: boolean;
     hasOut: boolean;
@@ -70,35 +67,35 @@ const NODE_META: Record<
 > = {
   trigger_comment: {
     icon: MessageCircle, label: "Comment trigger", sub: "A new comment matches a keyword",
-    tile: "bg-sky/15 text-sky border-sky/40", group: "Triggers", hasIn: false, hasOut: true,
+    tone: "text-chart-2", group: "Triggers", hasIn: false, hasOut: true,
   },
   action_reply: {
     icon: Reply, label: "Public reply", sub: "Reply publicly to the comment",
-    tile: "bg-honey/15 text-honey border-honey/40", group: "Messages", hasIn: true, hasOut: true,
+    tone: "text-warn", group: "Messages", hasIn: true, hasOut: true,
   },
   action_dm_card: {
     icon: LayoutTemplate, label: "DM card", sub: "3-button template card",
-    tile: "bg-ember/15 text-ember-deep border-ember/40", group: "Messages", hasIn: true, hasOut: true,
+    tone: "text-signal", group: "Messages", hasIn: true, hasOut: true,
   },
   action_dm_text: {
     icon: Mail, label: "DM text", sub: "Plain text direct message",
-    tile: "bg-moss/15 text-moss border-moss/40", group: "Messages", hasIn: true, hasOut: true,
+    tone: "text-ok", group: "Messages", hasIn: true, hasOut: true,
   },
   action_condition: {
     icon: GitBranch, label: "If / branch", sub: "Split the flow on comment text",
-    tile: "bg-clay/15 text-clay border-clay/40", group: "Flow", hasIn: true, hasOut: true,
+    tone: "text-chart-5", group: "Flow", hasIn: true, hasOut: true,
   },
   action_wait: {
     icon: Hourglass, label: "Wait", sub: "Human-paced pause",
-    tile: "bg-ink/5 text-ink-3 border-line-strong", group: "Flow", hasIn: true, hasOut: true,
+    tone: "text-ink-3", group: "Flow", hasIn: true, hasOut: true,
   },
   action_ai_text: {
     icon: Sparkles, label: "AI reply", sub: "AI writes the message",
-    tile: "bg-ember/15 text-ember-deep border-ember/40", group: "AI", hasIn: true, hasOut: true,
+    tone: "text-signal", group: "AI", hasIn: true, hasOut: true,
   },
   note: {
     icon: StickyNote, label: "Sticky note", sub: "A note to your future self",
-    tile: "bg-honey/15 text-honey border-honey/40", group: "Utilities", hasIn: false, hasOut: false,
+    tone: "text-warn", group: "Utilities", hasIn: false, hasOut: false,
   },
 };
 
@@ -107,14 +104,14 @@ const GROUPS = ["Triggers", "Messages", "Flow", "AI", "Utilities"];
 function defaultParams(type: FlowNodeType): Record<string, string> {
   switch (type) {
     case "trigger_comment": return { keywords: "notion, template", match: "whole word" };
-    case "action_reply": return { text: "Just sent it 📬 check your DMs!" };
+    case "action_reply": return { text: "Just sent it. Check your DMs." };
     case "action_dm_card":
-      return { title: "The Creator OS — free pack", subtitle: "3 templates · no email needed", button: "Download free pack", url: "https://" };
-    case "action_dm_text": return { text: "Made it useful? Reply here if you're stuck 💬" };
+      return { title: "The Creator OS free pack", subtitle: "3 templates, no email needed", button: "Download free pack", url: "https://" };
+    case "action_dm_text": return { text: "Made it useful? Reply here if you get stuck." };
     case "action_wait": return { minutes: "45" };
     case "action_condition": return { contains: "price" };
-    case "action_ai_text": return { prompt: "Answer questions about my products — warm, 2 sentences max." };
-    case "note": return { text: "The story: comment in → money out." };
+    case "action_ai_text": return { prompt: "Answer questions about my products. Warm, two sentences at most." };
+    case "note": return { text: "The story: comment in, customer out." };
   }
 }
 
@@ -128,7 +125,7 @@ function nodeSummary(n: FlowNode): string {
         .map((s) => s.trim())
         .filter(Boolean);
       if (list.length) return list.map((k) => `#${k}`).join(" ");
-      /* legacy nodes carry their note in `detail` — show it verbatim */
+      /* legacy nodes carry their note in `detail`, so show it verbatim */
       return n.detail ?? "no keywords yet";
     }
     case "action_reply": return p?.text ?? n.detail ?? "reply text";
@@ -314,7 +311,7 @@ export function CanvasView() {
           toast.error("Those steps are already connected");
         } else {
           mutate((fl) => ({ ...fl, edges: [...fl.edges, { id: uid("e"), from: from.id, to: target.id }] }));
-          toast.success(`Connected — ${NODE_META[from.type].label} → ${NODE_META[target.type].label}`);
+          toast.success(`Connected ${NODE_META[from.type].label} to ${NODE_META[target.type].label}`);
         }
       }
       setConnect(null);
@@ -409,13 +406,13 @@ export function CanvasView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteSel]);
 
-  /* ── test run — the graph lights up in execution order ── */
+  /* ── test run: the graph lights up in execution order ── */
 
   const runTest = () => {
     const f = flowRef.current;
     const triggers = f.nodes.filter((n) => n.type === "trigger_comment");
     if (!triggers.length) {
-      toast.error("Start with a Comment trigger — every flow needs an entry");
+      toast.error("Start with a Comment trigger. Every flow needs an entry.");
       return;
     }
     const outMap = new Map<string, string[]>();
@@ -443,7 +440,7 @@ export function CanvasView() {
     );
     window.setTimeout(
       () => {
-        toast.success(`Test run clean — ${steps.length} steps in sequence`);
+        toast.success(`Test run clean, ${steps.length} steps in sequence`);
         pushActivity("system", `Test run on \u201c${f.name}\u201d`, `${steps.length} steps executed in order`);
       },
       460 * steps.length + 240
@@ -463,7 +460,7 @@ export function CanvasView() {
     setFlow(f);
     setDirty(false);
     saveFlow(f);
-    toast.success(next ? "Workflow activated — it's live \u26a1" : "Workflow deactivated");
+    toast.success(next ? "Workflow is live" : "Workflow paused");
     pushActivity("system", next ? `Activated \u201c${f.name}\u201d` : `Paused \u201c${f.name}\u201d`, "from the canvas");
   };
 
@@ -538,12 +535,17 @@ export function CanvasView() {
   /* ═══════════════ render ═══════════════ */
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-line bg-card shadow-[var(--shadow-soft)]">
+    <>
+      <div className="mb-6">
+        <ViewHead
+          title="Canvas"
+          sub="Build the automation as a graph: the trigger that starts it, the messages that follow, and the waits between them."
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--sh-1)]">
       {/* ── toolbar ── */}
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-ember/30 bg-ember/15 text-ember-deep">
-          <Workflow className="size-4.5" />
-        </span>
         <div className="min-w-0">
           <input
             value={flow.name}
@@ -551,22 +553,23 @@ export function CanvasView() {
               setFlow((f) => ({ ...f, name: e.target.value }));
               setDirty(true);
             }}
-            className="w-44 truncate rounded-lg border border-transparent bg-transparent px-1.5 py-0.5 font-display text-[15px] font-bold outline-none focus:border-line-strong focus:bg-card-soft sm:w-56"
+            className="w-44 truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[15px] font-bold text-ink outline-none transition-colors duration-150 hover:border-line focus:border-line-strong focus:bg-surface-2 sm:w-56"
             aria-label="Workflow name"
           />
-          <p className="px-1.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-4 tnum">
-            {flow.nodes.length} steps · {flow.edges.length} connections
+          <p className="caption px-1.5 pt-0.5">
+            <span className="tnum">{flow.nodes.length}</span> steps ·{" "}
+            <span className="tnum">{flow.edges.length}</span> connections
           </p>
         </div>
         <span
           className={cn(
-            "hidden items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] sm:inline-flex",
-            dirty ? "border-honey/40 bg-honey/10 text-honey" : "border-moss/30 bg-moss/10 text-moss"
+            "caption hidden items-center gap-1.5 rounded-full border px-2.5 py-1 sm:inline-flex",
+            dirty ? "border-warn/35 bg-warn-wash text-warn" : "border-ok/30 bg-ok-wash text-ok"
           )}
         >
           {dirty ? (
             <>
-              <span className="size-1.5 rounded-full bg-honey" /> unsaved
+              <span className="size-1.5 rounded-full bg-warn" /> unsaved
             </>
           ) : (
             <>
@@ -575,17 +578,15 @@ export function CanvasView() {
           )}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <RButton variant="ghost" size="sm" onClick={runTest}>
+          <Button variant="ghost" size="sm" onClick={runTest}>
             <Play className="size-3.5" /> Test workflow
-          </RButton>
-          <RButton variant="outline" size="sm" onClick={save}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={save}>
             <Save className="size-3.5" /> Save
-          </RButton>
+          </Button>
           <div className="flex items-center gap-2 rounded-full border border-line-strong px-3 py-1.5">
-            <span className={cn("size-1.5 rounded-full", flow.isActive ? "bg-moss animate-pulse-soft" : "bg-ink-4")} />
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
-              {flow.isActive ? "Active" : "Inactive"}
-            </span>
+            <span className={cn("size-1.5 rounded-full", flow.isActive ? "bg-ok" : "bg-surface-3")} />
+            <span className="caption">{flow.isActive ? "Active" : "Inactive"}</span>
             <Switch checked={flow.isActive} onCheckedChange={activate} aria-label="Toggle workflow active" />
           </div>
         </div>
@@ -595,7 +596,7 @@ export function CanvasView() {
       <div
         ref={vpRef}
         onPointerDown={startPan}
-        className="relative h-[calc(100vh-270px)] min-h-[540px] overflow-hidden border-t border-line bg-[var(--plate-bg)] select-none"
+        className="relative h-[calc(100vh-270px)] min-h-[540px] overflow-hidden border-t border-line bg-[var(--surface-2)] select-none"
         style={{ touchAction: "none" }}
       >
         {/* dotted grid, tied to the view transform */}
@@ -610,7 +611,7 @@ export function CanvasView() {
           }}
         />
 
-        {/* the world — everything that pans and zooms */}
+        {/* the world: everything that pans and zooms */}
         <div
           className="absolute left-0 top-0"
           style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`, transformOrigin: "0 0" }}
@@ -627,7 +628,7 @@ export function CanvasView() {
                 markerHeight="6.5"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent)" />
+                <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--signal)" />
               </marker>
             </defs>
             {flow.edges.map((e) => {
@@ -653,7 +654,7 @@ export function CanvasView() {
                   <path
                     d={d}
                     fill="none"
-                    stroke={isSel ? "var(--accent)" : flowed ? "var(--ok)" : "var(--text-3)"}
+                    stroke={isSel ? "var(--signal)" : flowed ? "var(--ok)" : "var(--ink-3)"}
                     strokeOpacity={isSel || flowed ? 1 : 0.55}
                     strokeWidth={isSel ? 2.4 : 1.8}
                     markerEnd="url(#fc-arrow)"
@@ -663,7 +664,7 @@ export function CanvasView() {
                     <path
                       d={d}
                       fill="none"
-                      stroke={flowed ? "var(--ok)" : isSel ? "var(--accent-hover)" : "var(--accent)"}
+                      stroke={flowed ? "var(--ok)" : isSel ? "var(--signal-hover)" : "var(--signal)"}
                       strokeWidth={flowed ? 2.6 : 2}
                       strokeDasharray="5 9"
                       strokeLinecap="round"
@@ -678,7 +679,7 @@ export function CanvasView() {
               <path
                 d={edgePathToPoint(connectFrom, connect.x, connect.y)}
                 fill="none"
-                stroke="var(--accent)"
+                stroke="var(--signal)"
                 strokeWidth={2}
                 strokeDasharray="6 6"
               />
@@ -697,23 +698,23 @@ export function CanvasView() {
                   key={n.id}
                   style={{ left: n.x, top: n.y, width: 224 }}
                   className={cn(
-                    "absolute rotate-[-1.2deg] rounded-2xl border border-honey/45 bg-honey/10 p-3 shadow-[var(--shadow-soft)]",
-                    isSel && "ring-2 ring-ember/30"
+                    "absolute rotate-[-1.2deg] rounded-xl border border-warn/35 bg-warn-wash p-3 shadow-[var(--sh-1)]",
+                    isSel && "ring-2 ring-signal/35"
                   )}
                 >
                   <div
                     className="flex cursor-grab items-center gap-2 pb-1.5 active:cursor-grabbing"
                     onPointerDown={(e) => startNodeDrag(e, n)}
                   >
-                    <StickyNote className="size-3.5 text-honey" />
-                    <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-honey">note</span>
+                    <StickyNote className="size-3.5 text-warn" strokeWidth={1.75} aria-hidden />
+                    <span className="caption text-warn">Note</span>
                     <button
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => {
                         mutate((f) => ({ ...f, nodes: f.nodes.filter((x) => x.id !== n.id) }));
                         toast("Note removed");
                       }}
-                      className="ml-auto grid size-6 place-items-center rounded-lg text-ink-4"
+                      className="ml-auto grid size-6 place-items-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-bad"
                       aria-label="Remove note"
                     >
                       <Trash2 className="size-3" />
@@ -725,7 +726,7 @@ export function CanvasView() {
                     onPointerDown={(e) => e.stopPropagation()}
                     rows={3}
                     placeholder="A note to your future self…"
-                    className="w-full resize-none bg-transparent text-[12px] leading-relaxed text-ink-2 outline-none placeholder:text-ink-4/70"
+                    className="w-full resize-none bg-transparent text-[12px] leading-relaxed text-ink-2 outline-none placeholder:text-ink-3/70"
                   />
                 </div>
               );
@@ -736,23 +737,23 @@ export function CanvasView() {
                 key={n.id}
                 style={{ left: n.x, top: n.y, width: NODE_W }}
                 className={cn(
-                  "absolute cursor-grab rounded-2xl border bg-card shadow-[var(--shadow-soft)] active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] hover:border-ember/40",
-                  isSel ? "border-ember/70 ring-2 ring-ember/25" : didRun ? "border-moss/60 shadow-[0_0_16px_-2px_rgba(99,221,182,0.3)] ring-1 ring-moss/40" : "border-line"
+                  "absolute cursor-grab rounded-xl border bg-surface shadow-[var(--sh-1)] active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--sh-2)] hover:border-signal/60",
+                  isSel ? "border-signal ring-2 ring-signal/30" : didRun ? "border-ok/60 ring-1 ring-ok/30" : "border-line"
                 )}
                 onPointerDown={(e) => startNodeDrag(e, n)}
               >
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg border transition-transform duration-200 group-hover:scale-105", meta.tile)}>
-                    <meta.icon className="size-4" />
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
+                    <meta.icon className={cn("size-4", meta.tone)} strokeWidth={1.75} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[12.5px] font-bold leading-tight text-ink">{n.label}</p>
-                    <p className="truncate font-mono text-[9.5px] leading-relaxed text-ink-4">{nodeSummary(n)}</p>
+                    <p className="truncate font-mono text-[9.5px] leading-relaxed text-ink-3">{nodeSummary(n)}</p>
                   </div>
                   {didRun ? (
-                    <CircleCheck className="size-4 shrink-0 text-moss animate-in zoom-in-50 duration-300" />
+                    <CircleCheck className="size-4 shrink-0 text-ok " />
                   ) : meta.hasOut ? (
-                    <span className="size-1.5 shrink-0 rounded-full bg-ink-4/50" />
+                    <span className="size-1.5 shrink-0 rounded-full bg-surface-3/50" />
                   ) : null}
                 </div>
 
@@ -760,7 +761,7 @@ export function CanvasView() {
                 {meta.hasIn && (
                   <span
                     aria-hidden
-                    className="absolute -left-[7px] top-[19px] size-3.5 rounded-full border-2 border-line-strong bg-paper transition-transform duration-150 hover:scale-125"
+                    className="absolute -left-[7px] top-[19px] size-3.5 rounded-full border-2 border-line-strong bg-surface transition-transform duration-150 hover:scale-125"
                   />
                 )}
                 {meta.hasOut && (
@@ -768,10 +769,10 @@ export function CanvasView() {
                     role="button"
                     aria-label="Drag to connect from this step"
                     onPointerDown={(e) => startConnect(e, n)}
-                    className="absolute -right-[7px] top-[19px] size-3.5 cursor-crosshair rounded-full border-2 border-ember/70 bg-ember shadow-[0_0_10px_-2px_rgba(139,128,249,0.8)] transition-transform duration-150 hover:scale-125"
+                    className="absolute -right-[7px] top-[19px] size-3.5 cursor-crosshair rounded-full border-2 border-signal bg-signal transition-transform duration-150 hover:scale-125"
                   />
                 )}
-                {/* quick add — the n8n “+” under the output port */}
+                {/* quick add, sitting under the output port */}
                 {meta.hasOut && (
                   <button
                     onPointerDown={(e) => e.stopPropagation()}
@@ -779,7 +780,7 @@ export function CanvasView() {
                       setPendingFrom(n.id);
                       setPalette(true);
                     }}
-                    className="absolute -right-3 top-[42px] grid size-6 place-items-center rounded-full bg-ember text-[var(--on-ember)] shadow-[var(--shadow-soft)]"
+                    className="absolute -right-3 top-[42px] grid size-6 place-items-center rounded-full bg-signal text-signal-ink shadow-[var(--sh-1)]"
                     aria-label="Add next step"
                   >
                     <Plus className="size-3.5" />
@@ -790,25 +791,13 @@ export function CanvasView() {
           })}
         </div>
 
-        {/* fig chip */}
-        <div
-          className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 rounded-full border border-line px-3 py-1.5 shadow-[var(--shadow-soft)]"
-          style={{ background: "var(--plate-bg)" }}
-        >
-          <span className="font-mono text-[9px] uppercase tracking-[0.26em] text-ember-hot tnum">fig. 04</span>
-          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-3">the node canvas</span>
-        </div>
-
         {/* empty state */}
         {flow.nodes.length === 0 && (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <div className="pointer-events-auto text-center">
-              <span className="mx-auto grid size-14 place-items-center rounded-2xl border border-line bg-card text-ink-3 shadow-[var(--shadow-soft)]">
-                <Workflow className="size-6" />
-              </span>
-              <p className="font-display mt-4 text-[17px] font-bold">An empty canvas</p>
+              <p className="h4 text-ink">An empty canvas</p>
               <p className="mt-1 text-[13px] text-ink-3">Every automation starts with a comment.</p>
-              <RButton
+              <Button
                 className="mt-5"
                 onClick={() => {
                   setPendingFrom(null);
@@ -816,36 +805,36 @@ export function CanvasView() {
                 }}
               >
                 <Plus className="size-4" /> Add first step
-              </RButton>
+              </Button>
             </div>
           </div>
         )}
 
-        {/* zoom controls — n8n's bottom-left instrument */}
-        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-full border border-line bg-card/95 p-1 shadow-[var(--shadow-soft)]">
+        {/* zoom controls */}
+        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-full border border-line bg-surface/95 p-1 shadow-[var(--sh-1)]">
           <button
             onClick={() => setView((v) => ({ ...v, z: clamp(v.z * 0.85, Z_MIN, Z_MAX) }))}
-            className="grid size-7 place-items-center rounded-full text-ink-3"
+            className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
             aria-label="Zoom out"
           >
             <Minus className="size-3.5" />
           </button>
           <button
             onClick={() => setView((v) => ({ ...v, z: 1 }))}
-            className="w-12 text-center font-mono text-[11px] text-ink-3 tnum"
+            className="w-12 rounded-md py-1 text-center font-mono text-[11px] text-ink-3 tnum transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
             title="Reset zoom to 100%"
           >
             {Math.round(view.z * 100)}%
           </button>
           <button
             onClick={() => setView((v) => ({ ...v, z: clamp(v.z * 1.15, Z_MIN, Z_MAX) }))}
-            className="grid size-7 place-items-center rounded-full text-ink-3"
+            className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
             aria-label="Zoom in"
           >
             <Plus className="size-3.5" />
           </button>
           <span className="mx-0.5 h-4 w-px bg-line" />
-          <button onClick={fitView} className="grid size-7 place-items-center rounded-full text-ink-3" aria-label="Zoom to fit">
+          <button onClick={fitView} className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink" aria-label="Zoom to fit">
             <Maximize className="size-3.5" />
           </button>
         </div>
@@ -857,14 +846,14 @@ export function CanvasView() {
               setPendingFrom(null);
               setPalette(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-full bg-ember px-4 py-2 text-[12.5px] font-semibold text-[var(--on-ember)] shadow-[var(--shadow-ember)]"
+            className="inline-flex items-center gap-1.5 rounded-md bg-signal px-4 py-2 text-[12.5px] font-semibold text-signal-ink shadow-[var(--sh-2)] transition-colors duration-150 hover:bg-signal-hover active:translate-y-px"
           >
             <Plus className="size-4" /> Add node
           </button>
         </div>
 
-        <p className="pointer-events-none absolute bottom-4 left-1/2 z-10 hidden -translate-x-1/2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-ink-4 xl:block">
-          drag canvas to pan · scroll to zoom · drag the amber port to connect
+        <p className="caption pointer-events-none absolute bottom-4 left-1/2 z-10 hidden -translate-x-1/2 xl:block">
+          drag to pan · scroll to zoom · drag a step&apos;s right port to connect
         </p>
 
         {/* ── edge selected ── */}
@@ -874,14 +863,20 @@ export function CanvasView() {
               initial={{ y: 24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
-              className="absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full bg-ink px-4 py-2 text-paper shadow-lg"
+              className="absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-surface px-4 py-2 shadow-[var(--sh-3)]"
             >
-              <span className="font-mono text-[10.5px] uppercase tracking-[0.18em]">connection selected</span>
-              <button onClick={deleteSel} className="font-mono text-[11px] font-bold text-ember-hot">
-                delete
+              <span className="caption">Connection selected</span>
+              <button
+                onClick={deleteSel}
+                className="text-[12px] font-semibold text-bad transition-colors hover:text-bad/80"
+              >
+                Delete
               </button>
-              <button onClick={() => setSel(null)} className="font-mono text-[11px] text-ink-4">
-                esc
+              <button
+                onClick={() => setSel(null)}
+                className="text-[12px] text-ink-3 transition-colors hover:text-ink"
+              >
+                Esc
               </button>
             </motion.div>
           )}
@@ -896,32 +891,32 @@ export function CanvasView() {
               exit={{ x: -22, opacity: 0 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.28, 1] }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-3 left-3 top-3 z-20 flex w-[280px] max-w-[calc(100%-24px)] flex-col rounded-2xl border border-line bg-card shadow-[var(--shadow-lift)]"
+              className="absolute bottom-3 left-3 top-3 z-20 flex w-[280px] max-w-[calc(100%-24px)] flex-col rounded-xl border border-line bg-surface shadow-[var(--sh-2)]"
             >
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <div>
-                  <p className="font-display text-[14px] font-bold">What happens next?</p>
-                  <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-4">step library</p>
+                  <p className="text-[14px] font-semibold text-ink">What happens next?</p>
+                  <p className="caption">Step library</p>
                 </div>
                 <button
                   onClick={() => {
                     setPalette(false);
                     setPendingFrom(null);
                   }}
-                  className="grid size-7 place-items-center rounded-lg text-ink-4"
+                  className="grid size-7 place-items-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
                   aria-label="Close palette"
                 >
                   <X className="size-4" />
                 </button>
               </div>
               <div className="border-b border-line px-3 py-2.5">
-                <div className="flex items-center gap-2 rounded-xl border border-line-strong bg-card-soft px-3 py-2">
-                  <Search className="size-3.5 text-ink-4" />
+                <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-2 px-3 py-2 transition-colors duration-150 focus-within:border-signal">
+                  <Search className="size-3.5 text-ink-3" />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search steps…"
-                    className="w-full bg-transparent text-[13px] outline-none placeholder:text-ink-4"
+                    className="w-full bg-transparent text-[13px] outline-none placeholder:text-ink-3"
                   />
                 </div>
               </div>
@@ -931,23 +926,23 @@ export function CanvasView() {
                   if (!items.length) return null;
                   return (
                     <div key={g} className="mb-1.5">
-                      <p className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.22em] text-ink-4">{g}</p>
+                      <p className="caption px-2 py-1.5">{g}</p>
                       {items.map((t) => {
                         const m = NODE_META[t];
                         return (
                           <button
                             key={t}
                             onClick={() => addNode(t)}
-                            className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left"
+                            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors duration-150 hover:bg-surface-2"
                           >
-                            <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg border", m.tile)}>
-                              <m.icon className="size-4" />
+                            <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
+                              <m.icon className={cn("size-4", m.tone)} strokeWidth={1.75} />
                             </span>
                             <span className="min-w-0">
                               <span className="block truncate text-[13px] font-semibold">{m.label}</span>
-                              <span className="block truncate text-[11px] text-ink-4">{m.sub}</span>
+                              <span className="block truncate text-[11px] text-ink-3">{m.sub}</span>
                             </span>
-                            <Plus className="ml-auto size-3.5 shrink-0 text-ink-4" />
+                            <Plus className="ml-auto size-3.5 shrink-0 text-ink-3" />
                           </button>
                         );
                       })}
@@ -955,13 +950,13 @@ export function CanvasView() {
                   );
                 })}
                 {!filteredTypes.length && (
-                  <p className="px-3 py-6 text-center text-[12.5px] text-ink-4">Nothing matches “{search}”.</p>
+                  <p className="px-3 py-6 text-center text-[12.5px] text-ink-3">Nothing matches “{search}”.</p>
                 )}
               </div>
               {pendingFromNode && (
                 <div className="border-t border-line px-4 py-2.5">
-                  <p className="font-mono text-[10.5px] leading-relaxed text-ember">
-                    wiring from “{pendingFromNode.label}” — the new step connects automatically
+                  <p className="text-[12px] leading-relaxed text-signal">
+                    Wiring from “{pendingFromNode.label}”. The new step connects itself.
                   </p>
                 </div>
               )}
@@ -979,7 +974,7 @@ export function CanvasView() {
               exit={{ x: 22, opacity: 0 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.28, 1] }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-3 right-3 top-3 z-20 w-[300px] max-w-[calc(100%-24px)] overflow-y-auto rounded-2xl border border-line bg-card shadow-[var(--shadow-lift)]"
+              className="absolute bottom-3 right-3 top-3 z-20 w-[300px] max-w-[calc(100%-24px)] overflow-y-auto rounded-xl border border-line bg-surface shadow-[var(--sh-2)]"
             >
               {(() => {
                 const meta = NODE_META[selNode.type];
@@ -989,16 +984,16 @@ export function CanvasView() {
                 return (
                   <>
                     <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-                      <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg border", meta.tile)}>
-                        <meta.icon className="size-4" />
+                      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
+                        <meta.icon className={cn("size-4", meta.tone)} strokeWidth={1.75} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-bold">{selNode.label || meta.label}</p>
-                        <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-4">{meta.label}</p>
+                        <p className="truncate text-[13px] font-semibold text-ink">{selNode.label || meta.label}</p>
+                        <p className="caption">{meta.label}</p>
                       </div>
                       <button
                         onClick={() => setSel(null)}
-                        className="grid size-7 place-items-center rounded-lg text-ink-4"
+                        className="grid size-7 place-items-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
                         aria-label="Close inspector"
                       >
                         <X className="size-4" />
@@ -1066,7 +1061,7 @@ export function CanvasView() {
                       )}
 
                       {selNode.type === "action_wait" && (
-                        <Field label="Wait" hint="minutes — human jitter on top">
+                        <Field label="Wait" hint="minutes, plus human jitter">
                           <input
                             type="number"
                             min={5}
@@ -1103,15 +1098,15 @@ export function CanvasView() {
                       <div className="flex gap-2 border-t border-line pt-4">
                         <button
                           onClick={() => duplicateNode(selNode)}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-line-strong py-2 text-[12.5px] font-medium text-ink-2"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line-strong py-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-150 hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
                         >
-                          <Copy className="size-3.5" /> Duplicate
+                          <Copy className="size-3.5" aria-hidden /> Duplicate
                         </button>
                         <button
                           onClick={deleteSel}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-destructive/40 py-2 text-[12.5px] font-medium text-destructive"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-[12.5px] font-medium text-bad transition-colors duration-150 hover:bg-bad-wash"
                         >
-                          <Trash2 className="size-3.5" /> Delete
+                          <Trash2 className="size-3.5" aria-hidden /> Delete
                         </button>
                       </div>
                     </div>
@@ -1122,6 +1117,7 @@ export function CanvasView() {
           )}
         </AnimatePresence>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

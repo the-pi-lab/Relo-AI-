@@ -18,42 +18,23 @@ function Router() {
   const [route, navigate] = useHashRoute();
   const { user, signIn } = useRelo();
 
-  /* guard: studio requires a session (any demo sign-in works instantly) */
+  /* One effect guards the studio, including the demo shortcut. Splitting these
+     in two used to race: the guard fired on the route change before the demo
+     sign-in had landed, so deep links bounced to /login. */
   useEffect(() => {
-    if (route.name === "studio" && !user) {
-      navigate("/login");
-    }
-  }, [route.name, user, navigate]);
-
-  /* demo=1 shortcut from the landing CTA */
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash.includes("demo=1") && !user) {
+    if (route.name !== "studio" || user) return;
+    if (window.location.hash.includes("demo=1")) {
       signIn("demo@relo.app", true);
-      navigate("/studio");
+      return;
     }
-  }, []);
+    navigate("/login");
+  }, [route.name, user, signIn, navigate]);
 
-  /* landing should always scroll from top when revisited */
+  /* every route change starts at the top of the page */
   useEffect(() => {
-    if (route.name === "landing") {
-      window.scrollTo({ top: 0 });
-    }
-  }, [route.name]);
-
-  /* content pages always open at the top, after the view mounts */
-  useEffect(() => {
-    if (
-      route.name === "privacy" ||
-      route.name === "terms" ||
-      route.name === "cookies" ||
-      route.name === "notfound" ||
-      route.name === "login"
-    ) {
-      const id = window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
-      return () => window.clearTimeout(id);
-    }
-  }, [route.name]);
+    const id = window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
+    return () => window.clearTimeout(id);
+  }, [route]);
 
   const studioView = route.name === "studio" ? route.view : "home";
 
@@ -86,14 +67,15 @@ function Router() {
 
   return (
     <>
-      {/* keyboard users first — one hop past the nav, straight to content */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-[13px] focus:font-semibold focus:text-accent-ink focus:outline-none"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-ink focus:px-4 focus:py-2.5 focus:text-[13px] focus:font-semibold focus:text-ink-invert focus:outline-none"
       >
         Skip to content
       </a>
+
       <CookieConsent navigate={navigate} />
+
       <main id="main-content" tabIndex={-1} key={key}>
         {route.name === "landing" && <LandingPage navigate={navigate} />}
         {route.name === "login" && (

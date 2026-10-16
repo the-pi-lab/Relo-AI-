@@ -1,12 +1,20 @@
 "use client";
 
 import React, { useState } from "react";
+import { ArrowDownRight, ArrowUpRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
 
-/* ──────────────────────────────────────────────────────────────────────
-   Section head — headline + sub. No eyebrow badge above the headline.
-   ───────────────────────────────────────────────────────────────────── */
+/* ==========================================================================
+   Studio primitives.
+
+   These exist so all ten views share one card shape, one field shape and one
+   pill shape. If a view needs something these do not provide, it should be
+   added here rather than improvised locally.
+   ========================================================================== */
+
+/* ── View header ──────────────────────────────────────────────────────────
+   Each view owns its own title. The shell deliberately does not repeat it in
+   the top bar, which is what made every page show its name twice. */
 
 export function ViewHead({
   title,
@@ -18,19 +26,59 @@ export function ViewHead({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
       <div>
-        <h1 className="h2 text-text">{title}</h1>
-        {sub && <p className="mt-2 text-sm text-text-2 leading-relaxed">{sub}</p>}
+        <h1 className="h3 text-ink">{title}</h1>
+        {sub && (
+          <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-ink-2">{sub}</p>
+        )}
       </div>
-      {children && <div className="flex items-center gap-3">{children}</div>}
+      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   Stat card — clean, no shimmer, no icon box, consistent spacing.
-   ───────────────────────────────────────────────────────────────────── */
+/* ── Panel ────────────────────────────────────────────────────────────────
+   The one container shape for a group of content. */
+
+export function Panel({
+  title,
+  actions,
+  children,
+  className,
+  bodyClassName,
+}: {
+  title?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--sh-1)]",
+        className
+      )}
+    >
+      {(title || actions) && (
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+          {typeof title === "string" ? (
+            <h2 className="text-[13.5px] font-semibold text-ink">{title}</h2>
+          ) : (
+            title
+          )}
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        </header>
+      )}
+      <div className={cn("p-5", bodyClassName)}>{children}</div>
+    </section>
+  );
+}
+
+/* ── Stat ─────────────────────────────────────────────────────────────────
+   A figure, a label, and an optional movement. Monospace figures so two
+   cards side by side never jitter against each other. */
 
 export function StatCard({
   label,
@@ -38,65 +86,82 @@ export function StatCard({
   delta,
   suffix = "",
   prefix = "",
+  hint,
 }: {
   label: string;
   value: number | string;
   delta?: string;
   suffix?: string;
   prefix?: string;
+  hint?: string;
 }) {
   const up = delta?.startsWith("+");
   return (
-    <div className="rounded-lg border border-border bg-surface p-5 shadow-sm">
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-[var(--sh-1)]">
       <p className="caption">{label}</p>
-      <div className="mt-2 flex items-baseline gap-1.5">
-        <span className="text-[24px] font-bold text-text tnum">{prefix}{value}{suffix}</span>
-      </div>
-      {delta && (
-        <p className="mt-3 text-xs flex items-center gap-1">
-          <span
-            className={`size-1.5 rounded-full ${up ? "bg-ok" : "bg-bad"}`}
-            aria-hidden
-          />
-          <span className={cn(up ? "text-ok" : "text-bad", "font-semibold")}>{delta}</span>
-          <span className="text-text-3"> vs last period</span>
+      <p className="mt-3.5 font-mono text-[26px] font-bold leading-none tracking-tight text-ink tnum">
+        {prefix}
+        {value}
+        {suffix}
+      </p>
+      {(delta || hint) && (
+        <p className="mt-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+          {delta && (
+            <>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 font-semibold",
+                  up ? "text-ok" : "text-bad"
+                )}
+              >
+                {up ? (
+                  <ArrowUpRight className="size-3.5" aria-hidden />
+                ) : (
+                  <ArrowDownRight className="size-3.5" aria-hidden />
+                )}
+                {delta.replace(/^[+-]/, "")}
+              </span>
+              <span className="text-ink-3">against last period</span>
+            </>
+          )}
+          {hint && !delta && <span className="text-ink-3">{hint}</span>}
         </p>
       )}
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   Status pill — small, solid tone, no pulse animation.
-   ───────────────────────────────────────────────────────────────────── */
+/* ── Status ─────────────────────────────────────────────────────────────── */
 
 const PILL_TONES: Record<string, string> = {
-  live: "bg-ok/10 text-ok border-ok/30",
-  active: "bg-ok/10 text-ok border-ok/30",
-  sending: "bg-accent/10 text-accent border-accent/40",
-  scheduled: "bg-surface-2 text-text-3 border-border",
-  draft: "bg-surface-2 text-text-3 border-border",
-  completed: "bg-ok/10 text-ok border-ok/30",
-  failed: "bg-bad/10 text-bad border-bad/30",
-  paused: "bg-surface-2 text-text-3 border-border",
+  live: "border-ok/30 bg-ok-wash text-ok",
+  active: "border-ok/30 bg-ok-wash text-ok",
+  completed: "border-ok/30 bg-ok-wash text-ok",
+  sent: "border-ok/30 bg-ok-wash text-ok",
+  sending: "border-signal/30 bg-signal-wash text-signal",
+  scheduled: "border-signal/30 bg-signal-wash text-signal",
+  failed: "border-bad/30 bg-bad-wash text-bad",
+  paused: "border-line bg-surface-2 text-ink-3",
+  draft: "border-line bg-surface-2 text-ink-3",
+  locked: "border-line bg-surface-2 text-ink-3",
 };
 
 export function StatusPill({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize leading-5",
         PILL_TONES[status] ?? PILL_TONES.draft
       )}
     >
+      <span className="size-1.5 rounded-full bg-current" aria-hidden />
       {status}
     </span>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   Tag input
-   ───────────────────────────────────────────────────────────────────── */
+/* ── Tag input ────────────────────────────────────────────────────────────
+   Neutral chips, because keywords are data rather than actions. */
 
 export function TagInput({
   tags,
@@ -110,24 +175,29 @@ export function TagInput({
   max?: number;
 }) {
   const [draft, setDraft] = useState("");
+
   const add = () => {
     const v = draft.trim().toLowerCase().replace(/\s+/g, "");
     if (!v || tags.includes(v) || tags.length >= max) return;
     onChange([...tags, v]);
     setDraft("");
   };
+
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2 p-2.5">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-line-strong bg-surface p-1.5 transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-signal focus-within:ring-[3px] focus-within:ring-signal/18">
       {tags.map((t) => (
-        <span key={t} className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-accent-ink">
+        <span
+          key={t}
+          className="inline-flex items-center gap-1 rounded border border-line bg-surface-2 py-0.5 pl-2 pr-1 text-[12px] font-medium text-ink"
+        >
           {t}
           <button
             type="button"
             onClick={() => onChange(tags.filter((x) => x !== t))}
-            className="opacity-70 hover:opacity-100"
+            className="grid size-4 place-items-center rounded text-ink-3 transition-colors hover:bg-surface-3 hover:text-ink"
             aria-label={`Remove ${t}`}
           >
-            <X className="size-3.5" />
+            <X className="size-3" aria-hidden />
           </button>
         </span>
       ))}
@@ -139,19 +209,19 @@ export function TagInput({
             e.preventDefault();
             add();
           }
-          if (e.key === "Backspace" && !draft && tags.length) onChange(tags.slice(0, -1));
+          if (e.key === "Backspace" && !draft && tags.length) {
+            onChange(tags.slice(0, -1));
+          }
         }}
         onBlur={add}
         placeholder={tags.length ? "" : placeholder}
-        className="min-w-[120px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-text-3"
+        className="min-w-[110px] flex-1 bg-transparent px-1.5 py-1 text-[13.5px] text-ink outline-none placeholder:text-ink-3"
       />
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   Field wrapper — consistent label, no buzzwords.
-   ───────────────────────────────────────────────────────────────────── */
+/* ── Field ──────────────────────────────────────────────────────────────── */
 
 export function Field({
   label,
@@ -164,21 +234,24 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-2 flex items-baseline justify-between">
-        <span className="caption font-semibold">{label}</span>
-        {hint && <span className="text-xs text-text-3">{hint}</span>}
+      <span className="mb-2 flex items-baseline justify-between gap-3">
+        <span className="caption">{label}</span>
+        {hint && <span className="text-[12px] text-ink-3">{hint}</span>}
       </span>
       {children}
     </label>
   );
 }
 
-export const inputCls =
-  "w-full rounded-md border border-input bg-surface-2 px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-text-3 focus:border-accent focus:ring-1 focus:ring-accent";
+export const inputCls = cn(
+  "w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-[13.5px] text-ink",
+  "placeholder:text-ink-3 outline-none",
+  "transition-[border-color,box-shadow] duration-150 ease-out",
+  "hover:border-ink-3",
+  "focus:border-signal focus:ring-[3px] focus:ring-signal/18"
+);
 
-/* ──────────────────────────────────────────────────────────────────────
-   Empty state — simple, no icon box.
-   ───────────────────────────────────────────────────────────────────── */
+/* ── Empty state ────────────────────────────────────────────────────────── */
 
 export function EmptyState({
   title,
@@ -190,28 +263,37 @@ export function EmptyState({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-surface-2/60 p-10 text-center">
-      <h3 className="h4 text-text">{title}</h3>
-      <p className="mt-2 text-sm text-text-2 leading-relaxed">{sub}</p>
-      {children && <div className="mt-6">{children}</div>}
+    <div className="rounded-xl border border-dashed border-line-strong px-6 py-14 text-center">
+      <h3 className="h4 text-ink">{title}</h3>
+      <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-relaxed text-ink-2">
+        {sub}
+      </p>
+      {children && <div className="mt-6 flex justify-center">{children}</div>}
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
-   Credit meter
-   ───────────────────────────────────────────────────────────────────── */
+/* ── Meter ──────────────────────────────────────────────────────────────── */
 
-export function Meter({ pct, tone = "amber" }: { pct: number; tone?: "amber" | "ok" | "warn" }) {
-  const color = tone === "ok" ? "var(--ok)" : tone === "warn" ? "var(--warn)" : "var(--accent)";
+export function Meter({
+  pct,
+  tone = "signal",
+}: {
+  pct: number;
+  tone?: "signal" | "amber" | "ok" | "warn";
+}) {
+  const fill = tone === "ok" ? "bg-ok" : tone === "warn" ? "bg-warn" : "bg-signal";
   return (
-    <div className="h-[8px] w-full overflow-hidden rounded-full bg-surface-3">
+    <div
+      className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3"
+      role="progressbar"
+      aria-valuenow={Math.round(pct)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div
-        className="h-full rounded-full"
-        style={{
-          background: color,
-          width: `${Math.min(100, Math.max(3, pct))}%`,
-        }}
+        className={cn("h-full rounded-full transition-[width] duration-300 ease-out", fill)}
+        style={{ width: `${Math.min(100, Math.max(pct > 0 ? 3 : 0, pct))}%` }}
       />
     </div>
   );

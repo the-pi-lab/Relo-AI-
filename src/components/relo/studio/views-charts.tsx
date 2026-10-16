@@ -1,30 +1,48 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useState } from "react";
+import type { CSSProperties } from "react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import {
-  Users, MousePointerClick, MessageCircle, Activity, Flame,
-  Clock3,
-} from "lucide-react";
+import { ArrowRight, Clock3 } from "lucide-react";
 import { useRelo } from "@/lib/relo/store";
 import { DM_SERIES, fmtNum, timeAgo } from "@/lib/relo/data";
-import { ViewHead, StatCard, StatusPill, Field, inputCls } from "./studio-ui";
-import { RButton } from "../chrome";
+import { Meter, Panel, StatCard, StatusPill, ViewHead } from "./studio-ui";
+import { Button } from "../chrome";
 import { cn } from "@/lib/utils";
 
-const tooltipStyle = {
-  borderRadius: 8,
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
-  boxShadow: "var(--shadow-soft)",
-  fontSize: 12,
-  padding: "8px 12px",
-  color: "var(--text)",
+/* ── Chart chrome ─────────────────────────────────────────────────────────
+   Axis, grid and tooltip are declared once so every chart in the studio
+   reads as the same instrument. No hex values, only tokens. */
+
+const AXIS = {
+  fontSize: 11,
+  fill: "var(--ink-3)",
+  fontFamily: "var(--font-mono)",
 } as const;
-const labelStyle = { fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" } as const;
+
+const TOOLTIP_CONTENT: CSSProperties = {
+  background: "var(--surface)",
+  border: "1px solid var(--line)",
+  borderRadius: 9,
+  boxShadow: "var(--sh-2)",
+  padding: "6px 10px",
+};
+
+const TOOLTIP_LABEL: CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+};
+
+const TOOLTIP_ITEM: CSSProperties = { fontSize: 11.5, color: "var(--ink)" };
+
+const BAR_CURSOR = { fill: "var(--surface-2)" };
+const LINE_CURSOR = { stroke: "var(--line)" };
 
 /* ═════════════════════════════════════════════════════════════════════
    HOME
@@ -40,11 +58,18 @@ export function HomeView({ go }: { go: (v: string) => void }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
+  const engine = [
+    { key: "Queue depth", value: "3 jobs", pct: 92 },
+    { key: "Webhook ack", value: "14ms avg", pct: 97 },
+    { key: "Cron (1 min)", value: "on time", pct: 100 },
+    { key: "Failed (24h)", value: "2 · retried", pct: 88 },
+  ];
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <ViewHead
         title={greeting}
-        sub="Your reels kept talking overnight. Here is what they said — and who they sold to."
+        sub="Your reels kept talking overnight. Here is what they said, and who they sold to."
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -54,110 +79,128 @@ export function HomeView({ go }: { go: (v: string) => void }) {
         <StatCard label="DM to click" value={rate} suffix="%" delta="+3%" />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.55fr_1fr]">
-        {/* funnel */}
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-5">
+      <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
+        <Panel
+          title={
             <div>
-              <h3 className="h4 text-text">Comments to DMs</h3>
-              <p className="caption">Last 14 days</p>
+              <h2 className="text-[13.5px] font-semibold text-ink">Comments to DMs</h2>
+              <p className="caption mt-0.5">Last 14 days</p>
             </div>
-            <RButton variant="outline" size="sm" onClick={() => go("insights")}>
+          }
+          actions={
+            <Button variant="outline" size="sm" onClick={() => go("insights")}>
               Full insights
-            </RButton>
-          </div>
+              <ArrowRight className="size-3.5" strokeWidth={1.75} aria-hidden />
+            </Button>
+          }
+        >
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={DM_SERIES} margin={{ top: 8, right: 8, bottom: 8, left: -10 }}>
-                <defs>
-                  <linearGradient id="gComments" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} interval={3} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} />
-                <Area type="monotone" dataKey="comments" stroke="var(--accent)" strokeWidth={2} fill="url(#gComments)" />
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  tick={AXIS}
+                  tickLine={false}
+                  axisLine={false}
+                  interval={3}
+                />
+                <YAxis tick={AXIS} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={TOOLTIP_CONTENT}
+                  labelStyle={TOOLTIP_LABEL}
+                  itemStyle={TOOLTIP_ITEM}
+                  cursor={LINE_CURSOR}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="comments"
+                  stroke="var(--chart-1)"
+                  strokeWidth={2}
+                  fill="var(--chart-1)"
+                  fillOpacity={0.12}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </section>
+        </Panel>
 
-        {/* engine health */}
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="h4 text-text">Engine health</h3>
-            <StatusPill status="live" />
-          </div>
+        <Panel title="Engine health" actions={<StatusPill status="live" />}>
           <div className="space-y-4">
-            {[
-              ["Queue depth", "3 jobs", 92],
-              ["Webhook ack", "14ms avg", 97],
-              ["Cron (1 min)", "on time", 100],
-              ["Failed (24h)", "2 · retried", 88],
-            ].map(([k, v, pct]) => (
-              <div key={k} className="space-y-1.5">
-                <div className="flex items-baseline justify-between text-xs">
-                  <span className="text-text-3">{k}</span>
-                  <span className="font-mono font-semibold text-text">{v}</span>
+            {engine.map((row) => (
+              <div key={row.key} className="space-y-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[13px] text-ink-2">{row.key}</span>
+                  <span className="font-mono text-[12.5px] font-semibold text-ink tnum">
+                    {row.value}
+                  </span>
                 </div>
-                <div className="h-[8px] w-full overflow-hidden rounded-full bg-surface-3">
-                  <div className="h-full rounded-full bg-ok" style={{ width: `${pct}%` }} />
-                </div>
+                <Meter pct={row.pct} tone="ok" />
               </div>
             ))}
           </div>
-          <div className="mt-6 flex items-center gap-2.5 rounded-md bg-surface-2 px-3.5 py-3">
-            <Clock3 className="size-4 shrink-0 text-accent" />
-            <p className="text-xs text-text-3 leading-snug">
-              Human jitter holding at <span className="font-semibold text-text">38s</span> — inside the 30–90s band.
+
+          <div className="mt-5 flex items-start gap-2.5 rounded-md border border-line bg-surface-2 px-3.5 py-3">
+            <Clock3
+              className="mt-0.5 size-3.5 shrink-0 text-ink-3"
+              strokeWidth={1.75}
+              aria-hidden
+            />
+            <p className="text-[12.5px] leading-snug text-ink-2">
+              Human jitter holding at{" "}
+              <span className="font-mono font-semibold text-ink tnum">38s</span>, inside the
+              30–90s band.
             </p>
           </div>
-        </section>
+        </Panel>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.6fr]">
-        {/* live feed */}
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <div className="flex items-center gap-2.5 mb-4">
-            <Activity className="size-4 text-text-3" />
-            <h3 className="h4 text-text">Live feed</h3>
-            <span className="ml-auto caption">realtime</span>
-          </div>
-          <div className="max-h-[340px] space-y-2 overflow-y-auto pr-2">
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
+        <Panel
+          title="Live feed"
+          actions={<span className="caption">realtime</span>}
+          bodyClassName="p-0"
+        >
+          <ul className="max-h-[340px] divide-y divide-line overflow-y-auto">
             {activity.slice(0, 12).map((ev) => (
-              <div key={ev.id} className="flex items-start gap-3 rounded-md px-2.5 py-2.5 transition-colors hover:bg-surface-2">
-                <span className="mt-0.5 grid size-6 place-items-center rounded-sm bg-surface-3 text-text-3">
-                  <MessageCircle className="size-3.5" />
-                </span>
+              <li
+                key={ev.id}
+                className="flex items-start gap-4 px-5 py-3 transition-colors duration-150 hover:bg-surface-2"
+              >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-text">{ev.text}</p>
-                  {ev.meta && <p className="truncate text-[11px] text-text-3">{ev.meta}</p>}
+                  <p className="truncate text-[13px] font-medium text-ink">{ev.text}</p>
+                  {ev.meta && (
+                    <p className="mt-0.5 truncate text-[11px] text-ink-3">{ev.meta}</p>
+                  )}
                 </div>
-                <span className="shrink-0 text-[11px] text-text-3">{timeAgo(ev.at)}</span>
-              </div>
+                <span className="shrink-0 font-mono text-[11px] text-ink-3 tnum">
+                  {timeAgo(ev.at)}
+                </span>
+              </li>
             ))}
-          </div>
-        </section>
+          </ul>
+        </Panel>
 
-        {/* automations quick list */}
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <div className="flex items-center gap-2.5 mb-4">
-            <Flame className="size-4 text-text-3" />
-            <h3 className="h4 text-text">Your reels on duty</h3>
-            <RButton variant="outline" size="sm" onClick={() => go("automations")}>
+        <Panel
+          title="Reels on duty"
+          actions={
+            <Button variant="outline" size="sm" onClick={() => go("automations")}>
               Manage
-            </RButton>
-          </div>
-          <div className="space-y-3">
+            </Button>
+          }
+          bodyClassName="p-0"
+        >
+          <ul className="divide-y divide-line">
             {automations.map((a) => (
-              <div key={a.id} className="flex items-center gap-3.5 rounded-lg border border-border bg-surface-2 p-3.5">
-                <span className="h-9 w-9 shrink-0 rounded-md" style={{ background: `hsl(${a.reelCaption.length * 7 % 360} 40% 30%)` }} />
+              <li
+                key={a.id}
+                className="flex items-center gap-3 px-5 py-3.5 transition-colors duration-150 hover:bg-surface-2"
+              >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-text">{a.reelCaption}</p>
-                  <p className="text-[11px] text-text-3">
-                    {a.triggerKeywords.map((k) => `#${k}`).join(" ")} · {fmtNum(a.dmsSent)} DMs
+                  <p className="truncate text-[13px] font-medium text-ink">{a.reelCaption}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-ink-3">
+                    {a.triggerKeywords.map((k) => `#${k}`).join(" ")} ·{" "}
+                    <span className="font-mono tnum">{fmtNum(a.dmsSent)}</span> DMs
                   </p>
                 </div>
                 <button
@@ -165,14 +208,23 @@ export function HomeView({ go }: { go: (v: string) => void }) {
                   aria-checked={a.isActive}
                   aria-label={`Toggle ${a.reelCaption}`}
                   onClick={() => toggleAutomation(a.id)}
-                  className={cn("flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors", a.isActive ? "bg-ok" : "bg-surface-3")}
+                  className={cn(
+                    "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors duration-150 ease-out",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
+                    a.isActive ? "bg-ok" : "bg-surface-3"
+                  )}
                 >
-                  <span className="size-5 rounded-full bg-white shadow" />
+                  <span
+                    className={cn(
+                      "size-5 rounded-full bg-white shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
+                      a.isActive && "translate-x-5"
+                    )}
+                  />
                 </button>
-              </div>
+              </li>
             ))}
-          </div>
-        </section>
+          </ul>
+        </Panel>
       </div>
     </div>
   );
@@ -192,15 +244,15 @@ export function InsightsView() {
   );
   const replies = Math.round(totals.comments * 0.92);
   const funnel = [
-    { label: "Comments seen", v: totals.comments, tone: "#d97706" },
-    { label: "Replies sent", v: replies, tone: "#d97706" },
-    { label: "DMs delivered", v: totals.dms, tone: "#d97706" },
-    { label: "Buttons clicked", v: totals.clicks, tone: "#16a34a" },
+    { label: "Comments seen", v: totals.comments },
+    { label: "Replies sent", v: replies },
+    { label: "DMs delivered", v: totals.dms },
+    { label: "Buttons clicked", v: totals.clicks },
   ];
   const reach = [
-    { name: "Reachable", v: 743, color: "#16a34a" },
-    { name: "Window closed", v: 168, color: "#9ca3af" },
-    { name: "Token issues", v: 19, color: "#d97706" },
+    { name: "Reachable", v: 743, color: "var(--chart-3)" },
+    { name: "Window closed", v: 168, color: "var(--ink-3)" },
+    { name: "Token issues", v: 19, color: "var(--chart-4)" },
   ];
   const topButtons = [
     ["Download free pack", 643, 78],
@@ -210,19 +262,28 @@ export function InsightsView() {
   ] as const;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <ViewHead
         title="Insights"
-        sub="The honest funnel — from comment noise to button clicks that pay."
+        sub="The honest funnel, from comment noise to button clicks that pay."
       >
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface p-1" role="radiogroup" aria-label="Date range">
+        <div
+          className="flex items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5"
+          role="radiogroup"
+          aria-label="Date range"
+        >
           {[7, 14].map((r) => (
             <button
               key={r}
+              type="button"
+              role="radio"
+              aria-checked={range === r}
               onClick={() => setRange(r)}
               className={cn(
-                "relative rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors",
-                range === r ? "bg-text text-text-inverse" : "text-text-3 hover:text-text"
+                "rounded-md px-3.5 py-1 text-[12.5px] font-semibold transition-colors duration-150 ease-out",
+                range === r
+                  ? "bg-ink text-ink-invert"
+                  : "text-ink-3 hover:bg-surface-2 hover:text-ink"
               )}
             >
               {r}d
@@ -231,46 +292,66 @@ export function InsightsView() {
         </div>
       </ViewHead>
 
-      {/* funnel */}
-      <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-        <h3 className="h4 text-text mb-5">The funnel</h3>
+      <Panel title="The funnel">
         <div className="space-y-5">
           {funnel.map((f, i) => {
             const pct = (f.v / funnel[0].v) * 100;
             return (
-              <div key={f.label}>
-                <div className="flex items-baseline justify-between text-sm">
-                  <span className="font-medium text-text-2">{f.label}</span>
-                  <span className="font-mono text-text-3 tnum">{f.v.toLocaleString("en-IN")} · {Math.round(pct)}%</span>
+              <div key={f.label} className="space-y-2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[13px] font-medium text-ink-2">{f.label}</span>
+                  <span className="font-mono text-[12.5px] text-ink-3 tnum">
+                    {f.v.toLocaleString("en-IN")} · {Math.round(pct)}%
+                  </span>
                 </div>
-                <div className="mt-1.5 h-[10px] w-full overflow-hidden rounded-full bg-surface-3">
-                  <div className="h-full rounded-full" style={{ background: f.tone, width: `${pct}%` }} />
-                </div>
+                <Meter pct={pct} tone={i === funnel.length - 1 ? "ok" : "warn"} />
               </div>
             );
           })}
         </div>
-      </section>
+      </Panel>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <h3 className="h4 text-text mb-5">Clicks per day</h3>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel title="Clicks per day">
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: -20 }}>
-                <CartesianGrid stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} interval={2} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} />
-                <Bar dataKey="clicks" name="Clicks" radius={[8, 8, 0, 0]} fill="var(--accent)" maxBarSize={24} />
+                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  tick={AXIS}
+                  tickLine={false}
+                  axisLine={false}
+                  interval={2}
+                />
+                <YAxis tick={AXIS} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={TOOLTIP_CONTENT}
+                  labelStyle={TOOLTIP_LABEL}
+                  itemStyle={TOOLTIP_ITEM}
+                  cursor={BAR_CURSOR}
+                />
+                <Bar
+                  dataKey="clicks"
+                  name="Clicks"
+                  radius={[5, 5, 0, 0]}
+                  fill="var(--chart-1)"
+                  maxBarSize={24}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </section>
+        </Panel>
 
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <h3 className="h4 text-text mb-2">Lead reachability</h3>
-          <p className="caption mb-4">Who can still be DM'd today</p>
-          <div className="flex items-center gap-6">
+        <Panel
+          title={
+            <div>
+              <h2 className="text-[13.5px] font-semibold text-ink">Lead reachability</h2>
+              <p className="caption mt-0.5">Who can still be DM&apos;d today</p>
+            </div>
+          }
+        >
+          <div className="flex flex-col items-center gap-6 sm:flex-row">
             <div className="h-44 w-44 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -291,56 +372,73 @@ export function InsightsView() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="space-y-3">
+            <div className="w-full min-w-0 space-y-3">
               {reach.map((r) => (
-                <div key={r.name} className="flex items-center gap-2.5 text-sm">
-                  <span className="size-2.5 rounded-full" style={{ background: r.color }} />
-                  <span className="text-text-3">{r.name}</span>
-                  <span className="ml-auto font-mono font-semibold text-text tnum">{r.v}</span>
+                <div key={r.name} className="flex items-center gap-2.5">
+                  <span
+                    aria-hidden
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ background: r.color }}
+                  />
+                  <span className="truncate text-[13px] text-ink-2">{r.name}</span>
+                  <span className="ml-auto font-mono text-[12.5px] font-semibold text-ink tnum">
+                    {r.v}
+                  </span>
                 </div>
               ))}
-              <p className="mt-2 text-[11px] leading-relaxed text-text-3">
-                Campaigns only text reachable leads — window-expired is filtered before send.
+              <p className="border-t border-line pt-3 text-[11px] leading-relaxed text-ink-3">
+                Campaigns only text reachable leads. Window-expired leads are filtered
+                before send.
               </p>
             </div>
           </div>
-        </section>
+        </Panel>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <h3 className="h4 text-text mb-5">Top buttons clicked</h3>
+      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+        <Panel title="Top buttons clicked">
           <div className="space-y-4">
             {topButtons.map(([label, n, pct]) => (
               <div key={label} className="flex items-center gap-3">
-                <span className="w-44 truncate text-sm font-medium">{label}</span>
-                <div className="h-[10px] flex-1 overflow-hidden rounded-full bg-surface-3">
-                  <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-                </div>
-                <span className="w-16 text-right text-sm font-mono text-text-3 tnum">{n}</span>
+                <span className="w-40 shrink-0 truncate text-[13px] font-medium text-ink">
+                  {label}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <Meter pct={pct} />
+                </span>
+                <span className="w-12 shrink-0 text-right font-mono text-[12.5px] text-ink-2 tnum">
+                  {n}
+                </span>
               </div>
             ))}
           </div>
-        </section>
+        </Panel>
 
-        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
-          <h3 className="h4 text-text mb-4">Reel leaderboard</h3>
-          <div className="space-y-3">
+        <Panel title="Reel leaderboard" bodyClassName="p-0">
+          <ul className="divide-y divide-line">
             {automations
               .slice()
               .sort((a, b) => b.dmsSent - a.dmsSent)
               .map((a, i) => (
-                <div key={a.id} className="flex items-center gap-3 rounded-md bg-surface-2 p-3">
-                  <span className="text-lg font-bold text-text-3">#{i + 1}</span>
+                <li
+                  key={a.id}
+                  className="flex items-center gap-3 px-5 py-3.5 transition-colors duration-150 hover:bg-surface-2"
+                >
+                  <span className="w-6 shrink-0 font-mono text-[11px] text-ink-3 tnum">
+                    #{i + 1}
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-text">{a.reelCaption}</p>
-                    <p className="text-[11px] text-text-3">{fmtNum(a.dmsSent)} DMs · {fmtNum(a.clicks)} clicks</p>
+                    <p className="truncate text-[13px] font-medium text-ink">{a.reelCaption}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-ink-3">
+                      <span className="font-mono tnum">{fmtNum(a.dmsSent)}</span> DMs ·{" "}
+                      <span className="font-mono tnum">{fmtNum(a.clicks)}</span> clicks
+                    </p>
                   </div>
                   <StatusPill status={a.isActive ? "live" : "paused"} />
-                </div>
+                </li>
               ))}
-          </div>
-        </section>
+          </ul>
+        </Panel>
       </div>
     </div>
   );

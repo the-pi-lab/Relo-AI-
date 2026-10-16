@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   type ActivityEvent,
@@ -57,16 +58,29 @@ export function parseHash(hash: string): Route {
   return { name: "notfound" };
 }
 
-export function useHashRoute(): [Route, (to: string) => void] {
-  const [route, setRoute] = useState<Route>(() =>
-    typeof window === "undefined" ? { name: "landing" } : parseHash(window.location.hash)
-  );
+/* The URL is the only source of truth for the route, so the hash is read
+   through useSyncExternalStore. On the server the snapshot is empty, which
+   keeps the first client render identical to the server HTML and avoids a
+   hydration mismatch; React then re-reads the snapshot straight after
+   hydration and re-renders if the URL already pointed somewhere else. That is
+   what makes a deep link opened in a fresh tab land on the right screen
+   without waiting for a hashchange to happen. */
+const subscribeToHash = (onChange: () => void) => {
+  window.addEventListener("hashchange", onChange);
+  window.addEventListener("popstate", onChange);
+  return () => {
+    window.removeEventListener("hashchange", onChange);
+    window.removeEventListener("popstate", onChange);
+  };
+};
 
-  useEffect(() => {
-    const onChange = () => setRoute(parseHash(window.location.hash));
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
-  }, []);
+export function useHashRoute(): [Route, (to: string) => void] {
+  const hash = useSyncExternalStore(
+    subscribeToHash,
+    () => window.location.hash,
+    () => ""
+  );
+  const route = useMemo(() => parseHash(hash), [hash]);
 
   const navigate = useCallback((to: string) => {
     const target = `#${to.startsWith("/") ? to : `/${to}`}`;
@@ -128,7 +142,10 @@ interface Store {
 
 const StoreCtx = createContext<Store | null>(null);
 
-const PERSIST_KEY = "relo-studio-v1";
+/* v2: the demo fixtures were rewritten (the copy no longer carries em dashes or
+   emoji), so an older snapshot would keep resurrecting retired strings. The
+   version suffix retires it without any migration code. */
+const PERSIST_KEY = "relo-studio-v2";
 
 interface Persisted {
   user: ReloUser | null;
@@ -184,7 +201,7 @@ export function ReloProvider({ children }: { children: React.ReactNode }) {
       };
       window.localStorage.setItem(PERSIST_KEY, JSON.stringify(snapshot));
     } catch {
-      /* storage full / unavailable — fine for demo */
+      /* storage full or unavailable, which is fine for the demo */
     }
   }, [user, plan, aiCredits, automations, campaigns, flows, products, linkPage, content]);
 

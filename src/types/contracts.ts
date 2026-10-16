@@ -68,7 +68,7 @@ export interface ReelAutomation {
 /**
  * Product library row (plan.md §4.4 / §5). Feeds AI product-Q&A and the
  * link-in-bio page. Capped at 50 per account so the catalog fits in one
- * AI prompt — no RAG at MVP.
+ * AI prompt, no RAG at MVP.
  */
 export interface Product {
   id: string;
@@ -148,7 +148,7 @@ export interface CampaignTarget {
   sentAt?: number;
 }
 
-/** "X of Y commenters still reachable" — the number plan.md §4.3 demands. */
+/** "X of Y commenters still reachable", the number plan.md section 4.3 demands. */
 export interface Reachability {
   total: number;
   reachable: number;
