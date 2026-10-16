@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useHashRoute, ReloProvider, useRelo } from "@/lib/relo/store";
 import { ThemeProvider } from "@/lib/relo/theme";
 import { LandingPage } from "./landing";
@@ -33,7 +32,6 @@ function Router() {
       signIn("demo@relo.app", true);
       navigate("/studio");
     }
-     
   }, []);
 
   /* landing should always scroll from top when revisited */
@@ -45,7 +43,13 @@ function Router() {
 
   /* content pages always open at the top, after the view mounts */
   useEffect(() => {
-    if (route.name === "privacy" || route.name === "terms" || route.name === "cookies" || route.name === "notfound" || route.name === "login") {
+    if (
+      route.name === "privacy" ||
+      route.name === "terms" ||
+      route.name === "cookies" ||
+      route.name === "notfound" ||
+      route.name === "login"
+    ) {
       const id = window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
       return () => window.clearTimeout(id);
     }
@@ -82,42 +86,29 @@ function Router() {
 
   return (
     <>
-      {/* keyboard users first — one hop past the sky, straight to content */}
+      {/* keyboard users first — one hop past the nav, straight to content */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-ink focus:px-5 focus:py-3 focus:text-[13px] focus:font-semibold focus:text-bone focus:outline focus:outline-2 focus:outline-ember"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-[13px] focus:font-semibold focus:text-accent-ink focus:outline-none"
       >
         Skip to content
       </a>
-      <div className="grain-fixed" aria-hidden />
-      {/* custom cursor removed for lag-free devices — the native pointer is
-          hidden ONLY over ASCII art (see globals.css .ascii-live) */}
       <CookieConsent navigate={navigate} />
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={key}
-          id="main-content"
-          tabIndex={-1}
-          initial={{ opacity: 0, filter: "blur(10px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, filter: "blur(8px)" }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.28, 1] }}
-        >
-          {route.name === "landing" && <LandingPage navigate={navigate} />}
-          {route.name === "login" && (
-            <LoginPage navigate={navigate} onAuth={(email, demo) => signIn(email, demo)} />
-          )}
-          {route.name === "privacy" && <PrivacyPage navigate={navigate} />}
-          {route.name === "terms" && <TermsPage navigate={navigate} />}
-          {route.name === "cookies" && <CookiesPage navigate={navigate} />}
-          {route.name === "notfound" && <NotFoundPage navigate={navigate} />}
-          {route.name === "studio" && user && (
-            <StudioShell view={studioView} go={(v) => navigate(`/studio/${v}`)}>
-              {renderStudioView()}
-            </StudioShell>
-          )}
-        </motion.div>
-      </AnimatePresence>
+      <main id="main-content" tabIndex={-1} key={key}>
+        {route.name === "landing" && <LandingPage navigate={navigate} />}
+        {route.name === "login" && (
+          <LoginPage navigate={navigate} onAuth={(email, demo) => signIn(email, demo)} />
+        )}
+        {route.name === "privacy" && <PrivacyPage navigate={navigate} />}
+        {route.name === "terms" && <TermsPage navigate={navigate} />}
+        {route.name === "cookies" && <CookiesPage navigate={navigate} />}
+        {route.name === "notfound" && <NotFoundPage navigate={navigate} />}
+        {route.name === "studio" && user && (
+          <StudioShell view={studioView} go={(v) => navigate(`/studio/${v}`)}>
+            {renderStudioView()}
+          </StudioShell>
+        )}
+      </main>
     </>
   );
 }

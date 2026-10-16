@@ -1,65 +1,34 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RTooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell,
 } from "recharts";
 import {
-  Send,
-  Users,
-  MousePointerClick,
-  MessageCircle,
-  Activity,
-  ServerCog,
-  Flame,
+  Users, MousePointerClick, MessageCircle, Activity, Flame,
   Clock3,
-  TrendingUp,
 } from "lucide-react";
 import { useRelo } from "@/lib/relo/store";
 import { DM_SERIES, fmtNum, timeAgo } from "@/lib/relo/data";
-import { ViewHead, StatCard, StatusPill } from "./studio-ui";
+import { ViewHead, StatCard, StatusPill, Field, inputCls } from "./studio-ui";
+import { RButton } from "../chrome";
 import { cn } from "@/lib/utils";
 
-const chartTooltip = {
-  contentStyle: {
-    borderRadius: 14,
-    border: "1px solid var(--line)",
-    background: "var(--popover)",
-    boxShadow: "var(--shadow-lift)",
-    fontSize: 12,
-    padding: "8px 12px",
-  },
-  labelStyle: { fontFamily: "var(--font-sans-mono)", fontSize: 10, color: "var(--ink-3)" },
+const tooltipStyle = {
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
+  boxShadow: "var(--shadow-soft)",
+  fontSize: 12,
+  padding: "8px 12px",
+  color: "var(--text)",
 } as const;
+const labelStyle = { fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" } as const;
 
-const EVENT_ICON = {
-  comment: MessageCircle,
-  dm: Send,
-  lead: Users,
-  click: MousePointerClick,
-  system: ServerCog,
-} as const;
-const EVENT_TONE = {
-  comment: "bg-sky/15 text-[#4a6b82]",
-  dm: "bg-ember-wash text-ember-deep",
-  lead: "bg-moss/15 text-moss",
-  click: "bg-honey/15 text-honey",
-  system: "bg-ink/5 text-ink-3",
-} as const;
-
-/* ═══════════════ HOME ═══════════════ */
+/* ═════════════════════════════════════════════════════════════════════
+   HOME
+   ═════════════════════════════════════════════════════════════════════ */
 
 export function HomeView({ go }: { go: (v: string) => void }) {
   const { automations, activity, leads, toggleAutomation } = useRelo();
@@ -72,207 +41,122 @@ export function HomeView({ go }: { go: (v: string) => void }) {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <ViewHead
-        title={
-        <>
-          {greeting}, <span className="serif-accent">Aarav.</span>
-        </>
-      }
-        sub="Your reels kept talking overnight. Here's what they said — and who they sold to."
+        title={greeting}
+        sub="Your reels kept talking overnight. Here is what they said — and who they sold to."
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          label="DMs today"
-          value={dmsToday}
-          delta="+12%"
-          spark={[24, 32, 28, 44, 38, 55, 62, dmsToday]}
-          icon={Send}
-        />
-        <StatCard
-          label="Leads captured"
-          value={leads.length}
-          delta="+8%"
-          spark={[4, 6, 5, 8, 7, 9, 11, leads.length]}
-          icon={Users}
-        />
-        <StatCard
-          label="Button clicks"
-          value={clicks}
-          delta="+21%"
-          spark={[20, 26, 31, 29, 42, 48, 53, 61]}
-          icon={MousePointerClick}
-        />
-        <StatCard
-          label="DM → click"
-          value={rate}
-          suffix="%"
-          delta="+3%"
-          spark={[41, 44, 48, 46, 52, 55, 58, rate]}
-          icon={TrendingUp}
-        />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="DMs today" value={dmsToday} delta="+12%" />
+        <StatCard label="Leads captured" value={leads.length} delta="+8%" />
+        <StatCard label="Button clicks" value={clicks} delta="+21%" />
+        <StatCard label="DM to click" value={rate} suffix="%" delta="+3%" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        {/* funnel chart */}
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <div className="flex items-center justify-between">
+      <div className="grid gap-6 lg:grid-cols-[1.55fr_1fr]">
+        {/* funnel */}
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
             <div>
-              <h3 className="font-display text-[16px] font-bold">Comments → DMs</h3>
-              <p className="mt-0.5 font-mono text-[10px] tracking-[0.18em] text-ink-4 uppercase">last 14 days</p>
+              <h3 className="h4 text-text">Comments to DMs</h3>
+              <p className="caption">Last 14 days</p>
             </div>
-            <button
-              onClick={() => go("insights")}
-              className="rounded-full border border-line-strong px-3.5 py-1.5 text-[12px] font-medium text-ink-3 transition-colors "
-            >
+            <RButton variant="outline" size="sm" onClick={() => go("insights")}>
               Full insights
-            </button>
+            </RButton>
           </div>
-          <div className="mt-5 h-60">
+          <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={DM_SERIES} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+              <AreaChart data={DM_SERIES} margin={{ top: 8, right: 8, bottom: 8, left: -10 }}>
                 <defs>
-                  <linearGradient id="gDms" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8b80f9" stopOpacity={0.32} />
-                    <stop offset="100%" stopColor="#8b80f9" stopOpacity={0.02} />
-                  </linearGradient>
                   <linearGradient id="gComments" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f2c48d" stopOpacity={0.22} />
-                    <stop offset="100%" stopColor="#f2c48d" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="var(--line)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--ink-4)" }} tickLine={false} axisLine={false} interval={3} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--ink-4)" }} tickLine={false} axisLine={false} />
-                <RTooltip {...chartTooltip} />
-                <Area type="monotone" dataKey="comments" stroke="#f2c48d" strokeWidth={2} fill="url(#gComments)" name="Comments" />
-                <Area type="monotone" dataKey="dms" stroke="#8b80f9" strokeWidth={2.4} fill="url(#gDms)" name="DMs sent" />
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} interval={3} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} />
+                <Area type="monotone" dataKey="comments" stroke="var(--accent)" strokeWidth={2} fill="url(#gComments)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </motion.section>
+        </section>
 
         {/* engine health */}
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.18 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="font-display text-[16px] font-bold">Engine health</h3>
-            <StatusPill status="live" pulse />
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="h4 text-text">Engine health</h3>
+            <StatusPill status="live" />
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="space-y-4">
             {[
               ["Queue depth", "3 jobs", 92],
               ["Webhook ack", "14ms avg", 97],
-              ["Cron (1-min)", "on time", 100],
+              ["Cron (1 min)", "on time", 100],
               ["Failed (24h)", "2 · retried", 88],
             ].map(([k, v, pct]) => (
-              <div key={k as string}>
-                <div className="flex items-center justify-between text-[12.5px]">
-                  <span className="text-ink-3">{k}</span>
-                  <span className="font-mono font-medium text-ink">{v}</span>
+              <div key={k} className="space-y-1.5">
+                <div className="flex items-baseline justify-between text-xs">
+                  <span className="text-text-3">{k}</span>
+                  <span className="font-mono font-semibold text-text">{v}</span>
                 </div>
-                <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-ink/8">
-                  <motion.div
-                    className="h-full rounded-full bg-moss"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 1, ease: [0.22, 1, 0.28, 1] }}
-                  />
+                <div className="h-[8px] w-full overflow-hidden rounded-full bg-surface-3">
+                  <div className="h-full rounded-full bg-ok" style={{ width: `${pct}%` }} />
                 </div>
               </div>
             ))}
           </div>
-          <div className="mt-5 flex items-center gap-2.5 rounded-2xl bg-card-soft px-3.5 py-3">
-            <Clock3 className="size-4 shrink-0 text-honey" />
-            <p className="text-[12px] leading-snug text-ink-3">
-              Human jitter holding at <span className="font-semibold text-ink">38s</span> — comfortably inside the
-              30–90s band.
+          <div className="mt-6 flex items-center gap-2.5 rounded-md bg-surface-2 px-3.5 py-3">
+            <Clock3 className="size-4 shrink-0 text-accent" />
+            <p className="text-xs text-text-3 leading-snug">
+              Human jitter holding at <span className="font-semibold text-text">38s</span> — inside the 30–90s band.
             </p>
           </div>
-        </motion.section>
+        </section>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_1.6fr]">
         {/* live feed */}
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.24 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <div className="flex items-center gap-2.5">
-            <Activity className="size-4 text-ember" />
-            <h3 className="font-display text-[16px] font-bold">Live feed</h3>
-            <span className="ml-auto font-mono text-[10px] tracking-widest text-ink-4 uppercase">realtime</span>
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-4">
+            <Activity className="size-4 text-text-3" />
+            <h3 className="h4 text-text">Live feed</h3>
+            <span className="ml-auto caption">realtime</span>
           </div>
-          <div className="mt-4 max-h-[340px] space-y-1 overflow-y-auto pr-1">
-            {activity.slice(0, 12).map((ev, i) => {
-              const Icon = EVENT_ICON[ev.kind] ?? Activity;
-              return (
-                <motion.div
-                  key={ev.id}
-                  layout
-                  initial={{ opacity: 0, x: -14 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.045 }}
-                  className="flex items-start gap-3 rounded-xl px-2 py-2 transition-colors "
-                >
-                  <span className={cn("mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg", EVENT_TONE[ev.kind])}>
-                    <Icon className="size-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-ink">{ev.text}</p>
-                    {ev.meta && <p className="truncate font-mono text-[10.5px] text-ink-4">{ev.meta}</p>}
-                  </div>
-                  <span className="shrink-0 font-mono text-[10px] text-ink-4">{timeAgo(ev.at)}</span>
-                </motion.div>
-              );
-            })}
+          <div className="max-h-[340px] space-y-2 overflow-y-auto pr-2">
+            {activity.slice(0, 12).map((ev) => (
+              <div key={ev.id} className="flex items-start gap-3 rounded-md px-2.5 py-2.5 transition-colors hover:bg-surface-2">
+                <span className="mt-0.5 grid size-6 place-items-center rounded-sm bg-surface-3 text-text-3">
+                  <MessageCircle className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-text">{ev.text}</p>
+                  {ev.meta && <p className="truncate text-[11px] text-text-3">{ev.meta}</p>}
+                </div>
+                <span className="shrink-0 text-[11px] text-text-3">{timeAgo(ev.at)}</span>
+              </div>
+            ))}
           </div>
-        </motion.section>
+        </section>
 
         {/* automations quick list */}
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <div className="flex items-center gap-2.5">
-            <Flame className="size-4 text-ember" />
-            <h3 className="font-display text-[16px] font-bold">Your reels on duty</h3>
-            <button
-              onClick={() => go("automations")}
-              className="ml-auto rounded-full border border-line-strong px-3.5 py-1.5 text-[12px] font-medium text-ink-3 transition-colors "
-            >
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <div className="flex items-center gap-2.5 mb-4">
+            <Flame className="size-4 text-text-3" />
+            <h3 className="h4 text-text">Your reels on duty</h3>
+            <RButton variant="outline" size="sm" onClick={() => go("automations")}>
               Manage
-            </button>
+            </RButton>
           </div>
-          <div className="mt-4 space-y-2.5">
+          <div className="space-y-3">
             {automations.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center gap-3.5 rounded-2xl border border-line bg-card-soft px-4 py-3.5"
-              >
-                <span
-                  className="h-9 w-9 shrink-0 rounded-xl"
-                  style={{
-                    background: `linear-gradient(135deg, hsl(${a.reelCaption.length * 7 % 360} 40% 30%), hsl(${a.reelCaption.length * 3 % 360} 45% 22%))`,
-                  }}
-                />
+              <div key={a.id} className="flex items-center gap-3.5 rounded-lg border border-border bg-surface-2 p-3.5">
+                <span className="h-9 w-9 shrink-0 rounded-md" style={{ background: `hsl(${a.reelCaption.length * 7 % 360} 40% 30%)` }} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium">{a.reelCaption}</p>
-                  <p className="font-mono text-[10.5px] text-ink-4">
+                  <p className="truncate text-sm font-medium text-text">{a.reelCaption}</p>
+                  <p className="text-[11px] text-text-3">
                     {a.triggerKeywords.map((k) => `#${k}`).join(" ")} · {fmtNum(a.dmsSent)} DMs
                   </p>
                 </div>
@@ -281,28 +165,22 @@ export function HomeView({ go }: { go: (v: string) => void }) {
                   aria-checked={a.isActive}
                   aria-label={`Toggle ${a.reelCaption}`}
                   onClick={() => toggleAutomation(a.id)}
-                  className={cn(
-                    "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
-                    a.isActive ? "bg-moss" : "bg-ink/15"
-                  )}
+                  className={cn("flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors", a.isActive ? "bg-ok" : "bg-surface-3")}
                 >
-                  <motion.span
-                    layout
-                    className="size-5 rounded-full bg-white shadow"
-                    animate={{ x: a.isActive ? 20 : 0 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 28 }}
-                  />
+                  <span className="size-5 rounded-full bg-white shadow" />
                 </button>
               </div>
             ))}
           </div>
-        </motion.section>
+        </section>
       </div>
     </div>
   );
 }
 
-/* ═══════════════ INSIGHTS ═══════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   INSIGHTS
+   ═════════════════════════════════════════════════════════════════════ */
 
 export function InsightsView() {
   const { automations } = useRelo();
@@ -314,15 +192,15 @@ export function InsightsView() {
   );
   const replies = Math.round(totals.comments * 0.92);
   const funnel = [
-    { label: "Comments seen", v: totals.comments, tone: "#f2c48d" },
-    { label: "Replies sent", v: replies, tone: "#a99dff" },
-    { label: "DMs delivered", v: totals.dms, tone: "#8b80f9" },
-    { label: "Buttons clicked", v: totals.clicks, tone: "#63ddb6" },
+    { label: "Comments seen", v: totals.comments, tone: "#d97706" },
+    { label: "Replies sent", v: replies, tone: "#d97706" },
+    { label: "DMs delivered", v: totals.dms, tone: "#d97706" },
+    { label: "Buttons clicked", v: totals.clicks, tone: "#16a34a" },
   ];
   const reach = [
-    { name: "Reachable", v: 743, color: "#63ddb6" },
-    { name: "Window closed", v: 168, color: "#e8d8c8" },
-    { name: "Token issues", v: 19, color: "#8b80f9" },
+    { name: "Reachable", v: 743, color: "#16a34a" },
+    { name: "Window closed", v: 168, color: "#9ca3af" },
+    { name: "Token issues", v: 19, color: "#d97706" },
   ];
   const topButtons = [
     ["Download free pack", 643, 78],
@@ -332,95 +210,67 @@ export function InsightsView() {
   ] as const;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <ViewHead
         title="Insights"
         sub="The honest funnel — from comment noise to button clicks that pay."
       >
-        <div className="flex rounded-full border border-line-strong bg-card p-1">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface p-1" role="radiogroup" aria-label="Date range">
           {[7, 14].map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
               className={cn(
-                "relative rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors",
-                range === r ? "text-[var(--primary-foreground)]" : "text-ink-3"
+                "relative rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors",
+                range === r ? "bg-text text-text-inverse" : "text-text-3 hover:text-text"
               )}
             >
-              {range === r && (
-                <motion.span layoutId="range-pill" className="absolute inset-0 rounded-full bg-ink" />
-              )}
-              <span className="relative">{r}d</span>
+              {r}d
             </button>
           ))}
         </div>
       </ViewHead>
 
       {/* funnel */}
-      <motion.section
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-      >
-        <h3 className="font-display text-[16px] font-bold">The funnel</h3>
-        <div className="mt-5 space-y-4">
+      <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+        <h3 className="h4 text-text mb-5">The funnel</h3>
+        <div className="space-y-5">
           {funnel.map((f, i) => {
             const pct = (f.v / funnel[0].v) * 100;
             return (
               <div key={f.label}>
-                <div className="flex items-baseline justify-between text-[13px]">
-                  <span className="font-medium text-ink-2">{f.label}</span>
-                  <span className="font-mono text-ink-3">
-                    {f.v.toLocaleString("en-IN")} · {Math.round(pct)}%
-                  </span>
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="font-medium text-text-2">{f.label}</span>
+                  <span className="font-mono text-text-3 tnum">{f.v.toLocaleString("en-IN")} · {Math.round(pct)}%</span>
                 </div>
-                <div className="mt-1.5 h-3 w-full overflow-hidden rounded-full bg-ink/6">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: f.tone }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 1.1, delay: i * 0.12, ease: [0.22, 1, 0.28, 1] }}
-                  />
+                <div className="mt-1.5 h-[10px] w-full overflow-hidden rounded-full bg-surface-3">
+                  <div className="h-full rounded-full" style={{ background: f.tone, width: `${pct}%` }} />
                 </div>
               </div>
             );
           })}
         </div>
-      </motion.section>
+      </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.08 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <h3 className="font-display text-[16px] font-bold">Clicks per day</h3>
-          <div className="mt-5 h-56">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <h3 className="h4 text-text mb-5">Clicks per day</h3>
+          <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -22 }}>
-                <CartesianGrid stroke="var(--line)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--ink-4)" }} tickLine={false} axisLine={false} interval={2} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--ink-4)" }} tickLine={false} axisLine={false} />
-                <RTooltip {...chartTooltip} cursor={{ fill: "rgba(139,128,249,0.06)" }} />
-                <Bar dataKey="clicks" name="Clicks" radius={[6, 6, 0, 0]} fill="#8b80f9" maxBarSize={22} />
+              <BarChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: -20 }}>
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} interval={2} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} tickLine={false} axisLine={false} />
+                <Bar dataKey="clicks" name="Clicks" radius={[8, 8, 0, 0]} fill="var(--accent)" maxBarSize={24} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.14 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <h3 className="font-display text-[16px] font-bold">Lead reachability</h3>
-          <p className="mt-0.5 font-mono text-[10px] tracking-[0.18em] text-ink-4 uppercase">
-            who can still be DM&apos;d today
-          </p>
-          <div className="mt-2 flex items-center gap-6">
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <h3 className="h4 text-text mb-2">Lead reachability</h3>
+          <p className="caption mb-4">Who can still be DM'd today</p>
+          <div className="flex items-center gap-6">
             <div className="h-44 w-44 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -438,77 +288,59 @@ export function InsightsView() {
                       <Cell key={r.name} fill={r.color} />
                     ))}
                   </Pie>
-                  <RTooltip {...chartTooltip} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               {reach.map((r) => (
-                <div key={r.name} className="flex items-center gap-2.5 text-[13px]">
+                <div key={r.name} className="flex items-center gap-2.5 text-sm">
                   <span className="size-2.5 rounded-full" style={{ background: r.color }} />
-                  <span className="text-ink-3">{r.name}</span>
-                  <span className="ml-auto font-mono font-medium">{r.v}</span>
+                  <span className="text-text-3">{r.name}</span>
+                  <span className="ml-auto font-mono font-semibold text-text tnum">{r.v}</span>
                 </div>
               ))}
-              <p className="pt-2 font-mono text-[10px] leading-relaxed text-ink-4">
-                campaigns only text reachable leads — window_expired is filtered before send
+              <p className="mt-2 text-[11px] leading-relaxed text-text-3">
+                Campaigns only text reachable leads — window-expired is filtered before send.
               </p>
             </div>
           </div>
-        </motion.section>
+        </section>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <h3 className="font-display text-[16px] font-bold">Top buttons clicked</h3>
-          <div className="mt-5 space-y-3">
+      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <h3 className="h4 text-text mb-5">Top buttons clicked</h3>
+          <div className="space-y-4">
             {topButtons.map(([label, n, pct]) => (
               <div key={label} className="flex items-center gap-3">
-                <span className="w-40 truncate text-[13px] font-medium sm:w-52">{label}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink/6">
-                  <motion.div
-                    className="h-full rounded-full bg-ember"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 1, ease: [0.22, 1, 0.28, 1] }}
-                  />
+                <span className="w-44 truncate text-sm font-medium">{label}</span>
+                <div className="h-[10px] flex-1 overflow-hidden rounded-full bg-surface-3">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
                 </div>
-                <span className="w-12 text-right font-mono text-[12px] text-ink-3">{n}</span>
+                <span className="w-16 text-right text-sm font-mono text-text-3 tnum">{n}</span>
               </div>
             ))}
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.26 }}
-          className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6"
-        >
-          <h3 className="font-display text-[16px] font-bold">Reel leaderboard</h3>
-          <div className="mt-4 space-y-2">
+        <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+          <h3 className="h4 text-text mb-4">Reel leaderboard</h3>
+          <div className="space-y-3">
             {automations
               .slice()
               .sort((a, b) => b.dmsSent - a.dmsSent)
               .map((a, i) => (
-                <div key={a.id} className="flex items-center gap-3 rounded-xl bg-card-soft px-3.5 py-3">
-                  <span className="font-display text-lg font-extrabold text-ink-4">#{i + 1}</span>
+                <div key={a.id} className="flex items-center gap-3 rounded-md bg-surface-2 p-3">
+                  <span className="text-lg font-bold text-text-3">#{i + 1}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12.5px] font-medium">{a.reelCaption}</p>
-                    <p className="font-mono text-[10px] text-ink-4">
-                      {fmtNum(a.dmsSent)} DMs · {fmtNum(a.clicks)} clicks
-                    </p>
+                    <p className="truncate text-sm font-medium text-text">{a.reelCaption}</p>
+                    <p className="text-[11px] text-text-3">{fmtNum(a.dmsSent)} DMs · {fmtNum(a.clicks)} clicks</p>
                   </div>
-                  <StatusPill status={a.isActive ? "live" : "paused"} pulse={a.isActive} />
+                  <StatusPill status={a.isActive ? "live" : "paused"} />
                 </div>
               ))}
           </div>
-        </motion.section>
+        </section>
       </div>
     </div>
   );

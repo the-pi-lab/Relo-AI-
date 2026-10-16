@@ -1,23 +1,6 @@
 "use client";
 
-/**
- * COOKIE CONSENT — DPDP-style first transmission.
- *
- * The Digital Personal Data Protection Act asks for consent that is free,
- * specific, informed, unconditional, and as easy to withdraw as it was to
- * give. So: a small card that tells you exactly what is stored on your
- * device, two buttons with no dark patterns, a link to the full policy,
- * and a "cookie settings" escape hatch that lives in every footer.
- *
- * RELO stores nothing beyond what is strictly necessary (a signed-in
- * session, your theme, your studio demo state) — there is no analytics,
- * no advertising, no third-party tracking to switch on. "Accept all" is
- * offered for honesty, not because more is waiting behind it.
- */
-
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Cookie, ShieldCheck } from "lucide-react";
 
 export const CONSENT_KEY = "relo-cookie-consent";
 export const CONSENT_EVENT = "relo:consent-open";
@@ -27,7 +10,7 @@ export type ConsentChoice = "all" | "necessary";
 interface StoredConsent {
   v: 1;
   choice: ConsentChoice;
-  at: string; /* ISO — when consent was recorded */
+  at: string;
 }
 
 export function readConsent(): StoredConsent | null {
@@ -49,7 +32,7 @@ function storeConsent(choice: ConsentChoice) {
   try {
     window.localStorage.setItem(CONSENT_KEY, JSON.stringify(record));
   } catch {
-    /* private mode — the choice simply doesn't persist; banner will return */
+    /* private mode — the choice simply does not persist */
   }
   window.dispatchEvent(new CustomEvent("relo:consent-changed", { detail: record }));
 }
@@ -62,7 +45,7 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
   useEffect(() => {
     const id = window.setTimeout(() => {
       if (!readConsent()) setOpen(true);
-    }, 1600);
+    }, 1200);
     return () => window.clearTimeout(id);
   }, []);
 
@@ -76,7 +59,7 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
   /* keyboard: focus the honest default when the banner appears */
   useEffect(() => {
     if (open) {
-      const id = window.setTimeout(() => acceptRef.current?.focus(), 350);
+      const id = window.setTimeout(() => acceptRef.current?.focus(), 300);
       return () => window.clearTimeout(id);
     }
   }, [open]);
@@ -86,86 +69,76 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
     setOpen(false);
   }, []);
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          role="dialog"
-          aria-modal="false"
-          aria-labelledby="cookie-title"
-          aria-describedby="cookie-desc"
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 24 }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.28, 1] }}
-          className="fixed inset-x-3 bottom-3 z-[80] sm:inset-x-auto sm:bottom-5 sm:left-5 sm:max-w-[430px]"
-        >
-          <div className="glass rounded-3xl border border-line p-5 shadow-[0_24px_70px_-18px_rgba(4,3,9,0.65)] sm:p-6">
-            <div className="flex items-start gap-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-2xl bg-ember-wash text-ember-deep">
-                <Cookie className="size-4.5" />
-              </span>
-              <div className="min-w-0">
-                <h2
-                  id="cookie-title"
-                  className="font-display text-[15.5px] font-bold tracking-tight"
-                >
-                  A word about <span className="serif-accent text-spectral">cookies.</span>
-                </h2>
-                <p id="cookie-desc" className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-                  We keep only what this device needs to run RELO: a sign-in
-                  session, your night/day theme, and your studio demo state.
-                  No trackers, no ads, no third-party pixels —{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigate("/cookies");
-                      setOpen(false);
-                    }}
-                    className="font-medium text-ember underline decoration-ember/40 underline-offset-2"
-                  >
-                    read the full policy
-                  </button>
-                  .
-                </p>
-              </div>
-            </div>
+  if (!open) return null;
 
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cookie-title"
+      aria-describedby="cookie-desc"
+      className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:max-w-[440px]"
+    >
+      <div className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-lg">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 grid size-7 place-items-center rounded-md bg-accent-wash text-accent font-bold text-xs">
+            !
+          </div>
+          <div className="min-w-0">
+            <h2 id="cookie-title" className="text-sm font-semibold text-text">
+              A word about cookies
+            </h2>
+            <p id="cookie-desc" className="mt-1.5 text-sm text-text-2 leading-relaxed">
+              We keep only what this device needs to run RELO: a sign-in session,
+              your night or day theme, and your studio demo state. No trackers, no
+              ads, no third-party pixels.
+              <br />
               <button
-                ref={acceptRef}
                 type="button"
-                onClick={() => choose("all")}
-                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-ink text-night px-4 text-[13px] font-semibold transition-colors"
+                onClick={() => {
+                  navigate("/cookies");
+                  setOpen(false);
+                }}
+                className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover"
               >
-                <Cookie className="size-3.5" /> Accept all cookies
+                read the full policy
               </button>
-              <button
-                type="button"
-                onClick={() => choose("necessary")}
-                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full border border-line-strong bg-card px-4 text-[13px] font-medium text-ink-2"
-              >
-                <ShieldCheck className="size-3.5 text-moss" /> Only what&apos;s necessary
-              </button>
-            </div>
-            <p className="mt-3 font-mono text-[9.5px] uppercase tracking-[0.18em] text-ink-4">
-              change your mind anytime · cookie settings live in every footer
+              .
             </p>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            ref={acceptRef}
+            type="button"
+            onClick={() => choose("all")}
+            className="inline-flex h-10 w-full flex-1 items-center justify-center gap-2 rounded-md bg-accent text-accent-ink px-4 text-sm font-semibold hover:bg-accent-hover transition-colors sm:w-auto"
+          >
+            Accept all cookies
+          </button>
+          <button
+            type="button"
+            onClick={() => choose("necessary")}
+            className="inline-flex h-10 w-full flex-1 items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 text-sm font-semibold text-text-2 hover:bg-surface-2 transition-colors sm:w-auto"
+          >
+            Only what is necessary
+          </button>
+        </div>
+        <p className="mt-4 text-[11px] uppercase tracking-wider text-text-3">
+          change your mind anytime · cookie settings live in every footer
+        </p>
+      </div>
+    </div>
   );
 }
-
-/* ── footer link — re-opens the banner (withdraw consent the easy way) ── */
 
 export function CookieSettingsLink({ className }: { className?: string }) {
   return (
     <button
       type="button"
       onClick={() => window.dispatchEvent(new CustomEvent(CONSENT_EVENT))}
-      className={className ?? "cursor-pointer"}
+      className={className ?? ""}
     >
       Cookie settings
     </button>

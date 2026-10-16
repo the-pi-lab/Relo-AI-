@@ -627,7 +627,7 @@ export function CanvasView() {
                 markerHeight="6.5"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ember)" />
+                <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent)" />
               </marker>
             </defs>
             {flow.edges.map((e) => {
@@ -653,7 +653,7 @@ export function CanvasView() {
                   <path
                     d={d}
                     fill="none"
-                    stroke={isSel ? "var(--ember)" : flowed ? "var(--moss)" : "var(--ink-4)"}
+                    stroke={isSel ? "var(--accent)" : flowed ? "var(--ok)" : "var(--text-3)"}
                     strokeOpacity={isSel || flowed ? 1 : 0.55}
                     strokeWidth={isSel ? 2.4 : 1.8}
                     markerEnd="url(#fc-arrow)"
@@ -663,7 +663,7 @@ export function CanvasView() {
                     <path
                       d={d}
                       fill="none"
-                      stroke={flowed ? "var(--moss)" : isSel ? "var(--ember-hot)" : "var(--ember)"}
+                      stroke={flowed ? "var(--ok)" : isSel ? "var(--accent-hover)" : "var(--accent)"}
                       strokeWidth={flowed ? 2.6 : 2}
                       strokeDasharray="5 9"
                       strokeLinecap="round"
@@ -678,7 +678,7 @@ export function CanvasView() {
               <path
                 d={edgePathToPoint(connectFrom, connect.x, connect.y)}
                 fill="none"
-                stroke="var(--ember)"
+                stroke="var(--accent)"
                 strokeWidth={2}
                 strokeDasharray="6 6"
               />

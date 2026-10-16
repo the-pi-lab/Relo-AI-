@@ -1,147 +1,102 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CountUp } from "../chrome";
+import { X } from "lucide-react";
 
-/* ── view header ─────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────
+   Section head — headline + sub. No eyebrow badge above the headline.
+   ───────────────────────────────────────────────────────────────────── */
 
 export function ViewHead({
   title,
   sub,
   children,
 }: {
-  title: React.ReactNode;
+  title: string;
   sub?: string;
   children?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="font-display text-[26px] font-bold tracking-tight sm:text-3xl">{title}</h1>
-        {sub && <p className="mt-1 max-w-xl text-[13.5px] leading-relaxed text-ink-3">{sub}</p>}
+        <h1 className="h2 text-text">{title}</h1>
+        {sub && <p className="mt-2 text-sm text-text-2 leading-relaxed">{sub}</p>}
       </div>
-      {children && <div className="flex items-center gap-2.5">{children}</div>}
+      {children && <div className="flex items-center gap-3">{children}</div>}
     </div>
   );
 }
 
-/* ── stat card with sparkline ────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────
+   Stat card — clean, no shimmer, no icon box, consistent spacing.
+   ───────────────────────────────────────────────────────────────────── */
 
 export function StatCard({
   label,
   value,
   delta,
-  spark,
-  icon: Icon,
   suffix = "",
   prefix = "",
 }: {
   label: string;
-  value: number;
+  value: number | string;
   delta?: string;
-  spark?: number[];
-  icon: typeof Plus;
   suffix?: string;
   prefix?: string;
 }) {
   const up = delta?.startsWith("+");
   return (
-    <motion.div
-      whileHover={{ y: -3, scale: 1.01 }}
-      transition={{ type: "spring", stiffness: 350, damping: 24 }}
-      className="group relative overflow-hidden rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] transition-all duration-300 hover:border-ember/40 hover:shadow-[var(--shadow-lift)]"
-    >
-      <div className="flex items-center justify-between">
-        <p className="font-mono text-[10px] tracking-[0.18em] text-ink-3 uppercase">{label}</p>
-        {Icon && (
-          <span className="grid size-7 place-items-center rounded-lg bg-ember-wash text-ember-deep transition-transform duration-200 group-hover:scale-110">
-            <Icon className="size-3.5" />
-          </span>
-        )}
+    <div className="rounded-lg border border-border bg-surface p-5 shadow-sm">
+      <p className="caption">{label}</p>
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <span className="text-[24px] font-bold text-text tnum">{prefix}{value}{suffix}</span>
       </div>
-      <p className="font-display mt-2.5 text-[28px] font-extrabold leading-none tracking-tight">
-        <CountUp to={value} prefix={prefix} suffix={suffix} />
-      </p>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        {delta && (
+      {delta && (
+        <p className="mt-3 text-xs flex items-center gap-1">
           <span
-            className={cn(
-              "font-mono text-[11px] font-medium",
-              up ? "text-moss" : "text-clay"
-            )}
-          >
-            {delta} <span className="text-ink-4">vs last week</span>
-          </span>
-        )}
-        {spark && <Spark data={spark} />}
-      </div>
-    </motion.div>
+            className={`size-1.5 rounded-full ${up ? "bg-ok" : "bg-bad"}`}
+            aria-hidden
+          />
+          <span className={cn(up ? "text-ok" : "text-bad", "font-semibold")}>{delta}</span>
+          <span className="text-text-3"> vs last period</span>
+        </p>
+      )}
+    </div>
   );
 }
 
-export function Spark({ data, w = 84, h = 28 }: { data: number[]; w?: number; h?: number }) {
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const pts = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * w;
-      const y = h - ((v - min) / (max - min || 1)) * (h - 4) - 2;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <svg width={w} height={h} aria-hidden className="shrink-0 overflow-visible">
-      <motion.polyline
-        points={pts}
-        fill="none"
-        stroke="var(--ember)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        initial={{ pathLength: 0, opacity: 0 }}
-        animate={{ pathLength: 1, opacity: 1 }}
-        transition={{ duration: 1.4, ease: "easeOut" }}
-      />
-    </svg>
-  );
-}
-
-/* ── status pill ─────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────
+   Status pill — small, solid tone, no pulse animation.
+   ───────────────────────────────────────────────────────────────────── */
 
 const PILL_TONES: Record<string, string> = {
-  live: "bg-moss/15 text-moss border-moss/30",
-  active: "bg-moss/15 text-moss border-moss/30",
-  sending: "bg-honey/15 text-honey border-honey/40",
-  scheduled: "bg-sky/15 text-sky border-sky/40",
-  draft: "bg-ink/5 text-ink-3 border-line-strong",
-  completed: "bg-sky/15 text-sky border-sky/40",
-  failed: "bg-ember/12 text-ember-deep border-ember/35",
-  paused: "bg-ink/5 text-ink-3 border-line-strong",
+  live: "bg-ok/10 text-ok border-ok/30",
+  active: "bg-ok/10 text-ok border-ok/30",
+  sending: "bg-accent/10 text-accent border-accent/40",
+  scheduled: "bg-surface-2 text-text-3 border-border",
+  draft: "bg-surface-2 text-text-3 border-border",
+  completed: "bg-ok/10 text-ok border-ok/30",
+  failed: "bg-bad/10 text-bad border-bad/30",
+  paused: "bg-surface-2 text-text-3 border-border",
 };
 
-export function StatusPill({ status, pulse }: { status: string; pulse?: boolean }) {
+export function StatusPill({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-medium tracking-wider uppercase transition-all duration-200 hover:scale-105",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
         PILL_TONES[status] ?? PILL_TONES.draft
       )}
     >
-      {pulse && (
-        <span className="relative flex size-1.5 items-center justify-center">
-          <span className="absolute inline-flex size-full rounded-full bg-current opacity-75 radar-ring" />
-          <span className="relative inline-flex size-1.5 rounded-full bg-current" />
-        </span>
-      )}
       {status}
     </span>
   );
 }
 
-/* ── tag input ───────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────
+   Tag input
+   ───────────────────────────────────────────────────────────────────── */
 
 export function TagInput({
   tags,
@@ -162,31 +117,25 @@ export function TagInput({
     setDraft("");
   };
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-line-strong bg-card-soft p-2.5">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2 p-2.5">
       {tags.map((t) => (
-        <motion.span
-          key={t}
-          layout
-          initial={{ scale: 0.7, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="on-ember inline-flex items-center gap-1.5 rounded-full bg-ember px-3 py-1 font-mono text-[12px] font-medium"
-        >
+        <span key={t} className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1 text-[11px] font-semibold text-accent-ink">
           {t}
           <button
             type="button"
             onClick={() => onChange(tags.filter((x) => x !== t))}
-            className="opacity-70 "
+            className="opacity-70 hover:opacity-100"
             aria-label={`Remove ${t}`}
           >
-            <X className="size-3" />
+            <X className="size-3.5" />
           </button>
-        </motion.span>
+        </span>
       ))}
       <input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
+          if ((e.key === "Enter" || e.key === ",") && draft.trim()) {
             e.preventDefault();
             add();
           }
@@ -194,58 +143,15 @@ export function TagInput({
         }}
         onBlur={add}
         placeholder={tags.length ? "" : placeholder}
-        className="min-w-32 flex-1 bg-transparent px-2 py-1 font-mono text-[13px] outline-none placeholder:text-ink-4"
+        className="min-w-[120px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-text-3"
       />
     </div>
   );
 }
 
-/* ── meter (credits etc.) ────────────────────────────────────────────── */
-
-export function Meter({ pct, tone = "ember" }: { pct: number; tone?: "ember" | "moss" | "honey" }) {
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink/8">
-      <motion.div
-        className={cn(
-          "h-full rounded-full",
-          tone === "ember" && "bg-ember",
-          tone === "moss" && "bg-moss",
-          tone === "honey" && "bg-honey"
-        )}
-        initial={{ width: 0 }}
-        animate={{ width: `${Math.min(100, Math.max(3, pct))}%` }}
-        transition={{ duration: 0.9, ease: [0.22, 1, 0.28, 1] }}
-      />
-    </div>
-  );
-}
-
-/* ── empty state ─────────────────────────────────────────────────────── */
-
-export function EmptyState({
-  icon: Icon,
-  title,
-  sub,
-  children,
-}: {
-  icon: typeof Plus;
-  title: string;
-  sub: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="grid place-items-center rounded-3xl border border-dashed border-line-strong bg-card-soft/60 px-8 py-16 text-center">
-      <div className="grid size-14 place-items-center rounded-2xl bg-ember-wash text-ember-deep">
-        <Icon className="size-7" />
-      </div>
-      <h3 className="font-display mt-4 text-lg font-bold">{title}</h3>
-      <p className="mt-1.5 max-w-sm text-[13.5px] text-ink-3">{sub}</p>
-      {children && <div className="mt-5">{children}</div>}
-    </div>
-  );
-}
-
-/* ── field wrapper ───────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────
+   Field wrapper — consistent label, no buzzwords.
+   ───────────────────────────────────────────────────────────────────── */
 
 export function Field({
   label,
@@ -258,9 +164,9 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-2 flex items-baseline justify-between font-mono text-[10.5px] tracking-[0.18em] text-ink-3 uppercase">
-        {label}
-        {hint && <span className="text-[9.5px] tracking-normal text-ink-4 normal-case">{hint}</span>}
+      <span className="mb-2 flex items-baseline justify-between">
+        <span className="caption font-semibold">{label}</span>
+        {hint && <span className="text-xs text-text-3">{hint}</span>}
       </span>
       {children}
     </label>
@@ -268,4 +174,45 @@ export function Field({
 }
 
 export const inputCls =
-  "w-full rounded-xl border border-line-strong bg-card-soft px-3.5 py-2.5 text-[14px] outline-none transition-all placeholder:text-ink-4 focus:border-ember/60 focus:bg-[var(--input-focus-bg)] focus:shadow-[0_0_0_4px_rgba(139,128,249,0.08)]";
+  "w-full rounded-md border border-input bg-surface-2 px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-text-3 focus:border-accent focus:ring-1 focus:ring-accent";
+
+/* ──────────────────────────────────────────────────────────────────────
+   Empty state — simple, no icon box.
+   ───────────────────────────────────────────────────────────────────── */
+
+export function EmptyState({
+  title,
+  sub,
+  children,
+}: {
+  title: string;
+  sub: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-surface-2/60 p-10 text-center">
+      <h3 className="h4 text-text">{title}</h3>
+      <p className="mt-2 text-sm text-text-2 leading-relaxed">{sub}</p>
+      {children && <div className="mt-6">{children}</div>}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   Credit meter
+   ───────────────────────────────────────────────────────────────────── */
+
+export function Meter({ pct, tone = "amber" }: { pct: number; tone?: "amber" | "ok" | "warn" }) {
+  const color = tone === "ok" ? "var(--ok)" : tone === "warn" ? "var(--warn)" : "var(--accent)";
+  return (
+    <div className="h-[8px] w-full overflow-hidden rounded-full bg-surface-3">
+      <div
+        className="h-full rounded-full"
+        style={{
+          background: color,
+          width: `${Math.min(100, Math.max(3, pct))}%`,
+        }}
+      />
+    </div>
+  );
+}

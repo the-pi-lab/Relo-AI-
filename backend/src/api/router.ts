@@ -460,7 +460,12 @@ export async function handleApiRequest(
       }
 
       const masterKey = getMasterKey(env);
-      const connectedResults = [];
+      const connectedResults: Array<{
+        id: string;
+        instagramUserId: string;
+        username: string;
+        profilePictureUrl: string | undefined;
+      }> = [];
 
       for (const acc of accounts) {
         // 5. Ownership guard: never let a later connect steal another user's

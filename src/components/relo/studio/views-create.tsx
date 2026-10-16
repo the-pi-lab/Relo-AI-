@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Copy, ExternalLink, Link2, Trash2, Eye } from "lucide-react";
+import { Copy, ExternalLink, Eye, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { useRelo } from "@/lib/relo/store";
 import { fmtNum, uid } from "@/lib/relo/data";
@@ -14,14 +13,6 @@ import { Switch } from "@/components/ui/switch";
 /* the flow editor lives in its own module — it carries the room */
 export { CanvasView } from "./flow-canvas";
 
-/* ═══════════════ LINK IN BIO ═══════════════ */
-
-const THEME_META = {
-  volt: { name: "Nova", bg: "linear-gradient(160deg,#a99dff 0%,#7366ec 55%,#3d2f8f 100%)", text: "#f2f0fb", btn: "rgba(255,255,255,0.92)", btnText: "#1d1a16" },
-  plain: { name: "Bone", bg: "#f2f0fb", text: "#171523", btn: "#171523", btnText: "#f2f0fb" },
-  dark: { name: "Void", bg: "linear-gradient(170deg,#0d0b16,#1b1930)", text: "#eceaf6", btn: "rgba(255,255,255,0.08)", btnText: "#eceaf6" },
-} as const;
-
 export function BioView() {
   const { linkPage, products, saveLinkPage } = useRelo();
   const [draft, setDraft] = useState(() => structuredClone(linkPage));
@@ -29,11 +20,10 @@ export function BioView() {
 
   const save = () => {
     saveLinkPage(draft);
-    toast.success(draft.isPublished ? "Link page live — go update that bio 🔗" : "Link page saved as draft");
+    toast.success(draft.isPublished ? "Link page is live — update your bio." : "Link page saved as draft.");
   };
 
   const totalClicks = draft.blocks.reduce((a, b) => a + b.clickCount, 0);
-  const theme = THEME_META[draft.theme];
 
   return (
     <div className="space-y-6">
@@ -43,7 +33,7 @@ export function BioView() {
       >
         <RButton variant="ghost" size="sm" onClick={() => {
           navigator.clipboard?.writeText(`https://relo.page/${draft.slug}`);
-          toast.success("Public link copied");
+          toast.success("Public link copied.");
         }}>
           <Copy className="size-4" /> relo.page/{draft.slug}
         </RButton>
@@ -52,21 +42,16 @@ export function BioView() {
         </RButton>
       </ViewHead>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         {/* editor */}
         <div className="space-y-4">
-          <div className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6">
+          <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
             <Field label="Headline">
               <input value={draft.headline} onChange={(e) => set({ headline: e.target.value })} className={inputCls} />
             </Field>
             <div className="mt-4">
               <Field label="Bio">
-                <textarea
-                  value={draft.bio}
-                  onChange={(e) => set({ bio: e.target.value })}
-                  rows={2}
-                  className={cn(inputCls, "resize-none")}
-                />
+                <textarea value={draft.bio} onChange={(e) => set({ bio: e.target.value })} rows={2} className={cn(inputCls, "resize-none")} />
               </Field>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
@@ -79,75 +64,63 @@ export function BioView() {
               </Field>
               <Field label="Theme">
                 <div className="flex gap-1.5">
-                  {(Object.keys(THEME_META) as Array<keyof typeof THEME_META>).map((t) => (
+                  {(["plain", "dark"] as const).map((t) => (
                     <button
                       key={t}
                       onClick={() => set({ theme: t })}
                       className={cn(
-                        "flex-1 rounded-xl border px-2 py-2.5 text-[11.5px] font-medium transition-all",
-                        draft.theme === t ? "border-ember/60 shadow-[var(--shadow-soft)]" : "border-line"
+                        "flex-1 rounded-lg border px-2 py-2.5 text-[11.5px] font-medium transition-colors",
+                        draft.theme === t ? "border-accent bg-accent-wash/40 text-accent" : "border-border text-text-3 hover:text-text"
                       )}
-                      style={{ background: THEME_META[t].bg, color: THEME_META[t].text }}
                     >
-                      {THEME_META[t].name}
+                      {t === "plain" ? "Bone" : "Void"}
                     </button>
                   ))}
                 </div>
               </Field>
             </div>
-            <div className="mt-4 flex items-center justify-between rounded-2xl bg-card-soft px-4 py-3">
+            <div className="mt-4 flex items-center justify-between rounded-lg bg-surface-2 px-4 py-3">
               <div>
-                <p className="text-[13px] font-semibold">Published</p>
-                <p className="text-[11.5px] text-ink-3">visible at relo.page/{draft.slug}</p>
+                <p className="text-sm font-semibold text-text">Published</p>
+                <p className="text-[11px] text-text-3">visible at relo.page/{draft.slug}</p>
               </div>
               <Switch checked={draft.isPublished} onCheckedChange={(isPublished) => set({ isPublished })} />
             </div>
-          </div>
+          </section>
 
-          <div className="rounded-3xl border border-line bg-card p-5 shadow-[var(--shadow-soft)] sm:p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-[16px] font-bold">Blocks</h3>
-              <span className="font-mono text-[10.5px] text-ink-4">{fmtNum(totalClicks)} total clicks</span>
+          <section className="rounded-lg border border-border bg-surface p-5 sm:p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="h4 text-text">Blocks</h3>
+              <span className="caption">{fmtNum(totalClicks)} total clicks</span>
             </div>
-            <div className="mt-4 space-y-2">
+            <div className="space-y-2">
               {draft.blocks.map((b) => (
-                <motion.div
-                  key={b.id}
-                  layout
-                  className="flex items-center gap-3 rounded-2xl border border-line bg-card-soft px-4 py-3"
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-ember/10 font-mono text-[11px] font-bold text-ember">
+                <div key={b.id} className="flex items-center gap-3 rounded-lg border border-border bg-surface-2 px-4 py-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-accent-wash text-accent font-bold text-[11px]">
                     {fmtNum(b.clickCount)}
                   </span>
                   <input
                     value={b.label}
                     onChange={(e) =>
-                      set({ blocks: draft.blocks.map((x) => (x.id === b.id ? { ...x, label: e.target.value } : x)) })
-                    }
-                    className="min-w-0 flex-1 bg-transparent text-[13.5px] font-medium outline-none"
+                      set({ blocks: draft.blocks.map((x) => (x.id === b.id ? { ...x, label: e.target.value } : x)) })}
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none"
                   />
                   <button
                     onClick={() => window.open(b.targetUrl, "_blank")}
-                    className="grid size-7 place-items-center rounded-lg text-ink-4 "
+                    className="size-7 shrink-0 place-items-center rounded-md text-text-3 hover:text-text transition-colors"
                     aria-label="Open block link"
                   >
                     <ExternalLink className="size-3.5" />
                   </button>
-                  <Switch
-                    checked={b.isActive}
-                    onCheckedChange={(isActive) =>
-                      set({ blocks: draft.blocks.map((x) => (x.id === b.id ? { ...x, isActive } : x)) })
-                    }
-                    aria-label="Toggle block"
-                  />
+                  <Switch checked={b.isActive} onCheckedChange={(isActive) => set({ blocks: draft.blocks.map((x) => (x.id === b.id ? { ...x, isActive } : x)) })} aria-label="Toggle block" />
                   <button
                     onClick={() => set({ blocks: draft.blocks.filter((x) => x.id !== b.id) })}
-                    className="grid size-7 place-items-center rounded-lg text-ink-4 "
+                    className="size-7 shrink-0 place-items-center rounded-md text-text-3 hover:text-text transition-colors"
                     aria-label="Remove block"
                   >
-                    <Trash2 className="size-3.5" />
+                    <span className="size-3.5" />
                   </button>
-                </motion.div>
+                </div>
               ))}
             </div>
 
@@ -155,15 +128,12 @@ export function BioView() {
               <button
                 onClick={() =>
                   set({
-                    blocks: [
-                      ...draft.blocks,
-                      { id: uid("lb"), label: "New block", targetUrl: "https://", clickCount: 0, isActive: true },
-                    ],
+                    blocks: [...draft.blocks, { id: uid("lb"), label: "New block", targetUrl: "https://", clickCount: 0, isActive: true }],
                   })
                 }
-                className="rounded-xl border border-dashed border-line-strong px-4 py-2.5 text-[12.5px] font-medium text-ink-3 transition-colors "
+                className="rounded-lg border border-dashed border-border px-4 py-2.5 text-sm font-medium text-text-3 hover:text-text transition-colors"
               >
-                + empty block
+                + Empty block
               </button>
               {products.slice(0, 2).map((p) => (
                 <button
@@ -172,52 +142,36 @@ export function BioView() {
                     set({
                       blocks: [
                         ...draft.blocks,
-                        {
-                          id: uid("lb"),
-                          label: p.name,
-                          targetUrl: p.link ?? "https://",
-                          productId: p.id,
-                          clickCount: 0,
-                          isActive: true,
-                        },
+                        { id: uid("lb"), label: p.name, targetUrl: p.link ?? "https://", productId: p.id, clickCount: 0, isActive: true },
                       ],
                     })
                   }
-                  className="rounded-xl border border-dashed border-line-strong px-4 py-2.5 text-[12.5px] font-medium text-ink-3 transition-colors "
+                  className="rounded-lg border border-dashed border-border px-4 py-2.5 text-sm font-medium text-text-3 hover:text-text transition-colors"
                 >
-                  + from products: {p.name.split(" ")[0]}
+                  + {p.name.split(" ")[0]}
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         </div>
 
         {/* phone preview */}
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="mx-auto w-[300px] overflow-hidden rounded-[36px] border-[6px] border-ink bg-ink shadow-[var(--shadow-lift)]">
+          <div className="mx-auto w-[300px] overflow-hidden rounded-xl border-[6px] border-text bg-text shadow-lg">
             <div className="flex justify-center pt-2.5">
-              <span className="h-5 w-24 rounded-full bg-ink" />
+              <span className="h-5 w-24 rounded-full bg-text/50" />
             </div>
-            <div className="min-h-[520px] px-4 pt-8 pb-8" style={{ background: theme.bg, color: theme.text }}>
-              <div className="grid size-16 place-items-center rounded-full border-2 border-current/20 bg-current/5 mx-auto font-display text-xl font-extrabold">
-                a
+            <div className="min-h-[520px] px-4 pt-8 pb-8" style={{ background: draft.theme === "plain" ? "#ffffff" : "#0a0b0f", color: draft.theme === "plain" ? "#111315" : "#e8eaee" }}>
+              <div className="grid size-16 place-items-center rounded-full border-2 border-current/20 bg-current/5 mx-auto font-bold text-xl leading-none">
+                R
               </div>
-              <p className="mt-3 text-center font-display text-[15px] font-bold leading-snug">{draft.headline}</p>
+              <p className="mt-3 text-center font-bold text-[15px] leading-snug">{draft.headline}</p>
               <p className="mt-1.5 text-center text-[11px] leading-relaxed opacity-75">{draft.bio}</p>
               <div className="mt-5 space-y-2.5">
                 {draft.blocks.filter((b) => b.isActive).map((b, i) => (
-                  <motion.div
-                    key={b.id}
-                    initial={{ opacity: 0, y: 12 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.07 }}
-
-                    className="rounded-2xl px-4 py-3 text-center text-[12px] font-semibold shadow-sm"
-                    style={{ background: theme.btn, color: theme.btnText }}
-                  >
+                  <div key={b.id} className="rounded-lg px-4 py-3 text-center text-[12px] font-semibold shadow-sm" style={{ background: draft.theme === "plain" ? "#111315" : "#d97706", color: draft.theme === "plain" ? "#ffffff" : "#fefbde" }}>
                     {b.label}
-                  </motion.div>
+                  </div>
                 ))}
               </div>
               <p className="mt-6 flex items-center justify-center gap-1.5 text-center font-mono text-[9px] tracking-[0.2em] uppercase opacity-50">
