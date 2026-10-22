@@ -7,7 +7,10 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
-  created_at INTEGER DEFAULT (unixepoch())
+  created_at INTEGER DEFAULT (unixepoch()),
+  -- Server-side admin flag. Admin access is never inferred from the UI or from
+  -- a client-supplied claim; every /api/admin/* request re-reads this row.
+  is_admin INTEGER NOT NULL DEFAULT 0
 );
 
 -- 2. Connected Instagram Accounts (100% Meta Graph API v21.0 Compliant)
@@ -317,3 +320,35 @@ CREATE TABLE IF NOT EXISTS email_otps (
   attempts INTEGER NOT NULL DEFAULT 0, -- Failed verification attempts (5 = lockout)
   last_sent_at INTEGER DEFAULT 0 -- 60s resend throttle
 );
+
+-- 16. Durable rate-limit counters (login, signup, contact, admin, expensive reads)
+-- One row per bucket+window. Kept in D1 (not isolate memory) so the ceiling is
+-- global across every Worker instance. Rows are pruned opportunistically after
+-- 24h; see src/security/limits.ts.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start);
+
+-- 17. Admin audit trail — who did what, when, and whether it succeeded.
+-- Append-only. Written by src/security/admin.ts on every admin mutation.
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id TEXT PRIMARY KEY,
+  actor_type TEXT NOT NULL CHECK(actor_type IN ('user', 'secret')),
+  actor_id TEXT NOT NULL, -- user id, or 'shared-secret' for the break-glass header
+  actor_email TEXT,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  success INTEGER NOT NULL DEFAULT 1,
+  ip TEXT,
+  metadata TEXT, -- JSON, bounded at 4KB
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit_log(actor_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_log(target_type, target_id);

@@ -48,6 +48,7 @@ import {
   recordReferral,
   qualifyReferralsForUser,
   rewardQualifiedReferrals,
+  isUserAdmin,
 } from "../db/queries";
 import { limitsFor, planSatisfies } from "../tiers";
 import {
@@ -84,30 +85,45 @@ import { metaGraphClient } from "../meta/client";
 import { validateReplyVariations } from "../engine/spintax";
 import { createAccountId, createAutomationId, createMediaId } from "../types/ids";
 import type { ApiResponse, TemplateCardConfig } from "../types";
+import { withCors, preflightResponse, isDisallowedCrossOrigin } from "../security/cors";
+import { RATE_LIMITS, consumeRateLimit, clientIp, type RateLimitResult } from "../security/limits";
+import { verifyCaptcha } from "../security/captcha";
+import { resolveAdmin, recordAdminAudit, type AdminActor } from "../security/admin";
+import { assertTenantPolicies } from "../db/tenancy";
+import {
+  parseBody,
+  otpSendSchema,
+  otpVerifySchema,
+  metaCallbackSchema,
+  referralClaimSchema,
+  automationSaveSchema,
+  productSaveSchema,
+  campaignSaveSchema,
+  flowSaveSchema,
+  contentPlanSaveSchema,
+  contentPlanPublishSchema,
+  linkPageSaveSchema,
+  manualUpiSchema,
+  agencyContactSchema,
+  adminPaymentSchema,
+} from "../security/schemas";
+import { cleanText, safeHttpUrl, isSafeId, clampInt } from "../security/validate";
 
 /**
- * Standard CORS headers for dashboard API communication
- */
-export const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Hub-Signature-256",
-};
-
-/**
- * Creates standardized API success envelope
+ * Response envelopes.
+ *
+ * CORS is *not* applied here: `handleApiRequest` decorates every response with
+ * the allowlisted origin at the boundary (see `security/cors.ts`), so a handler
+ * cannot accidentally widen the policy by returning a bare envelope.
  */
 export function jsonSuccess<T>(data: T, status = 200): Response {
   const body: ApiResponse<T> = { success: true, data };
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
-/**
- * Creates standardized API error envelope
- */
 export function jsonError(
   code: string,
   message: string,
@@ -120,7 +136,7 @@ export function jsonError(
   };
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -156,34 +172,49 @@ function escapeCsv(field: unknown): string {
 }
 
 /**
- * Best-effort in-memory sliding-window rate limiter (per Worker isolate).
- * Not globally durable — the durable OTP throttle lives in D1 — but it stops
- * burst abuse of the public auth endpoints from a single connection.
+ * Applies one rate-limit budget. Returns an error response when the caller is
+ * over budget, or the limiter result so the caller can echo headers.
  */
-const rateBuckets = new Map<string, number[]>();
-function isRateLimited(bucketKey: string, maxRequests: number, windowMs: number): boolean {
-  const now = Date.now();
-  const bucket = (rateBuckets.get(bucketKey) || []).filter((t) => now - t < windowMs);
-  if (bucket.length >= maxRequests) {
-    rateBuckets.set(bucketKey, bucket);
-    return true;
-  }
-  bucket.push(now);
-  rateBuckets.set(bucketKey, bucket);
-  if (rateBuckets.size > 10000) {
-    // Prevent unbounded map growth on hot isolates
-    const oldest = rateBuckets.keys().next().value;
-    if (oldest) rateBuckets.delete(oldest);
-  }
-  return false;
+async function enforceRateLimit(
+  env: Env,
+  key: string,
+  options: { max: number; windowSeconds: number }
+): Promise<{ limited: false; result: RateLimitResult } | { limited: true; response: Response }> {
+  const result = await consumeRateLimit(env.DB, key, options);
+  if (result.allowed) return { limited: false, result };
+
+  const retry = result.retryAfterSeconds;
+  const response = jsonError(
+    "RATE_LIMITED",
+    `Too many requests. Please try again in ${retry} second${retry === 1 ? "" : "s"}.`,
+    429,
+    { retryAfterSeconds: retry }
+  );
+  response.headers.set("Retry-After", String(retry));
+  response.headers.set("X-RateLimit-Limit", String(result.limit));
+  response.headers.set("X-RateLimit-Remaining", "0");
+  return { limited: true, response };
 }
 
-function clientIp(request: Request): string {
-  return (
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    "unknown"
-  );
+/**
+ * Resolves the acting admin for an `/api/admin/*` request, or a rejection.
+ *
+ * This runs on the path prefix, before any admin handler, so a new admin route
+ * cannot ship without the check. The UI hiding the button is not a control.
+ */
+async function requireAdmin(
+  request: Request,
+  env: Env,
+  user: JwtPayload
+): Promise<{ actor: AdminActor } | { actor: null; response: Response }> {
+  const actor = await resolveAdmin(request, env, user, (userId) => isUserAdmin(env.DB, userId));
+  if (!actor) {
+    return {
+      actor: null,
+      response: jsonError("FORBIDDEN", "Admin access is required for this endpoint.", 403),
+    };
+  }
+  return { actor };
 }
 
 const EMAIL_PATTERN = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
@@ -197,6 +228,12 @@ async function requireOwnedAccount(
   accountId: string,
   user: JwtPayload
 ): Promise<{ account: NonNullable<Awaited<ReturnType<typeof getOwnedAccount>>> } | { account: null; error: Response }> {
+  if (!isSafeId(accountId)) {
+    return {
+      account: null,
+      error: jsonError("INVALID_ACCOUNT_ID", "That account identifier is not valid.", 400),
+    };
+  }
   const account = await getOwnedAccount(db, createAccountId(accountId), user.sub);
   if (!account) {
     return {
@@ -212,19 +249,35 @@ async function requireOwnedAccount(
 }
 
 /**
- * Main REST API Router for /api/* requests
+ * Main REST API Router for /api/* requests.
+ *
+ * The route table lives in `routeRequest`; this wrapper owns the two concerns
+ * that must apply to *every* response: the allowlisted CORS policy and the
+ * tenant-policy self-check.
  */
 export async function handleApiRequest(
   request: Request,
   env: Env
 ): Promise<Response> {
+  assertTenantPolicies();
+
+  if (request.method === "OPTIONS") {
+    return preflightResponse(request, env);
+  }
+
+  const response = await routeRequest(request, env);
+  return withCors(response, request, env);
+}
+
+async function routeRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
 
-  // Handle CORS Preflight
-  if (method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  // A browser request from an origin we did not approve is refused outright,
+  // rather than served and left to the browser to discard.
+  if (isDisallowedCrossOrigin(request, env)) {
+    return jsonError("ORIGIN_NOT_ALLOWED", "This origin is not allowed to call the API.", 403);
   }
 
   // =========================================================================
@@ -233,20 +286,35 @@ export async function handleApiRequest(
 
   // POST /api/auth/otp/send
   if (path === "/api/auth/otp/send" && method === "POST") {
-    if (isRateLimited(`otp-send:${clientIp(request)}`, 5, 60_000)) {
-      return jsonError("RATE_LIMITED", "Too many code requests. Please wait a minute.", 429);
-    }
+    const ipLimit = await enforceRateLimit(
+      env,
+      `otp-send:ip:${clientIp(request)}`,
+      RATE_LIMITS.otpSend
+    );
+    if (ipLimit.limited) return ipLimit.response;
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, otpSendSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
 
-    const email = body?.email ? String(body.email).toLowerCase().trim() : "";
-    if (!email || email.length > 320 || !EMAIL_PATTERN.test(email)) {
+    const email = parsed.data.email;
+    if (!email || !EMAIL_PATTERN.test(email)) {
       return jsonError("INVALID_EMAIL", "A valid email address is required.", 400);
+    }
+
+    const emailLimit = await enforceRateLimit(
+      env,
+      `otp-send:email:${email}`,
+      RATE_LIMITS.otpSendPerEmail
+    );
+    if (emailLimit.limited) return emailLimit.response;
+
+    const captcha = await verifyCaptcha(
+      request,
+      env,
+      parsed.data.captchaToken || parsed.data["cf-turnstile-response"]
+    );
+    if (!captcha.ok) {
+      return jsonError(captcha.code || "CAPTCHA_FAILED", captcha.message || "Verification failed.", 403);
     }
 
     const code = generateOtpCode();
@@ -284,22 +352,37 @@ export async function handleApiRequest(
 
   // POST /api/auth/otp/verify
   if (path === "/api/auth/otp/verify" && method === "POST") {
-    if (isRateLimited(`otp-verify:${clientIp(request)}`, 10, 60_000)) {
-      return jsonError("RATE_LIMITED", "Too many attempts. Please wait a minute.", 429);
-    }
+    const ipLimit = await enforceRateLimit(
+      env,
+      `otp-verify:ip:${clientIp(request)}`,
+      RATE_LIMITS.otpVerify
+    );
+    if (ipLimit.limited) return ipLimit.response;
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, otpVerifySchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
 
-    const email = body?.email ? String(body.email).toLowerCase().trim() : "";
-    const code = body?.code ? String(body.code).trim() : "";
+    const email = parsed.data.email;
+    const code = parsed.data.code;
 
     if (!email || !code) {
       return jsonError("MISSING_FIELDS", "Email and 6-digit code are required.", 400);
+    }
+
+    const emailLimit = await enforceRateLimit(
+      env,
+      `otp-verify:email:${email}`,
+      RATE_LIMITS.otpVerifyPerEmail
+    );
+    if (emailLimit.limited) return emailLimit.response;
+
+    const captcha = await verifyCaptcha(
+      request,
+      env,
+      parsed.data.captchaToken || parsed.data["cf-turnstile-response"]
+    );
+    if (!captcha.ok) {
+      return jsonError(captcha.code || "CAPTCHA_FAILED", captcha.message || "Verification failed.", 403);
     }
 
     const isValid = await verifyAndConsumeEmailOtp(env.DB, email, code);
@@ -310,12 +393,23 @@ export async function handleApiRequest(
     // Find or create user
     const user = await findOrCreateUserByEmail(env.DB, email);
 
-    // Issue signed 7-day JWT session
-    const token = await signJwt(
-      { sub: user.id as any, email: user.email },
-      env.JWT_SECRET,
-      7 * 24 * 60 * 60
-    );
+    // Issue signed 7-day JWT session. A deployment with no JWT_SECRET fails
+    // closed here rather than issuing a token signed with a placeholder.
+    let token: string;
+    try {
+      token = await signJwt(
+        { sub: user.id as any, email: user.email },
+        env.JWT_SECRET,
+        7 * 24 * 60 * 60
+      );
+    } catch (error) {
+      console.error("[Auth] Cannot mint a session token:", error);
+      return jsonError(
+        "SERVER_MISCONFIGURED",
+        "Sign-in is temporarily unavailable. Please try again later.",
+        503
+      );
+    }
 
     return jsonSuccess({
       user: {
@@ -328,11 +422,85 @@ export async function handleApiRequest(
   }
 
   // =========================================================================
+  // 2. AGENCY CONTACT (public: rate-limited + CAPTCHA)
+  //
+  // Lives above the auth guard on purpose. It is a *sales* form — the people
+  // who use it manage more than three accounts and are usually not customers
+  // yet, so requiring a session turned it into a dead end. It is identified
+  // and throttled by IP, and reuses the caller's email when one is signed in.
+  // =========================================================================
+  if (path === "/api/agency/contact" && method === "POST") {
+    const contactLimit = await enforceRateLimit(
+      env,
+      `agency:${clientIp(request)}`,
+      RATE_LIMITS.contact
+    );
+    if (contactLimit.limited) return contactLimit.response;
+
+    const parsed = await parseBody(request, agencyContactSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
+
+    const captcha = await verifyCaptcha(
+      request,
+      env,
+      body.captchaToken || body["cf-turnstile-response"]
+    );
+    if (!captcha.ok) {
+      return jsonError(captcha.code || "CAPTCHA_FAILED", captcha.message || "Verification failed.", 403);
+    }
+
+    // Optional identity: a signed-in visitor does not have to retype their
+    // email, but no session is required to submit the form.
+    const optionalUser = await authenticateUser(request, env).catch(() => null);
+    const email = (body.email || optionalUser?.email || "").trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(email)) {
+      return jsonError("INVALID_EMAIL", "Enter a valid email so we can reply.", 400);
+    }
+    const accountCount = clampInt(body.accountCount, 1, 10_000, 3);
+    const notes = cleanText(body.notes, 1000, true);
+    const planInterest = body.plan === "studio" ? "studio" : "custom";
+
+    await env.DB
+      .prepare(
+        `INSERT INTO webhook_logs (id, account_id, event_type, status_code, payload)
+         VALUES (?, NULL, 'agency_contact', 202, ?)`
+      )
+      .bind(
+        crypto.randomUUID(),
+        JSON.stringify({ email, accountCount, planInterest, notes })
+      )
+      .run();
+
+    return jsonSuccess({
+      message: `Thanks — we'll reply to ${email} within one business day.`,
+    });
+  }
+
+  // =========================================================================
   // AUTHENTICATION GUARD FOR PROTECTED ENDPOINTS
   // =========================================================================
   const user = await authenticateUser(request, env);
   if (!user) {
     return jsonError("UNAUTHORIZED", "Missing or invalid authorization token.", 401);
+  }
+
+  // -------------------------------------------------------------------------
+  // ADMIN AUTHORIZATION — enforced on the path prefix, before any handler, so
+  // a new admin route can never ship without a server-side role check.
+  // -------------------------------------------------------------------------
+  let adminActor: AdminActor | null = null;
+  if (path.startsWith("/api/admin/")) {
+    const adminLimit = await enforceRateLimit(env, `admin:${user.sub}`, RATE_LIMITS.admin);
+    if (adminLimit.limited) return adminLimit.response;
+
+    const admin = await requireAdmin(request, env, user);
+    if (!admin.actor) return admin.response;
+    adminActor = admin.actor;
+  } else if (method !== "GET") {
+    // One shared mutation budget for the rest of the authenticated surface.
+    const writeLimit = await enforceRateLimit(env, `write:${user.sub}`, RATE_LIMITS.write);
+    if (writeLimit.limited) return writeLimit.response;
   }
 
   // =========================================================================
@@ -376,15 +544,11 @@ export async function handleApiRequest(
 
   // POST /api/auth/meta/callback (OAuth Code Exchange, server-side)
   if (path === "/api/auth/meta/callback" && method === "POST") {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, metaCallbackSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
 
-    const code = body?.code ? String(body.code) : undefined;
-    const clientAccessToken = body?.accessToken ? String(body.accessToken) : undefined;
+    const code = parsed.data.code || undefined;
+    const clientAccessToken = parsed.data.accessToken || undefined;
 
     if (!code && !clientAccessToken) {
       return jsonError("MISSING_TOKEN", "Meta OAuth code or access token is required.", 400);
@@ -407,7 +571,7 @@ export async function handleApiRequest(
           env.META_APP_ID,
           env.META_APP_SECRET,
           code,
-          body?.redirectUri ? String(body.redirectUri) : undefined
+          parsed.data.redirectUri
         );
         shortLivedToken = exchanged.access_token;
       } else {
@@ -527,6 +691,14 @@ export async function handleApiRequest(
     if (!owned.account) return owned.error;
     const account = owned.account;
 
+    // Outbound Meta Graph call: budgeted separately from cheap reads.
+    const graphLimit = await enforceRateLimit(
+      env,
+      `graph:reels:${user.sub}`,
+      RATE_LIMITS.expensive
+    );
+    if (graphLimit.limited) return graphLimit.response;
+
     const masterKey = getMasterKey(env);
     const decryptedToken = await decryptSecret(account.accessTokenEncrypted, masterKey);
 
@@ -587,24 +759,23 @@ export async function handleApiRequest(
 
   // POST /api/automations (Create / Update)
   if (path === "/api/automations" && method === "POST") {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, automationSaveSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
 
-    const accountId = body?.accountId ? createAccountId(body.accountId) : null;
-    const instagramMediaId = body?.instagramMediaId ? createMediaId(body.instagramMediaId) : null;
-    const reelPermalink = body?.reelPermalink || "";
-    const triggerKeywords: string[] = Array.isArray(body?.triggerKeywords)
-      ? body.triggerKeywords.map((k: string) => String(k).trim()).filter(Boolean)
-      : [];
-    const commentReplies: string[] = Array.isArray(body?.commentReplies)
-      ? body.commentReplies.map((r: string) => String(r).trim()).filter(Boolean)
-      : [];
-    const followGateEnabled = Boolean(body?.followGateEnabled);
-    const templateCard = body?.templateCard as TemplateCardConfig;
+    const accountId = body.accountId ? createAccountId(body.accountId) : null;
+    const instagramMediaId = body.instagramMediaId
+      ? createMediaId(body.instagramMediaId)
+      : null;
+    const reelPermalink = body.reelPermalink || "";
+    const triggerKeywords: string[] = body.triggerKeywords
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+    const commentReplies: string[] = body.commentReplies
+      .map((reply) => reply.trim())
+      .filter(Boolean);
+    const followGateEnabled = Boolean(body.followGateEnabled);
+    const templateCard = body.templateCard as unknown as TemplateCardConfig;
 
     if (!accountId || !instagramMediaId || !reelPermalink) {
       return jsonError(
@@ -814,6 +985,13 @@ export async function handleApiRequest(
     const owned = await requireOwnedAccount(env.DB, accountId, user);
     if (!owned.account) return owned.error;
 
+    const exportLimit = await enforceRateLimit(
+      env,
+      `export:leads:${user.sub}`,
+      RATE_LIMITS.expensive
+    );
+    if (exportLimit.limited) return exportLimit.response;
+
     const exportRows = await getAllCapturedLeadsForExport(env.DB, owned.account.id);
 
     const csvHeaders = [
@@ -849,9 +1027,8 @@ export async function handleApiRequest(
     return new Response(csvContent, {
       status: 200,
       headers: {
-        ...CORS_HEADERS,
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="relo-leads-${accountId}.csv"`,
+        "Content-Disposition": `attachment; filename="relo-leads-${owned.account.id}.csv"`,
       },
     });
   }
@@ -866,9 +1043,10 @@ export async function handleApiRequest(
     const owned = await requireOwnedAccount(env.DB, accountId, user);
     if (!owned.account) return owned.error;
 
-    const search = url.searchParams.get("search") || undefined;
-    const limit = Number(url.searchParams.get("limit") || 50);
-    const offset = Number(url.searchParams.get("offset") || 0);
+    const search = cleanText(url.searchParams.get("search") || "", 80) || undefined;
+    // Client-supplied paging is clamped server-side, never trusted.
+    const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
+    const offset = clampInt(url.searchParams.get("offset"), 0, 100_000, 0);
 
     const result = await getCapturedLeads(env.DB, owned.account.id, {
       search,
@@ -937,17 +1115,18 @@ export async function handleApiRequest(
 
   // POST /api/billing/manual-upi — India flow: record a UTR for owner verification
   if (path === "/api/billing/manual-upi" && method === "POST") {
-    if (isRateLimited(`upi:${clientIp(request)}`, 5, 60_000)) {
-      return jsonError("RATE_LIMITED", "Too many submissions. Please wait a minute.", 429);
-    }
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
-    const plan = body?.plan === "studio" ? "studio" : "pro";
-    const utr = String(body?.utr || "").trim();
+    const billingLimit = await enforceRateLimit(
+      env,
+      `billing:${user.sub}:${clientIp(request)}`,
+      RATE_LIMITS.billing
+    );
+    if (billingLimit.limited) return billingLimit.response;
+
+    const parsed = await parseBody(request, manualUpiSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+
+    const plan = parsed.data.plan === "studio" ? "studio" : "pro";
+    const utr = parsed.data.utr.trim();
     if (!/^[A-Za-z0-9]{8,30}$/.test(utr)) {
       return jsonError("INVALID_UTR", "Enter the UPI transaction reference (UTR) — 8 to 30 letters/digits.", 400);
     }
@@ -955,10 +1134,13 @@ export async function handleApiRequest(
     if (accounts.length === 0) {
       return jsonError("NO_ACCOUNT", "Connect an Instagram account before upgrading.", 400);
     }
+    // Price is decided here, never by the client.
     const amountInr = plan === "studio" ? 399 : 149;
+    // A UPI reference is globally unique: scoping this to one account would let
+    // the same transaction be claimed against a second account.
     const duplicate = (await env.DB
-      .prepare(`SELECT 1 FROM payments WHERE utr = ? AND account_id = ? LIMIT 1`)
-      .bind(utr, accounts[0].id)
+      .prepare(`SELECT 1 FROM payments WHERE utr = ? LIMIT 1`)
+      .bind(utr.toUpperCase())
       .first()) as any;
     if (duplicate) {
       return jsonError("DUPLICATE_UTR", "This transaction reference was already submitted.", 409);
@@ -975,7 +1157,6 @@ export async function handleApiRequest(
     });
   }
 
-  // POST /api/admin/activate-payment — OWNER ONLY (x-admin-secret)
   // =========================================================================
   // 14. PRODUCTS LIBRARY (plan.md §4.4) — Pro/Studio only
   //     Knowledge base for AI product-Q&A and link-in-bio. Capped at 50 rows
@@ -1006,14 +1187,11 @@ export async function handleApiRequest(
 
   // POST /api/products — create or update (id present = update)
   if (path === "/api/products" && method === "POST") {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, productSaveSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
 
-    const accountId = String(body?.accountId || "");
+    const accountId = body.accountId;
     if (!accountId) {
       return jsonError("MISSING_ACCOUNT_ID", "accountId is required.", 400);
     }
@@ -1029,28 +1207,22 @@ export async function handleApiRequest(
       );
     }
 
-    const name = String(body?.name || "").trim().slice(0, 120);
+    const name = body.name.trim().slice(0, 120);
     if (!name) {
       return jsonError("MISSING_NAME", "A product name is required.", 400);
     }
 
     // URL fields must be http(s) — never javascript: or data:.
-    const safeUrl = (raw: unknown): string | undefined => {
-      const v = String(raw || "").trim();
-      if (!v) return undefined;
-      return /^https?:\/\//i.test(v) ? v.slice(0, 500) : undefined;
-    };
-
     const input: ProductInput = {
       name,
-      priceText: String(body?.priceText || "").trim().slice(0, 60) || undefined,
-      description: String(body?.description || "").trim().slice(0, 500) || undefined,
-      link: safeUrl(body?.link),
-      imageUrl: safeUrl(body?.imageUrl),
-      isActive: body?.isActive !== false,
+      priceText: body.priceText?.trim().slice(0, 60) || undefined,
+      description: body.description?.trim().slice(0, 500) || undefined,
+      link: safeHttpUrl(body.link),
+      imageUrl: safeHttpUrl(body.imageUrl),
+      isActive: body.isActive !== false,
     };
 
-    const existingId = String(body?.id || "").trim();
+    const existingId = body.id || "";
     if (existingId) {
       const existing = await getProductById(env.DB, existingId, owned.account.id);
       if (!existing) {
@@ -1121,14 +1293,11 @@ export async function handleApiRequest(
 
   // POST /api/campaigns — compose (id present = update, no = create)
   if (path === "/api/campaigns" && method === "POST") {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, campaignSaveSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
 
-    const accountId = String(body?.accountId || "");
+    const accountId = body.accountId;
     if (!accountId) {
       return jsonError("MISSING_ACCOUNT_ID", "accountId is required.", 400);
     }
@@ -1144,16 +1313,16 @@ export async function handleApiRequest(
       );
     }
 
-    const mediaId = String(body?.mediaId || "").trim();
+    const mediaId = (body.mediaId || "").trim();
     if (!mediaId) {
       return jsonError("MISSING_MEDIA_ID", "Pick the reel whose commenters you want to reach.", 400);
     }
 
     // Payload: { kind: 'text' | 'card', text?, card? } — the same shape the
     // Canvas "send message" node produces, so a campaign can be a flow node.
-    const rawKind = body?.kind === "card" ? "card" : "text";
-    const text = String(body?.text || "").trim().slice(0, 1000);
-    const card = body?.card ?? null;
+    const rawKind = body.kind === "card" ? "card" : "text";
+    const text = (body.text || "").trim().slice(0, 1000);
+    const card = body.card ?? null;
     if (rawKind === "text" && !text) {
       return jsonError("MISSING_TEXT", "Write the message you want to send.", 400);
     }
@@ -1164,14 +1333,14 @@ export async function handleApiRequest(
     const patch: CampaignInput = {
       mediaId,
       payload: rawKind === "text" ? { kind: "text", text } : { kind: "card", card },
-      status: body?.status === "scheduled" ? "scheduled" : "draft",
-      scheduledAt: Number(body?.scheduledAt || 0),
+      status: body.status === "scheduled" ? "scheduled" : "draft",
+      scheduledAt: Number(body.scheduledAt || 0),
       // The HUMAN_AGENT tag extends Meta's window to 7 days (plan.md §4.3).
       // It is opt-in per campaign and only meaningful while the 7-day tag is approved.
-      usesHumanAgentTag: body?.usesHumanAgentTag === true,
+      usesHumanAgentTag: body.usesHumanAgentTag === true,
     };
 
-    const existingId = String(body?.id || "").trim();
+    const existingId = body.id || "";
     if (existingId) {
       const existing = await getCampaignById(env.DB, existingId, owned.account.id);
       if (!existing) {
@@ -1261,13 +1430,11 @@ export async function handleApiRequest(
   }
 
   if (path === "/api/flows" && method === "POST") {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
-    const accountId = String(body?.accountId || "");
+    const parsed = await parseBody(request, flowSaveSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
+
+    const accountId = body.accountId;
     if (!accountId) {
       return jsonError("MISSING_ACCOUNT_ID", "accountId is required.", 400);
     }
@@ -1282,17 +1449,17 @@ export async function handleApiRequest(
       );
     }
 
-    const existingId = String(body?.id || "").trim();
+    const existingId = body.id || "";
     if (existingId) {
-      const graphValidation = validateFlowGraph(body?.graph);
+      const graphValidation = validateFlowGraph(body.graph);
       if ("error" in graphValidation) {
         return jsonError("INVALID_FLOW", graphValidation.error, 400);
       }
       const saved = await saveFlow(env.DB, existingId, owned.account.id, {
-        name: String(body?.name || "").trim().slice(0, 80) || undefined,
+        name: (body.name || "").trim().slice(0, 80) || undefined,
         graph: graphValidation.graph,
-        isActive: body?.isActive === undefined ? undefined : body.isActive === true,
-        isPublished: body?.isPublished === undefined ? undefined : body.isPublished === true,
+        isActive: body.isActive === undefined ? undefined : body.isActive === true,
+        isPublished: body.isPublished === undefined ? undefined : body.isPublished === true,
       });
       if (!saved) {
         return jsonError("NOT_FOUND", "That flow no longer exists.", 404);
@@ -1309,11 +1476,11 @@ export async function handleApiRequest(
       );
     }
 
-    const graphValidation = validateFlowGraph(body?.graph ?? createStarterGraph());
+    const graphValidation = validateFlowGraph(body.graph ?? createStarterGraph());
     if ("error" in graphValidation) {
       return jsonError("INVALID_FLOW", graphValidation.error, 400);
     }
-    const name = String(body?.name || "").trim().slice(0, 80) || "Untitled flow";
+    const name = (body.name || "").trim().slice(0, 80) || "Untitled flow";
     const flow = await insertFlow(
       env.DB,
       crypto.randomUUID(),
@@ -1354,13 +1521,10 @@ export async function handleApiRequest(
   // Self-referral is refused; the reward still waits for the referred person's
   // first paid activation.
   if (path === "/api/referrals" && method === "POST") {
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
-    const code = String(body?.code || "").trim();
+    const parsed = await parseBody(request, referralClaimSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+
+    const code = parsed.data.code;
     if (!code) {
       return jsonError("MISSING_CODE", "A referral code is required.", 400);
     }
@@ -1383,45 +1547,7 @@ export async function handleApiRequest(
   }
 
   // =========================================================================
-  // 18. AGENCY CONTACT (plan.md §3) — bigger than 3 accounts, talk to the owner
-  // =========================================================================
-
-  if (path === "/api/agency/contact" && method === "POST") {
-    if (isRateLimited(`agency:${clientIp(request)}`, 5, 60_000)) {
-      return jsonError("RATE_LIMITED", "Too many submissions. Please wait a minute.", 429);
-    }
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
-    const email = String(body?.email || user.email || "").trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      return jsonError("INVALID_EMAIL", "Enter a valid email so we can reply.", 400);
-    }
-    const accountCount = Math.max(1, Number(body?.accountCount || 3));
-    const notes = String(body?.notes || "").trim().slice(0, 1000);
-    const planInterest = body?.plan === "studio" ? "studio" : "custom";
-
-    await env.DB
-      .prepare(
-        `INSERT INTO webhook_logs (id, account_id, event_type, status_code, payload)
-         VALUES (?, NULL, 'agency_contact', 202, ?)`
-      )
-      .bind(
-        crypto.randomUUID(),
-        JSON.stringify({ email, accountCount, planInterest, notes })
-      )
-      .run();
-
-    return jsonSuccess({
-      message: `Thanks — we'll reply to ${email} within one business day.`,
-    });
-  }
-
-  // =========================================================================
-  // 19. LINK IN BIO (plan.md §4.5 / Phase 2) — Pro/Studio only
+  // 18. LINK IN BIO (plan.md §4.5 / Phase 2) — Pro/Studio only
   //     Blocks pull from the Products library and click through the same
   //     /l/:id short links the DM buttons use, so one funnel covers both.
   // =========================================================================
@@ -1475,15 +1601,12 @@ export async function handleApiRequest(
       );
     }
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, linkPageSaveSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
 
-    const rawBlocks = Array.isArray(body?.blocks) ? body.blocks.slice(0, 20) : [];
-    if (Array.isArray(body?.blocks) && body.blocks.length > 20) {
+    const rawBlocks = body.blocks.slice(0, 20);
+    if (body.blocks.length > 20) {
       return jsonError("TOO_MANY_BLOCKS", "A link page holds up to 20 blocks.", 400);
     }
 
@@ -1501,11 +1624,11 @@ export async function handleApiRequest(
     }> = [];
 
     for (const raw of rawBlocks) {
-      const label = String(raw?.label || "").trim().slice(0, 60);
-      const productId = String(raw?.productId || "").trim();
+      const label = cleanText(raw.label, 60);
+      const productId = cleanText(raw.productId, 64);
       if (!label) continue;
 
-      let targetUrl = String(raw?.targetUrl || "").trim();
+      let targetUrl = cleanText(raw.targetUrl, 500);
       if (productId) {
         if (!ownedProducts.has(productId)) {
           // Never let a page link to somebody else's product row.
@@ -1518,19 +1641,23 @@ export async function handleApiRequest(
         targetUrl = product.link;
       }
 
-      if (!/^https?:\/\//i.test(targetUrl)) {
+      const safeTarget = safeHttpUrl(targetUrl);
+      if (!safeTarget) {
         return jsonError("INVALID_LINK", "Links must start with http:// or https://", 400);
       }
 
       blocks.push({
-        id: String(raw?.id || crypto.randomUUID()).slice(0, 64),
+        // Block ids are generated server-side: a client-supplied id is a
+        // primary key, and accepting one would let a caller collide with (or
+        // probe for) a row belonging to another tenant's page.
+        id: crypto.randomUUID(),
         productId: productId || undefined,
-        targetUrl: targetUrl.slice(0, 500),
+        targetUrl: safeTarget,
         label,
       });
     }
 
-    const slugRaw = String(body?.slug || "").trim().toLowerCase();
+    const slugRaw = (body.slug || "").trim().toLowerCase();
     const slug = slugRaw ? (SLUG_RE.test(slugRaw) ? slugRaw : null) : null;
     if (slugRaw && !slug) {
       return jsonError(
@@ -1540,7 +1667,6 @@ export async function handleApiRequest(
       );
     }
 
-    const existing = await getLinkPageForAccount(env.DB, owned.account.id);
     const slugOwner = slug ? await getLinkPageBySlug(env.DB, slug) : null;
     if (slugOwner && slugOwner.accountId !== owned.account.id) {
       return jsonError("SLUG_TAKEN", "That address is already in use.", 409);
@@ -1548,10 +1674,10 @@ export async function handleApiRequest(
 
     const page = await upsertLinkPage(env.DB, owned.account.id, {
       slug,
-      headline: String(body?.headline || "").trim().slice(0, 120) || undefined,
-      bio: String(body?.bio || "").trim().slice(0, 500) || undefined,
-      theme: body?.theme === "plain" || body?.theme === "dark" ? body.theme : "volt",
-      isPublished: body?.isPublished === true,
+      headline: cleanText(body.headline, 120) || undefined,
+      bio: cleanText(body.bio, 500, true) || undefined,
+      theme: body.theme === "plain" || body.theme === "dark" ? body.theme : "volt",
+      isPublished: body.isPublished === true,
     });
 
     const saved = await replaceLinkBlocks(env.DB, page.id, blocks);
@@ -1608,44 +1734,43 @@ export async function handleApiRequest(
       );
     }
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, contentPlanSaveSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+    const body = parsed.data;
 
-    const title = String(body?.title || "").trim().slice(0, 120);
+    const title = (body.title || "").trim().slice(0, 120);
     if (!title) {
       return jsonError("MISSING_TITLE", "Give the Reel a working title.", 400);
     }
 
-    const status = isContentStatus(body?.status) ? body.status : "idea";
-    const plannedFor = Math.max(0, Number(body?.plannedFor || 0));
+    const status = isContentStatus(body.status) ? body.status : "idea";
+    const plannedFor = Math.max(0, Number(body.plannedFor || 0));
 
-    // A plan may only be linked to an automation on an account the caller owns.
+    // A plan may only be linked to an automation on the account it belongs to.
+    // Checking that the automation merely *exists* would let a caller credit a
+    // plan to another tenant's Reel.
     let automationId: string | undefined;
-    if (body?.automationId) {
+    if (body.automationId) {
       const automation = await getAutomationById(
         env.DB,
-        createAutomationId(String(body.automationId))
+        createAutomationId(body.automationId)
       );
-      if (!automation) {
+      if (!automation || automation.accountId !== owned.account.id) {
         return jsonError("NOT_FOUND", "That automation no longer exists.", 404);
       }
-      automationId = String(body.automationId);
+      automationId = body.automationId;
     }
 
     const patch = {
       title,
-      hook: String(body?.hook || "").trim().slice(0, 300) || undefined,
-      caption: String(body?.caption || "").trim().slice(0, 2200) || undefined,
+      hook: cleanText(body.hook, 300, true) || undefined,
+      caption: cleanText(body.caption, 2200, true) || undefined,
       status,
       plannedFor,
       automationId,
     };
 
-    const existingId = String(body?.id || "").trim();
+    const existingId = body.id || "";
     if (existingId) {
       const existing = await getContentPlanById(env.DB, existingId, owned.account.id);
       if (!existing) {
@@ -1676,15 +1801,11 @@ export async function handleApiRequest(
       return jsonError("CONTENT_LOCKED", "Content planning is a Pro feature.", 403, { upgrade: true });
     }
 
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
+    const parsed = await parseBody(request, contentPlanPublishSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
 
-    const planId = String(body?.id || "").trim();
-    const mediaId = String(body?.mediaId || "").trim();
+    const planId = parsed.data.id || "";
+    const mediaId = parsed.data.mediaId || "";
     if (!planId || !mediaId) {
       return jsonError("MISSING_FIELDS", "id and mediaId are required.", 400);
     }
@@ -1728,25 +1849,17 @@ export async function handleApiRequest(
   }
 
   if (path === "/api/admin/activate-payment" && method === "POST") {
-    const secret = request.headers.get("x-admin-secret") || "";
-    if (!env.ADMIN_SECRET || !secret) {
-      return jsonError("FORBIDDEN", "Admin access requires the secret header.", 403);
+    // Defensive: the prefix guard already resolved an actor. If it is missing
+    // for any reason, fail closed rather than trusting the route is reachable.
+    if (!adminActor) {
+      return jsonError("FORBIDDEN", "Admin access is required for this endpoint.", 403);
     }
-    const adminOk = await (await import("../crypto")).timingSafeEqualAsync(
-      secret,
-      env.ADMIN_SECRET
-    );
-    if (!adminOk) {
-      return jsonError("FORBIDDEN", "Admin access requires the secret header.", 403);
-    }
-    let body: any;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("INVALID_JSON", "Malformed request payload", 400);
-    }
-    const paymentId = String(body?.paymentId || "").trim();
-    const approve = body?.approve !== false;
+
+    const parsed = await parseBody(request, adminPaymentSchema);
+    if (!parsed.ok) return jsonError(parsed.code, parsed.message, parsed.status);
+
+    const paymentId = parsed.data.paymentId || "";
+    const approve = parsed.data.approve !== false;
     if (!paymentId) {
       return jsonError("MISSING_PAYMENT_ID", "paymentId is required.", 400);
     }
@@ -1755,6 +1868,15 @@ export async function handleApiRequest(
       .bind(paymentId)
       .first()) as any;
     if (!payment) {
+      await recordAdminAudit(env.DB, {
+        actor: adminActor,
+        action: "payment.activate",
+        targetType: "payment",
+        targetId: paymentId,
+        success: false,
+        metadata: { reason: "pending_payment_not_found" },
+        ip: clientIp(request),
+      });
       return jsonError("NOT_FOUND", "Pending payment not found.", 404);
     }
     const now = Math.floor(Date.now() / 1000);
@@ -1764,6 +1886,15 @@ export async function handleApiRequest(
         .bind(payment.account_id)
         .first()) as any;
       if (!ownerRow?.user_id) {
+        await recordAdminAudit(env.DB, {
+          actor: adminActor,
+          action: "payment.activate",
+          targetType: "payment",
+          targetId: paymentId,
+          success: false,
+          metadata: { reason: "account_missing", accountId: payment.account_id },
+          ip: clientIp(request),
+        });
         return jsonError("NOT_FOUND", "Payment account no longer exists.", 404);
       }
       const activatedPlan = payment.plan === "studio" ? "studio" : "pro";
@@ -1778,14 +1909,42 @@ export async function handleApiRequest(
       const qualified = await qualifyReferralsForUser(env.DB, ownerRow.user_id);
       const rewarded = qualified > 0 ? await rewardQualifiedReferrals(env.DB, ownerRow.user_id) : 0;
 
+      await recordAdminAudit(env.DB, {
+        actor: adminActor,
+        action: "payment.activate",
+        targetType: "payment",
+        targetId: paymentId,
+        success: true,
+        metadata: {
+          plan: payment.plan,
+          accountId: payment.account_id,
+          userId: ownerRow.user_id,
+          referralsRewarded: rewarded,
+        },
+        ip: clientIp(request),
+      });
+
       return jsonSuccess({ activated: true, plan: payment.plan, referralsRewarded: rewarded });
     }
     await env.DB
       .prepare(`UPDATE payments SET status = 'rejected', verified_at = ? WHERE id = ?`)
       .bind(now, paymentId)
       .run();
+
+    await recordAdminAudit(env.DB, {
+      actor: adminActor,
+      action: "payment.reject",
+      targetType: "payment",
+      targetId: paymentId,
+      success: true,
+      metadata: { plan: payment.plan, accountId: payment.account_id },
+      ip: clientIp(request),
+    });
+
     return jsonSuccess({ activated: false, rejected: true });
   }
 
-  return jsonError("NOT_FOUND", `Endpoint ${method} ${path} not found.`, 404);
+  // The path is deliberately not echoed: it is attacker-controlled and the
+  // client already knows what it requested.
+  return jsonError("NOT_FOUND", "Endpoint not found.", 404);
 }

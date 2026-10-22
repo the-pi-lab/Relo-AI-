@@ -92,7 +92,7 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
       aria-describedby="cookie-desc"
       className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:w-[440px]"
     >
-      <div className="rounded-xl border border-line bg-surface p-5 shadow-[var(--sh-3)]">
+      <div className="glass-strong rounded-2xl p-5">
         <h2 id="cookie-title" className="h4 text-ink">
           A word about cookies
         </h2>
@@ -117,7 +117,7 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row">
           <Button
             ref={acceptRef}
-            variant="ink"
+            variant="signal"
             className="flex-1"
             onClick={() => choose("all")}
           >

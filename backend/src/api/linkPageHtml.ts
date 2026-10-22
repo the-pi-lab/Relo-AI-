@@ -68,6 +68,10 @@ export function renderLinkPageHtml(
     },
   };
 
+  // `<` is escaped so creator text containing `</script>` cannot close this
+  // block and inject markup — JSON.stringify alone does not neutralize it.
+  const jsonLd = JSON.stringify(structuredData).replace(/</g, "\\u003c");
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -79,7 +83,7 @@ export function renderLinkPageHtml(
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:type" content="profile">
 <link rel="canonical" href="${origin}/p/${esc(page.id)}">
-<script type="application/ld+json">${JSON.stringify(structuredData)}</script>
+<script type="application/ld+json">${jsonLd}</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }

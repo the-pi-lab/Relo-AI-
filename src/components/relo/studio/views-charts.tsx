@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { ArrowRight, Clock3 } from "lucide-react";
 import { useRelo } from "@/lib/relo/store";
+import { useTheme } from "@/lib/relo/theme";
 import { DM_SERIES, fmtNum, timeAgo } from "@/lib/relo/data";
 import { Meter, Panel, StatCard, StatusPill, ViewHead } from "./studio-ui";
 import { Button } from "../chrome";
@@ -24,8 +25,8 @@ const AXIS = {
 } as const;
 
 const TOOLTIP_CONTENT: CSSProperties = {
-  background: "var(--surface)",
-  border: "1px solid var(--line)",
+  background: "var(--surface-3)",
+  border: "1px solid var(--line-strong)",
   borderRadius: 9,
   boxShadow: "var(--sh-2)",
   padding: "6px 10px",
@@ -44,12 +45,17 @@ const TOOLTIP_ITEM: CSSProperties = { fontSize: 11.5, color: "var(--ink)" };
 const BAR_CURSOR = { fill: "var(--surface-2)" };
 const LINE_CURSOR = { stroke: "var(--line)" };
 
+/* The shared feed of signal-toned fills: one defs block per chart, ids namespaced
+   per view so two charts on one screen never share a gradient. */
+const GRID = { stroke: "var(--line-faint)", vertical: false } as const;
+
 /* ═════════════════════════════════════════════════════════════════════
    HOME
    ═════════════════════════════════════════════════════════════════════ */
 
 export function HomeView({ go }: { go: (v: string) => void }) {
   const { automations, activity, leads, toggleAutomation } = useRelo();
+  const { theme } = useTheme();
   const dmsToday = automations.reduce((a, x) => a + x.triggersToday, 0);
   const clicks = automations.reduce((a, x) => a + x.clicks, 0);
   const dms = automations.reduce((a, x) => a + x.dmsSent, 0);
@@ -73,10 +79,31 @@ export function HomeView({ go }: { go: (v: string) => void }) {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="DMs today" value={dmsToday} delta="+12%" />
-        <StatCard label="Leads captured" value={leads.length} delta="+8%" />
-        <StatCard label="Button clicks" value={clicks} delta="+21%" />
-        <StatCard label="DM to click" value={rate} suffix="%" delta="+3%" />
+        <StatCard
+          label="DMs today"
+          value={dmsToday}
+          delta="+12%"
+          series={DM_SERIES.slice(-12).map((d) => d.dms)}
+        />
+        <StatCard
+          label="Leads captured"
+          value={leads.length}
+          delta="+8%"
+          series={DM_SERIES.slice(-12).map((d) => d.comments * 0.6)}
+        />
+        <StatCard
+          label="Button clicks"
+          value={clicks}
+          delta="+21%"
+          series={DM_SERIES.slice(-12).map((d) => d.clicks)}
+        />
+        <StatCard
+          label="DM to click"
+          value={rate}
+          suffix="%"
+          delta="+3%"
+          series={DM_SERIES.slice(-12).map((d) => (d.clicks / Math.max(1, d.dms)) * 100)}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
@@ -95,9 +122,15 @@ export function HomeView({ go }: { go: (v: string) => void }) {
           }
         >
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer key={theme} width="100%" height="100%">
               <AreaChart data={DM_SERIES} margin={{ top: 8, right: 8, bottom: 8, left: -10 }}>
-                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <defs>
+                  <linearGradient id="home-area" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.26} />
+                    <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid {...GRID} />
                 <XAxis
                   dataKey="day"
                   tick={AXIS}
@@ -117,8 +150,14 @@ export function HomeView({ go }: { go: (v: string) => void }) {
                   dataKey="comments"
                   stroke="var(--chart-1)"
                   strokeWidth={2}
-                  fill="var(--chart-1)"
-                  fillOpacity={0.12}
+                  fill="url(#home-area)"
+                  isAnimationActive={false}
+                  activeDot={{
+                    r: 3.5,
+                    fill: "var(--chart-1)",
+                    stroke: "var(--surface)",
+                    strokeWidth: 2,
+                  }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -135,12 +174,12 @@ export function HomeView({ go }: { go: (v: string) => void }) {
                     {row.value}
                   </span>
                 </div>
-                <Meter pct={row.pct} tone="ok" />
+                <Meter pct={row.pct} tone="ok" label={row.key} />
               </div>
             ))}
           </div>
 
-          <div className="mt-5 flex items-start gap-2.5 rounded-md border border-line bg-surface-2 px-3.5 py-3">
+          <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-line/60 bg-surface-2/45 px-3.5 py-3">
             <Clock3
               className="mt-0.5 size-3.5 shrink-0 text-ink-3"
               strokeWidth={1.75}
@@ -165,8 +204,17 @@ export function HomeView({ go }: { go: (v: string) => void }) {
             {activity.slice(0, 12).map((ev) => (
               <li
                 key={ev.id}
-                className="flex items-start gap-4 px-5 py-3 transition-colors duration-150 hover:bg-surface-2"
+                className="flex items-start gap-3 px-5 py-3 transition-colors duration-150 hover:bg-surface-2"
               >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mt-[7px] size-1.5 shrink-0 rounded-full",
+                    ev.kind === "comment" && "bg-signal",
+                    ev.kind === "lead" && "bg-ok",
+                    ev.kind !== "comment" && ev.kind !== "lead" && "bg-line-strong"
+                  )}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-ink">{ev.text}</p>
                   {ev.meta && (
@@ -211,12 +259,13 @@ export function HomeView({ go }: { go: (v: string) => void }) {
                   className={cn(
                     "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors duration-150 ease-out",
                     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
-                    a.isActive ? "bg-ok" : "bg-surface-3"
+                    a.isActive ? "bg-signal" : "bg-line-strong"
                   )}
                 >
                   <span
                     className={cn(
-                      "size-5 rounded-full bg-white shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
+                      "size-5 rounded-full shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
+                      a.isActive ? "bg-signal-ink" : "bg-ink",
                       a.isActive && "translate-x-5"
                     )}
                   />
@@ -236,6 +285,7 @@ export function HomeView({ go }: { go: (v: string) => void }) {
 
 export function InsightsView() {
   const { automations } = useRelo();
+  const { theme } = useTheme();
   const [range, setRange] = useState(14);
   const data = DM_SERIES.slice(-range);
   const totals = data.reduce(
@@ -268,7 +318,7 @@ export function InsightsView() {
         sub="The honest funnel, from comment noise to button clicks that pay."
       >
         <div
-          className="flex items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5"
+          className="glass-chip flex items-center gap-0.5 rounded-full p-0.5"
           role="radiogroup"
           aria-label="Date range"
         >
@@ -282,7 +332,7 @@ export function InsightsView() {
               className={cn(
                 "rounded-md px-3.5 py-1 text-[12.5px] font-semibold transition-colors duration-150 ease-out",
                 range === r
-                  ? "bg-ink text-ink-invert"
+                  ? "bg-signal text-signal-ink"
                   : "text-ink-3 hover:bg-surface-2 hover:text-ink"
               )}
             >
@@ -304,7 +354,7 @@ export function InsightsView() {
                     {f.v.toLocaleString("en-IN")} · {Math.round(pct)}%
                   </span>
                 </div>
-                <Meter pct={pct} tone={i === funnel.length - 1 ? "ok" : "warn"} />
+                <Meter pct={pct} tone={i === funnel.length - 1 ? "ok" : "signal"} label={f.label} />
               </div>
             );
           })}
@@ -314,9 +364,15 @@ export function InsightsView() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Clicks per day">
           <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer key={theme} width="100%" height="100%">
               <BarChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: -20 }}>
-                <CartesianGrid stroke="var(--line)" vertical={false} />
+                <defs>
+                  <linearGradient id="insights-bar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={1} />
+                    <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.62} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid {...GRID} />
                 <XAxis
                   dataKey="day"
                   tick={AXIS}
@@ -335,8 +391,9 @@ export function InsightsView() {
                   dataKey="clicks"
                   name="Clicks"
                   radius={[5, 5, 0, 0]}
-                  fill="var(--chart-1)"
+                  fill="url(#insights-bar)"
                   maxBarSize={24}
+                  isAnimationActive={false}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -404,7 +461,7 @@ export function InsightsView() {
                   {label}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <Meter pct={pct} />
+                  <Meter pct={pct} label={`${label} clicks`} />
                 </span>
                 <span className="w-12 shrink-0 text-right font-mono text-[12.5px] text-ink-2 tnum">
                   {n}

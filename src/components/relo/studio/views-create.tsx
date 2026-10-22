@@ -29,12 +29,12 @@ export function BioView() {
      rather than the studio tokens: switching the studio theme must not
      repaint the customer page. */
   const plain = draft.theme === "plain";
-  const screenBg = plain ? "#ffffff" : "#0a0b0f";
-  const screenInk = plain ? "#111315" : "#e8eaee";
-  const screenLine = plain ? "rgba(17,19,21,0.12)" : "rgba(232,234,238,0.16)";
-  const screenDot = plain ? "#16130f" : "#c93a0e";
-  const blockBg = plain ? "#111315" : "#c93a0e";
-  const blockInk = plain ? "#ffffff" : "#fff4f0";
+  const screenBg = plain ? "#ffffff" : "#0d0d10";
+  const screenInk = plain ? "#111315" : "#f5f5f7";
+  const screenLine = plain ? "rgba(17,19,21,0.12)" : "rgba(245,245,247,0.14)";
+  const screenDot = plain ? "#16130f" : "#00e5ff";
+  const blockBg = plain ? "#111315" : "#00e5ff";
+  const blockInk = plain ? "#ffffff" : "#050505";
 
   return (
     <div className="space-y-6">
@@ -106,7 +106,6 @@ export function BioView() {
               <Switch
                 checked={draft.isPublished}
                 onCheckedChange={(isPublished) => set({ isPublished })}
-                className="data-[state=checked]:bg-signal"
                 aria-label="Publish link page"
               />
             </div>
@@ -153,7 +152,6 @@ export function BioView() {
                       checked={b.isActive}
                       onCheckedChange={(isActive) =>
                         set({ blocks: draft.blocks.map((x) => (x.id === b.id ? { ...x, isActive } : x)) })}
-                      className="data-[state=checked]:bg-signal"
                       aria-label="Toggle block"
                     />
                     <button
@@ -205,7 +203,7 @@ export function BioView() {
         {/* phone preview */}
         <div className="lg:sticky lg:top-24 lg:self-start">
           <div className="mx-auto w-[300px]">
-            <div className="overflow-hidden rounded-2xl border border-line bg-surface-3 p-2 shadow-[var(--sh-3)]">
+            <div className="glass-strong overflow-hidden rounded-[26px] p-2">
               <div className="overflow-hidden rounded-xl" style={{ background: screenBg, color: screenInk }}>
                 {/* hairline header: the public address, and whether it is live */}
                 <div

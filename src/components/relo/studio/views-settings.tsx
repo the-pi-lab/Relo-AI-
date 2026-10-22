@@ -98,20 +98,25 @@ export function ContentView() {
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-1.5">
+              <div
+                className="mt-3 grid grid-cols-2 gap-0.5 overflow-hidden rounded-lg border border-line bg-surface-2 p-0.5 xl:grid-cols-4"
+                role="group"
+                aria-label="Move plan to stage"
+              >
                 {statuses.map((s) => (
                   <button
                     key={s.id}
                     type="button"
                     onClick={() => moveContent(c.id, s.id)}
+                    aria-pressed={c.status === s.id}
                     className={cn(
-                      "rounded-md border px-2 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider transition-colors duration-150 ease-out",
+                      "min-w-0 overflow-hidden rounded-md px-1 py-1.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] transition-colors duration-150 ease-out",
                       c.status === s.id
-                        ? "border-signal bg-signal text-signal-ink"
-                        : "border-line text-ink-3 hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
+                        ? "bg-signal text-signal-ink"
+                        : "text-ink-3 hover:bg-surface-3 hover:text-ink"
                     )}
                   >
-                    {s.label}
+                    <span className="block truncate">{s.label}</span>
                   </button>
                 ))}
               </div>
@@ -121,8 +126,8 @@ export function ContentView() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto rounded-xl border-line bg-surface p-0 shadow-[var(--sh-3)] sm:max-w-lg">
-          <DialogHeader className="sticky top-0 z-10 border-b border-line bg-surface px-6 py-4">
+        <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto rounded-2xl border-line/60 bg-surface/85 p-0 shadow-[var(--sh-3)] backdrop-blur-2xl sm:max-w-lg">
+          <DialogHeader className="sticky top-0 z-10 border-b border-line/60 bg-surface/85 px-6 py-4 backdrop-blur-2xl">
             <DialogTitle className="h4 text-ink">{draft ? (draft.id ? "Edit plan" : "New plan") : "Plan"}</DialogTitle>
             <DialogDescription className="text-[12.5px] leading-relaxed text-ink-3">RELO holds the idea and date; you publish in Instagram and link the live reel back so conversion can be measured.</DialogDescription>
           </DialogHeader>
@@ -142,7 +147,7 @@ export function ContentView() {
               <input type="date" value={draft?.plannedFor ? new Date(draft.plannedFor).toISOString().split("T")[0] : ""} onChange={(e) => setDraft({ ...draft!, plannedFor: new Date(e.target.value).getTime() })} className={inputCls} />
             </Field>
           </div>
-          <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line bg-surface px-6 py-4">
+          <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line/60 bg-surface/85 px-6 py-4 backdrop-blur-2xl">
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button variant="signal" onClick={save}>{draft?.id ? "Save changes" : "Save plan"}</Button>
           </div>
@@ -272,7 +277,7 @@ export function SettingsView() {
       </Panel>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="rounded-xl border-line bg-surface p-6 shadow-[var(--sh-3)] sm:max-w-md">
+        <DialogContent className="rounded-2xl border-line/60 bg-surface/85 p-6 shadow-[var(--sh-3)] backdrop-blur-2xl sm:max-w-md">
           <DialogTitle className="h4 text-ink">Sign out?</DialogTitle>
           <DialogDescription className="mt-2 text-[13px] leading-relaxed text-ink-2">You will lose your demo studio state. Sign in again to return.</DialogDescription>
           <div className="mt-6 flex gap-3">

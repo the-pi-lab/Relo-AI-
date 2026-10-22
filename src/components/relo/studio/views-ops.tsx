@@ -103,7 +103,7 @@ export function CampaignsView() {
         title="Campaigns"
         sub="One blast to everyone still inside Meta's 24-hour window. Filtered, tracked, and reported as it goes out."
       >
-        <Button onClick={openNew}>
+        <Button variant="signal" onClick={openNew}>
           <Plus className="size-4" strokeWidth={1.75} aria-hidden /> New campaign
         </Button>
       </ViewHead>
@@ -142,7 +142,7 @@ export function CampaignsView() {
             return (
               <article
                 key={c.id}
-                className="rounded-xl border border-line bg-surface p-5 shadow-[var(--sh-1)] transition-colors duration-150 ease-out hover:border-line-strong"
+                className="glass-card rounded-2xl p-5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -171,7 +171,7 @@ export function CampaignsView() {
                     <span className="font-mono text-[12px] font-semibold text-ink tnum">{pct}%</span>
                   </div>
                   <div className="mt-2">
-                    <Meter pct={pct} tone={tone} />
+                    <Meter pct={pct} tone={tone} label={`${c.name} processed`} />
                   </div>
                 </div>
 
@@ -203,8 +203,8 @@ export function CampaignsView() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-xl border-line bg-surface p-0 sm:max-w-lg">
-          <DialogHeader className="sticky top-0 z-10 gap-1 border-b border-line bg-surface px-5 py-4">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-line/60 bg-surface/85 p-0 shadow-[var(--sh-3)] backdrop-blur-2xl sm:max-w-lg">
+          <DialogHeader className="sticky top-0 z-10 gap-1 border-b border-line/60 bg-surface/85 px-5 py-4 backdrop-blur-2xl">
             <DialogTitle className="h4 text-ink">
               {draft ? (draft.id ? "Edit campaign" : "New campaign") : "Campaign"}
             </DialogTitle>
@@ -274,7 +274,7 @@ export function CampaignsView() {
             </div>
           </div>
 
-          <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line bg-surface px-5 py-4">
+          <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line/60 bg-surface/85 px-5 py-4 backdrop-blur-2xl">
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
@@ -331,7 +331,7 @@ export function ProductsView() {
   return (
     <div className="space-y-6">
       <ViewHead title="Products" sub="Your catalog feeds the AI answers and your link in bio.">
-        <Button onClick={openNew}>
+        <Button variant="signal" onClick={openNew}>
           <Plus className="size-4" strokeWidth={1.75} aria-hidden /> New product
         </Button>
       </ViewHead>
@@ -341,7 +341,7 @@ export function ProductsView() {
           title="No products yet"
           sub="Add your first product so AI answers and link blocks can point to it."
         >
-          <Button onClick={openNew}>
+          <Button variant="signal" onClick={openNew}>
             <Plus className="size-4" strokeWidth={1.75} aria-hidden /> Add product
           </Button>
         </EmptyState>
@@ -355,8 +355,7 @@ export function ProductsView() {
               <article
                 key={p.id || "new-product"}
                 className={cn(
-                  "flex flex-col rounded-xl border border-line bg-surface p-5 shadow-[var(--sh-1)]",
-                  "transition-colors duration-150 ease-out hover:border-line-strong",
+                  "glass-card flex flex-col rounded-2xl p-5",
                   editing && "border-line-strong"
                 )}
               >

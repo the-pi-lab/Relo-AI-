@@ -2155,3 +2155,24 @@ export async function rewardQualifiedReferrals(
     .run();
   return res.meta?.changes ?? 0;
 }
+
+/**
+ * Admin check against the database flag.
+ *
+ * `users.is_admin` is the durable grant; `ADMIN_EMAILS` and the break-glass
+ * `X-Admin-Secret` header are checked separately in `security/admin.ts`. This
+ * function reads the flag only, and returns false when the column does not
+ * exist yet (a worker deployed ahead of the migration), so authorization fails
+ * closed instead of throwing a 500.
+ */
+export async function isUserAdmin(db: D1Database, userId: string): Promise<boolean> {
+  try {
+    const row = (await db
+      .prepare(`SELECT is_admin FROM users WHERE id = ? LIMIT 1`)
+      .bind(userId)
+      .first()) as { is_admin?: number | boolean } | null;
+    return Boolean(row?.is_admin);
+  } catch {
+    return false;
+  }
+}

@@ -543,7 +543,7 @@ export function CanvasView() {
         />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--sh-1)]">
+      <div className="glass-panel overflow-hidden rounded-2xl">
       {/* ── toolbar ── */}
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <div className="min-w-0">
@@ -596,7 +596,7 @@ export function CanvasView() {
       <div
         ref={vpRef}
         onPointerDown={startPan}
-        className="relative h-[calc(100vh-270px)] min-h-[540px] overflow-hidden border-t border-line bg-[var(--surface-2)] select-none"
+        className="relative h-[calc(100vh-270px)] min-h-[540px] overflow-hidden border-t border-line/60 bg-surface-2/80 select-none"
         style={{ touchAction: "none" }}
       >
         {/* dotted grid, tied to the view transform */}
@@ -610,6 +610,10 @@ export function CanvasView() {
             opacity: 0.5,
           }}
         />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,var(--glow-1),transparent_58%),radial-gradient(ellipse_at_82%_100%,var(--glow-3),transparent_62%)] opacity-70"
+        />
 
         {/* the world: everything that pans and zooms */}
         <div
@@ -619,17 +623,26 @@ export function CanvasView() {
           {/* edges */}
           <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1" aria-hidden>
             <defs>
-              <marker
-                id="fc-arrow"
-                viewBox="0 0 10 10"
-                refX="8.5"
-                refY="5"
-                markerWidth="6.5"
-                markerHeight="6.5"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--signal)" />
-              </marker>
+              {/* One arrow per wire state so the tip always matches its line. */}
+              {[
+                { id: "fc-arrow-idle", color: "var(--ink-3)" },
+                { id: "fc-arrow-live", color: "var(--signal)" },
+                { id: "fc-arrow-done", color: "var(--ok)" },
+                { id: "fc-arrow-sel", color: "var(--brand-line)" },
+              ].map((m) => (
+                <marker
+                  key={m.id}
+                  id={m.id}
+                  viewBox="0 0 10 10"
+                  refX="8.5"
+                  refY="5"
+                  markerWidth="6.5"
+                  markerHeight="6.5"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 1 L 9 5 L 0 9 z" fill={m.color} />
+                </marker>
+              ))}
             </defs>
             {flow.edges.map((e) => {
               const a = flow.nodes.find((n) => n.id === e.from);
@@ -654,17 +667,23 @@ export function CanvasView() {
                   <path
                     d={d}
                     fill="none"
-                    stroke={isSel ? "var(--signal)" : flowed ? "var(--ok)" : "var(--ink-3)"}
-                    strokeOpacity={isSel || flowed ? 1 : 0.55}
+                    stroke={isSel ? "var(--brand-line)" : flowed ? "var(--ok)" : "var(--line-strong)"}
+                    strokeOpacity={isSel || flowed ? 1 : 0.9}
                     strokeWidth={isSel ? 2.4 : 1.8}
-                    markerEnd="url(#fc-arrow)"
+                    markerEnd={
+                      isSel
+                        ? "url(#fc-arrow-sel)"
+                        : flowed
+                          ? "url(#fc-arrow-done)"
+                          : "url(#fc-arrow-idle)"
+                    }
                   />
                   {/* animated 2D signal pulse stream */}
                   {flow.isActive && (
                     <path
                       d={d}
                       fill="none"
-                      stroke={flowed ? "var(--ok)" : isSel ? "var(--signal-hover)" : "var(--signal)"}
+                      stroke={flowed ? "var(--ok)" : isSel ? "var(--brand-line)" : "var(--signal)"}
                       strokeWidth={flowed ? 2.6 : 2}
                       strokeDasharray="5 9"
                       strokeLinecap="round"
@@ -699,7 +718,7 @@ export function CanvasView() {
                   style={{ left: n.x, top: n.y, width: 224 }}
                   className={cn(
                     "absolute rotate-[-1.2deg] rounded-xl border border-warn/35 bg-warn-wash p-3 shadow-[var(--sh-1)]",
-                    isSel && "ring-2 ring-signal/35"
+                    isSel && "ring-2 ring-brand-line/35"
                   )}
                 >
                   <div
@@ -737,8 +756,12 @@ export function CanvasView() {
                 key={n.id}
                 style={{ left: n.x, top: n.y, width: NODE_W }}
                 className={cn(
-                  "absolute cursor-grab rounded-xl border bg-surface shadow-[var(--sh-1)] active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--sh-2)] hover:border-signal/60",
-                  isSel ? "border-signal ring-2 ring-signal/30" : didRun ? "border-ok/60 ring-1 ring-ok/30" : "border-line"
+                  "absolute cursor-grab rounded-xl border shadow-[var(--sh-1)] active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--sh-2)] hover:border-signal/60",
+                  isSel
+                    ? "border-brand-line bg-gradient-to-br from-surface-3 to-surface-2 ring-2 ring-brand-line/25"
+                    : didRun
+                      ? "border-ok/60 bg-gradient-to-br from-surface to-surface-2 ring-1 ring-ok/30"
+                      : "border-line bg-gradient-to-br from-surface/95 to-surface-2/95"
                 )}
                 onPointerDown={(e) => startNodeDrag(e, n)}
               >
@@ -798,6 +821,7 @@ export function CanvasView() {
               <p className="h4 text-ink">An empty canvas</p>
               <p className="mt-1 text-[13px] text-ink-3">Every automation starts with a comment.</p>
               <Button
+                variant="signal"
                 className="mt-5"
                 onClick={() => {
                   setPendingFrom(null);
@@ -811,7 +835,7 @@ export function CanvasView() {
         )}
 
         {/* zoom controls */}
-        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-full border border-line bg-surface/95 p-1 shadow-[var(--sh-1)]">
+        <div className="glass-chip absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-full p-1">
           <button
             onClick={() => setView((v) => ({ ...v, z: clamp(v.z * 0.85, Z_MIN, Z_MAX) }))}
             className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
@@ -863,7 +887,7 @@ export function CanvasView() {
               initial={{ y: 24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
-              className="absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-surface px-4 py-2 shadow-[var(--sh-3)]"
+              className="glass-chip absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full px-4 py-2 shadow-[var(--sh-3)]"
             >
               <span className="caption">Connection selected</span>
               <button
@@ -891,7 +915,7 @@ export function CanvasView() {
               exit={{ x: -22, opacity: 0 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.28, 1] }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-3 left-3 top-3 z-20 flex w-[280px] max-w-[calc(100%-24px)] flex-col rounded-xl border border-line bg-surface shadow-[var(--sh-2)]"
+              className="absolute bottom-3 left-3 top-3 z-20 flex w-[280px] max-w-[calc(100%-24px)] flex-col rounded-2xl border border-line/60 bg-surface/85 shadow-[var(--sh-2)] backdrop-blur-2xl"
             >
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <div>
@@ -974,7 +998,7 @@ export function CanvasView() {
               exit={{ x: 22, opacity: 0 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.28, 1] }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-3 right-3 top-3 z-20 w-[300px] max-w-[calc(100%-24px)] overflow-y-auto rounded-xl border border-line bg-surface shadow-[var(--sh-2)]"
+              className="absolute bottom-3 right-3 top-3 z-20 w-[300px] max-w-[calc(100%-24px)] overflow-y-auto rounded-2xl border border-line/60 bg-surface/85 shadow-[var(--sh-2)] backdrop-blur-2xl"
             >
               {(() => {
                 const meta = NODE_META[selNode.type];

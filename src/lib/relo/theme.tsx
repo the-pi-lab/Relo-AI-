@@ -8,9 +8,13 @@
  * value is written to <html data-theme="light|dark">, which is the single
  * switch every colour token in globals.css keys off.
  *
+ * Obsidian is the default for visitors with no stored choice: the product's
+ * design system is dark-first, while light ("Paper & Signal") remains a
+ * first-class, fully supported alternate.
+ *
  * The inline script in app/layout.tsx runs before first paint and sets the
  * same attribute, so there is no flash and no server/client disagreement:
- * this provider's first render is always the "light" default on both sides,
+ * this provider's first render is always the dark default on both sides,
  * and it corrects itself in an effect once the browser is available.
  */
 
@@ -24,6 +28,7 @@ import {
   type ReactNode,
 } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export type Theme = "light" | "dark";
 export type ThemeChoice = Theme | "system";
@@ -36,24 +41,24 @@ const ThemeCtx = createContext<{
   isDark: boolean;
   set: (c: ThemeChoice) => void;
 }>({
-  choice: "system",
-  theme: "light",
-  isDark: false,
+  choice: "dark",
+  theme: "dark",
+  isDark: true,
   set: () => {},
 });
 
 function systemTheme(): Theme {
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined") return "dark";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function readChoice(): ThemeChoice {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return "dark";
   try {
     const v = window.localStorage.getItem(THEME_KEY);
-    return v === "light" || v === "dark" || v === "system" ? v : "system";
+    return v === "light" || v === "dark" || v === "system" ? v : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
@@ -64,8 +69,8 @@ function paint(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [choice, setChoice] = useState<ThemeChoice>("system");
-  const [theme, setTheme] = useState<Theme>("light");
+  const [choice, setChoice] = useState<ThemeChoice>("dark");
+  const [theme, setTheme] = useState<Theme>("dark");
 
   /* adopt the stored choice after mount */
   useEffect(() => {
@@ -131,10 +136,10 @@ export function ThemeToggle({ className }: { className?: string }) {
     <div
       role="radiogroup"
       aria-label="Colour theme"
-      className={
-        "inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5 " +
-        (className ?? "")
-      }
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-full glass-chip p-0.5",
+        className
+      )}
     >
       {OPTIONS.map(({ value, label, Icon }) => {
         const active = choice === value;

@@ -15,6 +15,13 @@ export interface Env {
   PUBLIC_BASE_URL?: string; // Worker origin — short links (/l/:id)
   PUBLIC_APP_URL?: string; // Frontend origin — RELO branding redirect target
   ADMIN_SECRET?: string; // Owner-only payment activation endpoint
+  ADMIN_EMAILS?: string; // Comma-separated bootstrap admin emails (before is_admin is set)
+  /** Comma-separated CORS allowlist. Never a wildcard. */
+  ALLOWED_ORIGINS?: string;
+  /** Cloudflare Turnstile secret for login/signup/contact. Missing = CAPTCHA skipped (logged). */
+  TURNSTILE_SECRET_KEY?: string;
+  /** Set to "1" to make a missing Turnstile secret a hard failure instead of a warning. */
+  REQUIRE_CAPTCHA?: string;
   LEMON_SQUEEZY_CHECKOUT_URL?: string; // Global card checkout link
   MANUAL_UPI_ID?: string; // India UPI id shown at upgrade
   NIM_API_KEY?: string; // NVIDIA NIM — AI product-Q&A (plan.md §4.4). Optional: without it every DM takes the owner hand-off path, never a failure.

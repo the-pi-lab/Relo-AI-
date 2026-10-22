@@ -29,29 +29,101 @@ import { getPublishedLinkPage, getLinkPageBySlug } from "./db/linkPage";
 import { renderLinkPageHtml } from "./api/linkPageHtml";
 import { createJobId } from "./types/ids";
 import type { ReelAutomation } from "./types";
+import { preflightResponse, withCors } from "./security/cors";
+import { assertTenantPolicies } from "./db/tenancy";
 
 /**
- * Standard CORS headers for dashboard API communication
+ * Baseline security headers for every response the Worker emits.
+ *
+ * Static and always-on. The HTML link page needs the one concession of inline
+ * styles (it renders its own CSS) and inline JSON-LD, so its CSP is built
+ * separately in `securityHeadersFor`.
  */
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Hub-Signature-256",
+const SECURITY_HEADERS: Record<string, string> = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  // HSTS only means anything over TLS, but sending it on an http:// response is
+  // harmless and ensures the very next request is upgraded.
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
 };
+
+const HTML_CSP =
+  "default-src 'none'; img-src 'self' https: data:; style-src 'unsafe-inline'; " +
+  "script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+/** Headers for a response, including a CSP when the body is HTML. */
+function securityHeadersFor(contentType: string | null): Record<string, string> {
+  const headers: Record<string, string> = { ...SECURITY_HEADERS };
+  if (contentType && contentType.toLowerCase().includes("text/html")) {
+    headers["Content-Security-Policy"] = HTML_CSP;
+  } else {
+    headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+  }
+  return headers;
+}
+
+/** Adds the baseline headers without overwriting anything a handler set. */
+function applySecurityHeaders(response: Response): Response {
+  const headers = securityHeadersFor(response.headers.get("content-type"));
+  for (const [key, value] of Object.entries(headers)) {
+    if (!response.headers.has(key)) response.headers.set(key, value);
+  }
+  return response;
+}
 
 export default {
   /**
-   * Main HTTP Request Router for Cloudflare Workers
+   * Main HTTP Request Router for Cloudflare Workers.
+   *
+   * The wrapper owns HTTPS enforcement, CORS (allowlist only), security
+   * headers and the tenancy self-check; `routeRequest` owns the route table.
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    assertTenantPolicies();
+
     const url = new URL(request.url);
+
+    // 0. HTTPS everywhere. Cloudflare terminates TLS, so the scheme is read
+    //    from the forwarded header. Only enforced in production, so local
+    //    `wrangler dev` over http keeps working.
+    const forwardedProto = (request.headers.get("x-forwarded-proto") || url.protocol.replace(":", "")).toLowerCase();
+    if (env.ENVIRONMENT === "production" && forwardedProto !== "https") {
+      const httpsUrl = new URL(request.url);
+      httpsUrl.protocol = "https:";
+      httpsUrl.port = "";
+      return new Response(null, {
+        status: 308,
+        headers: {
+          Location: httpsUrl.toString(),
+          ...securityHeadersFor("application/json"),
+        },
+      });
+    }
+
+    if (request.method === "OPTIONS") {
+      return preflightResponse(request, env);
+    }
+
+    const response = await this.route(request, env, ctx, url);
+    return withCors(applySecurityHeaders(response), request, env);
+  },
+
+  /**
+   * The route table. Reached only through `fetch`, which has already enforced
+   * HTTPS and will apply the allowlisted CORS policy and security headers to
+   * whatever this returns.
+   */
+  async route(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+    url: URL
+  ): Promise<Response> {
     const path = url.pathname;
     const method = request.method;
-
-    // 1. Handle CORS Preflight
-    if (method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
 
     // 2. Health Check
     if (path === "/" || path === "/health") {
@@ -64,7 +136,7 @@ export default {
         }),
         {
           status: 200,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" },
         }
       );
     }
@@ -199,13 +271,10 @@ export default {
     }
 
     // 6. Fallback for unhandled routes
-    return new Response(
-      JSON.stringify({ error: "Endpoint not found" }),
-      {
-        status: 404,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      }
-    );
+    return new Response(JSON.stringify({ error: "Endpoint not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
   },
 
   /**

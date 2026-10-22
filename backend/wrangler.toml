@@ -10,6 +10,25 @@ META_GRAPH_API_VERSION = "v21.0"
 PUBLIC_BASE_URL = "https://relo-engine.YOUR-SUBDOMAIN.workers.dev"
 # Frontend origin used by the RELO branding button redirect (/r/:accountId)
 PUBLIC_APP_URL = "https://YOUR-APP.vercel.app"
+# CORS allowlist. Comma-separated origins, scheme included, no trailing slash and
+# NO wildcard. `PUBLIC_APP_URL` above is allowed automatically; list any extra
+# origins (staging dashboard, custom domain) here. Localhost is added
+# automatically whenever ENVIRONMENT is not "production".
+ALLOWED_ORIGINS = "https://YOUR-APP.vercel.app"
+# Flip to "1" only after TURNSTILE_SECRET_KEY is set as a secret: makes a
+# missing CAPTCHA secret a hard failure instead of a logged warning.
+REQUIRE_CAPTCHA = "0"
+
+# Secrets — set with `wrangler secret put <NAME>`, never in this file:
+#   JWT_SECRET                 256-bit random string (required; the API fails closed without it)
+#   ENCRYPTION_MASTER_KEY      64 hex chars (AES-256-GCM vault key)
+#   META_APP_ID / META_APP_SECRET
+#   META_VERIFY_TOKEN
+#   RESEND_API_KEY
+#   ADMIN_SECRET               break-glass admin header (constant-time compared)
+#   ADMIN_EMAILS               comma-separated admin emails
+#   TURNSTILE_SECRET_KEY       Cloudflare Turnstile secret
+#   MANUAL_UPI_ID / LEMON_SQUEEZY_CHECKOUT_URL
 
 [[d1_databases]]
 binding = "DB"

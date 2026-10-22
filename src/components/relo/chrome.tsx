@@ -65,9 +65,9 @@ export const Button = React.forwardRef<
         variant === "ink" &&
           "bg-ink text-ink-invert shadow-[var(--sh-1)] hover:bg-ink/88",
         variant === "outline" &&
-          "border border-line-strong bg-surface text-ink hover:border-ink-3 hover:bg-surface-2",
+          "border border-line-strong bg-surface text-ink hover:border-ink-3 hover:bg-surface-2 dark:bg-surface-3 dark:hover:bg-surface-3/80",
         variant === "ghost" &&
-          "text-ink-2 hover:bg-surface-2 hover:text-ink",
+          "text-ink-2 hover:bg-surface-2 hover:text-ink dark:hover:bg-surface-3/70",
         variant === "destructive" && "bg-bad text-bad-ink hover:bg-bad/88",
         className
       )}
@@ -121,8 +121,8 @@ export function Logo({
     >
       <span
         className={cn(
-          "grid shrink-0 place-items-center rounded-[7px] bg-ink text-canvas",
-          "transition-colors duration-150 ease-out group-hover:bg-signal group-hover:text-signal-ink",
+          "grid shrink-0 place-items-center rounded-[7px] bg-brand text-brand-ink",
+          "transition-colors duration-150 ease-out group-hover:bg-brand-hover",
           size === "md" ? "size-7" : "size-8"
         )}
       >
@@ -205,16 +205,16 @@ export function Field({
 
 /* Shared input shell so every text field in the product is identical. */
 export const inputClass = cn(
-  "w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-[14px] text-ink",
+  "w-full rounded-lg border border-line-strong bg-surface/55 px-3 py-2 text-[14px] text-ink backdrop-blur-md dark:bg-surface-2/70",
   "placeholder:text-ink-3",
-  "transition-[border-color,box-shadow] duration-150 ease-out",
+  "transition-[border-color,box-shadow,background-color] duration-150 ease-out",
   "hover:border-ink-3",
-  "focus:border-signal focus:outline-none focus:ring-[3px] focus:ring-signal/18"
+  "focus:border-signal focus:bg-surface/80 focus:outline-none focus:ring-[3px] focus:ring-signal/18"
 );
 
 /* ── Pill ───────────────────────────────────────────────────────────────── */
 
-export type PillTone = "neutral" | "signal" | "ok" | "warn" | "bad";
+export type PillTone = "neutral" | "signal" | "ok" | "warn" | "bad" | "info";
 
 const PILL: Record<PillTone, string> = {
   neutral: "border-line bg-surface-2 text-ink-2",
@@ -222,6 +222,7 @@ const PILL: Record<PillTone, string> = {
   ok: "border-ok/30 bg-ok-wash text-ok",
   warn: "border-warn/30 bg-warn-wash text-warn",
   bad: "border-bad/30 bg-bad-wash text-bad",
+  info: "border-info/30 bg-info-wash text-info",
 };
 
 export function Pill({

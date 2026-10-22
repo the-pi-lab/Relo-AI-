@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button, Field, Logo, inputClass } from "./chrome";
+import { BrandAurora, LiquidBackdrop } from "./ambient";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { ThemeToggle } from "@/lib/relo/theme";
 import { toast } from "sonner";
@@ -80,53 +81,64 @@ export function LoginPage({
   };
 
   return (
-    <div className="grid min-h-screen bg-canvas lg:grid-cols-[1.1fr_1fr]">
-      {/* Left: the argument. Inverted so the form panel reads as the only
-          place to act. */}
-      <div className="hidden flex-col justify-between bg-ink p-12 text-ink-invert lg:flex">
-        <Logo
-          size="lg"
-          onClick={() => navigate("/")}
-          className="[&_span:last-child]:text-ink-invert"
+    <div className="relative isolate grid min-h-screen overflow-hidden bg-canvas lg:grid-cols-[1.1fr_1fr]">
+      <LiquidBackdrop variant="page" />
+
+      {/* Left: the argument, on the brand's amethyst surface so the form
+          panel reads as the only place to act. */}
+      <div className="relative z-10 hidden flex-col justify-between overflow-hidden bg-brand p-12 text-brand-ink lg:flex">
+        <BrandAurora />
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-[linear-gradient(180deg,rgb(16_5_32/0.18)_0%,transparent_38%,rgb(16_5_32/0.44)_100%)]"
         />
 
-        <div className="max-w-md">
-          <h2 className="h1">
-            Someone comments at 2am. They still get an answer.
-          </h2>
-          <p className="mt-6 text-[15px] leading-relaxed opacity-70">
-            RELO replies in public, then sends a three-button DM with your offer
-            inside. It keeps working while you sleep, and every tap lands in your
-            lead list with its source attached.
+        <div className="relative z-10 flex h-full flex-col justify-between">
+          <Logo
+            size="lg"
+            onClick={() => navigate("/")}
+            className="[&_span:first-child]:bg-brand-ink [&_span:first-child]:text-brand [&_span:last-child]:text-brand-ink"
+          />
+
+          <div className="max-w-md">
+            <h2 className="h1">
+              Someone comments at 2am. They{" "}
+              <span className="editorial">still</span> get an answer.
+            </h2>
+            <p className="mt-6 text-[15px] leading-relaxed opacity-70">
+              RELO replies in public, then sends a three-button DM with your offer
+              inside. It keeps working while you sleep, and every tap lands in your
+              lead list with its source attached.
+            </p>
+
+            <ul className="mt-10 divide-y divide-current/15 border-t border-current/15">
+              {ASSURANCES.map((a) => (
+                <li
+                  key={a}
+                  className="flex items-center gap-3 py-3.5 text-[13.5px] opacity-80"
+                >
+                  <span className="size-1.5 rounded-full bg-signal shadow-[0_0_10px_var(--signal)]" aria-hidden />
+                  {a}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="font-mono text-[11px] uppercase tracking-[0.1em] opacity-50">
+            &copy; 2026 The Pi Lab
           </p>
-
-          <ul className="mt-10 divide-y divide-current/15 border-t border-current/15">
-            {ASSURANCES.map((a) => (
-              <li
-                key={a}
-                className="flex items-center gap-3 py-3.5 text-[13.5px] opacity-80"
-              >
-                <span className="size-1.5 rounded-full bg-signal" aria-hidden />
-                {a}
-              </li>
-            ))}
-          </ul>
         </div>
-
-        <p className="font-mono text-[11px] uppercase tracking-[0.1em] opacity-50">
-          &copy; 2026 The Pi Lab
-        </p>
       </div>
 
       {/* Right: the form */}
-      <div className="relative flex flex-col">
+      <div className="relative z-10 flex flex-col">
         <div className="flex items-center justify-between p-5 sm:p-6">
           <Logo onClick={() => navigate("/")} className="lg:invisible" />
           <ThemeToggle />
         </div>
 
         <div className="flex flex-1 items-center justify-center px-5 pb-16 sm:px-6">
-          <div className="w-full max-w-[400px]">
+          <div className="glass-panel view-enter w-full max-w-[440px] rounded-[28px] p-6 sm:p-9">
             {step === "email" ? (
               <>
                 <h1 className="h2 text-ink">Sign in</h1>
@@ -218,9 +230,9 @@ export function LoginPage({
                           key={i}
                           index={i}
                           className={cn(
-                            "h-12 w-11 rounded-md border border-line-strong bg-surface font-mono text-[15px] text-ink",
-                            "transition-[border-color,box-shadow] duration-150 ease-out",
-                            "focus:border-signal focus:ring-[3px] focus:ring-signal/18",
+                            "h-12 w-11 rounded-lg border border-line-strong bg-surface/55 font-mono text-[15px] text-ink backdrop-blur-md",
+                            "transition-[border-color,box-shadow,background-color] duration-150 ease-out",
+                            "focus:border-signal focus:bg-surface/80 focus:ring-[3px] focus:ring-signal/18",
                             "data-[filled=true]:border-signal data-[filled=true]:bg-signal-wash"
                           )}
                         />
@@ -251,7 +263,7 @@ export function LoginPage({
                   )}
                 </div>
 
-                <p className="mt-8 rounded-md border border-line bg-surface-2 px-3.5 py-3 font-mono text-[12px] text-ink-2">
+                <p className="mt-8 rounded-lg border border-line/70 bg-surface-2/45 px-3.5 py-3 font-mono text-[12px] text-ink-2">
                   Demo code {DEMO_CODE} &middot; expires in 10 minutes &middot; 5 attempts
                 </p>
               </>

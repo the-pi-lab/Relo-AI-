@@ -9,6 +9,29 @@ export interface JwtPayload {
 }
 
 /**
+ * Resolves the signing secret, failing closed.
+ *
+ * A Worker deployed without `JWT_SECRET` must never mint a token that any
+ * other deployment could forge (or that HMACs with the literal string
+ * "undefined"). Signing throws; verification returns null.
+ */
+const MIN_SECRET_LENGTH = 32;
+
+function requireSigningSecret(secret: string | undefined): string {
+  if (typeof secret !== "string" || secret.trim().length === 0) {
+    throw new Error(
+      "[Auth] JWT_SECRET is not configured. Refusing to sign or verify session tokens."
+    );
+  }
+  if (secret.length < MIN_SECRET_LENGTH) {
+    console.warn(
+      `[Auth] JWT_SECRET is shorter than ${MIN_SECRET_LENGTH} characters. Rotate it to a 256-bit random value.`
+    );
+  }
+  return secret;
+}
+
+/**
  * Base64Url string encoding according to RFC 7515
  */
 function base64UrlEncode(str: string): string {
@@ -63,7 +86,7 @@ export async function signJwt(
   const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
 
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const key = await getHmacKey(secret);
+  const key = await getHmacKey(requireSigningSecret(secret));
   const encoder = new TextEncoder();
 
   const signatureBuffer = await crypto.subtle.sign(
@@ -102,7 +125,7 @@ export async function verifyJwt(
     const header = JSON.parse(base64UrlDecode(encodedHeader)) as { alg?: string };
     if (header.alg !== "HS256") return null;
 
-    const key = await getHmacKey(secret);
+    const key = await getHmacKey(requireSigningSecret(secret));
     const encoder = new TextEncoder();
 
     // Decode signature

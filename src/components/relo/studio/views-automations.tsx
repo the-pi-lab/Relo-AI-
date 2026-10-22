@@ -41,13 +41,14 @@ function ArmToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       className={cn(
         "flex h-6 w-11 shrink-0 items-center rounded-full border px-0.5 transition-colors duration-150 ease-out",
         on
-          ? "border-ok/40 bg-ok"
-          : "border-line-strong bg-surface-2 hover:border-ink-3 hover:bg-surface-3"
+          ? "border-signal bg-signal"
+          : "border-line-strong bg-line-strong hover:border-ink-3 hover:bg-surface-3"
       )}
     >
       <span
         className={cn(
-          "size-5 rounded-full bg-white shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
+          "size-5 rounded-full shadow-[var(--sh-1)] transition-transform duration-150 ease-out",
+          on ? "bg-signal-ink" : "bg-ink",
           on && "translate-x-[18px]"
         )}
       />
@@ -118,7 +119,7 @@ export function AutomationsView() {
         title="Automations"
         sub="Pick a reel. Arm the keywords. Design the DM card. RELO handles every comment after that."
       >
-        <Button onClick={openNew}>
+        <Button variant="signal" onClick={openNew}>
           <Plus className="size-4" strokeWidth={1.75} aria-hidden /> New automation
         </Button>
       </ViewHead>
@@ -128,7 +129,7 @@ export function AutomationsView() {
           title="No automations yet"
           sub="Your first one takes about two minutes. Pick your best reel and a keyword your fans already type."
         >
-          <Button onClick={openNew}>
+          <Button variant="signal" onClick={openNew}>
             <Plus className="size-4" strokeWidth={1.75} aria-hidden /> Create automation
           </Button>
         </EmptyState>
@@ -137,7 +138,7 @@ export function AutomationsView() {
           {automations.map((a) => (
             <article
               key={a.id}
-              className="flex flex-col rounded-xl border border-line bg-surface p-5 shadow-[var(--sh-1)]"
+              className="glass-card flex flex-col rounded-2xl p-5"
             >
               <div className="flex items-start justify-between gap-3">
                 <p className="line-clamp-2 text-[13.5px] font-semibold leading-snug text-ink">
@@ -150,7 +151,7 @@ export function AutomationsView() {
                 {a.triggerKeywords.map((k) => (
                   <span
                     key={k}
-                    className="rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2"
+                    className="rounded-md border border-line/70 bg-surface-2/70 px-1.5 py-0.5 font-mono text-[11px] text-ink-2"
                   >
                     #{k}
                   </span>
@@ -160,7 +161,7 @@ export function AutomationsView() {
                 </span>
               </div>
 
-              <div className="mt-4 rounded-lg border border-line bg-surface-2 p-3">
+              <div className="mt-4 rounded-xl border border-line/70 bg-surface-2/45 p-3">
                 <p className="truncate text-[13px] font-semibold text-ink">
                   {a.templateCard.title || "Untitled card"}
                 </p>
@@ -171,7 +172,12 @@ export function AutomationsView() {
                   {a.templateCard.buttons.slice(0, 3).map((b, i) => (
                     <div
                       key={i}
-                      className="truncate rounded-md bg-signal px-2.5 py-1.5 text-center text-[11.5px] font-semibold text-signal-ink"
+                      className={cn(
+                        "truncate rounded-md px-2.5 py-1.5 text-center text-[11.5px] font-semibold",
+                        i === 0
+                          ? "bg-signal text-signal-ink"
+                          : "border border-line/80 bg-surface/55 text-ink-2"
+                      )}
                     >
                       {b.title || "Untitled button"}
                     </div>
@@ -269,11 +275,11 @@ function AutomationEditor({
     <Dialog open={open} onOpenChange={(v) => (!v ? onClose() : null)}>
       <DialogContent
         className={cn(
-          "max-h-[92vh] gap-0 overflow-y-auto rounded-xl border-line bg-surface p-0 shadow-[var(--sh-3)] sm:max-w-2xl",
+          "max-h-[92vh] gap-0 overflow-y-auto rounded-2xl border-line/60 bg-surface/85 p-0 shadow-[var(--sh-3)] backdrop-blur-2xl sm:max-w-2xl",
           DIALOG_CLOSE
         )}
       >
-        <DialogHeader className="sticky top-0 z-10 border-b border-line bg-surface px-6 py-4">
+        <DialogHeader className="sticky top-0 z-10 border-b border-line/60 bg-surface/85 px-6 py-4 backdrop-blur-2xl">
           <DialogTitle className="h4 text-ink">{draft.id ? "Edit automation" : "New automation"}</DialogTitle>
           <DialogDescription className="text-[12.5px] text-ink-3">
             Trigger, replies, card and extras. Everything saves in your demo studio.
@@ -471,7 +477,10 @@ function AutomationEditor({
                     {draft.templateCard.buttons.filter((b) => b.title.trim()).map((b, i) => (
                       <div
                         key={i}
-                        className="rounded-md bg-signal px-3 py-1.5 text-center text-[11.5px] font-semibold text-signal-ink"
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-center text-[11.5px] font-semibold",
+                          i === 0 ? "bg-signal text-signal-ink" : "border border-line bg-surface text-ink-2"
+                        )}
                       >
                         {b.title}
                       </div>
@@ -525,7 +534,7 @@ function AutomationEditor({
           )}
         </div>
 
-        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line bg-surface px-6 py-4">
+        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line/60 bg-surface/85 px-6 py-4 backdrop-blur-2xl">
           <Button
             variant="ghost"
             size="sm"
@@ -640,7 +649,7 @@ export function LeadsView() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-left">
             <thead>
-              <tr className="border-b border-line bg-surface-2">
+              <tr className="border-b border-line">
                 <th scope="col" className="caption px-5 py-3 font-medium">Lead</th>
                 <th scope="col" className="caption px-5 py-3 font-medium">Status</th>
                 <th scope="col" className="caption px-5 py-3 font-medium">Email</th>
@@ -660,7 +669,7 @@ export function LeadsView() {
                     <p className="max-w-56 truncate font-mono text-[11px] text-ink-3">{l.sourceReelCaption}</p>
                   </td>
                   <td className="px-5 py-3">
-                    <Pill tone={l.followerStatusAtTrigger ? "ok" : "neutral"}>
+                    <Pill tone={l.followerStatusAtTrigger ? "info" : "neutral"}>
                       {l.followerStatusAtTrigger ? "follower" : "new"}
                     </Pill>
                   </td>
