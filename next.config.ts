@@ -29,6 +29,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   reactStrictMode: false,
+  experimental: {
+    agentUpgrade: "security",
+  },
   async headers() {
     return [
       {

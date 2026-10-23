@@ -46,7 +46,9 @@ export type Route =
 export function parseHash(hash: string): Route {
   /* strip any query (e.g. #/studio?demo=1) before routing */
   const h = hash.replace(/^#\/?/, "").split("?")[0];
-  if (h === "") return { name: "landing" };
+  if (h === "" || ["simulator", "features", "architecture", "calculator", "spintax", "pricing", "faq"].includes(h)) {
+    return { name: "landing" };
+  }
   if (h === "login") return { name: "login" };
   if (h === "privacy") return { name: "privacy" };
   if (h === "terms") return { name: "terms" };
@@ -55,7 +57,7 @@ export function parseHash(hash: string): Route {
     const view = h === "studio" ? "home" : h.slice("studio/".length) || "home";
     return { name: "studio", view };
   }
-  return { name: "notfound" };
+  return { name: "landing" };
 }
 
 /* The URL is the only source of truth for the route, so the hash is read

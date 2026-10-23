@@ -90,49 +90,45 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
       aria-modal="true"
       aria-labelledby="cookie-title"
       aria-describedby="cookie-desc"
-      className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:w-[440px]"
+      className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:w-[420px]"
     >
-      <div className="glass-strong rounded-2xl p-5">
-        <h2 id="cookie-title" className="h4 text-ink">
-          A word about cookies
+      <div className="rounded-2xl border border-white/15 bg-black/80 p-5 shadow-2xl shadow-black/80 backdrop-blur-2xl text-white">
+        <h2 id="cookie-title" className="text-sm font-bold text-white tracking-tight">
+          Privacy & Local Storage
         </h2>
 
-        <p id="cookie-desc" className="mt-2.5 text-[13.5px] leading-relaxed text-ink-2">
-          RELO sets no cookies at all. It keeps three things in this browser: your
-          theme choice, your studio demo state, and the answer you give this banner.
-          No trackers, no advertising, no third-party pixels.{" "}
+        <p id="cookie-desc" className="mt-2 text-xs leading-relaxed text-white/70">
+          RELO sets zero trackers or advertising cookies. It only stores your theme preference, demo workspace state, and gradient shader selection locally in your browser.{" "}
           <button
             type="button"
             onClick={() => {
               navigate("/cookies");
               setOpen(false);
             }}
-            className="font-semibold text-signal underline decoration-signal/35 underline-offset-2 transition-colors hover:decoration-signal"
+            className="font-semibold text-cyan-400 underline underline-offset-2 transition-colors hover:text-cyan-300"
           >
-            Read the full inventory
+            Read details
           </button>
           .
         </p>
 
-        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <Button
             ref={acceptRef}
             variant="signal"
-            className="flex-1"
+            className="flex-1 text-xs"
             onClick={() => choose("all")}
           >
-            Accept all cookies
+            Accept
           </Button>
           <Button
             variant="outline"
-            className="flex-1"
+            className="flex-1 text-xs border-white/10 text-white/80 hover:bg-white/10"
             onClick={() => choose("necessary")}
           >
-            Only what is necessary
+            Essential only
           </Button>
         </div>
-
-        <p className="caption mt-4">Change your mind from any footer</p>
       </div>
     </div>
   );

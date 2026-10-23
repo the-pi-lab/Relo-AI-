@@ -16,14 +16,16 @@ import {
   Users,
   Workflow,
   X,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "../chrome";
-import { LiquidBackdrop } from "../ambient";
-import { ThemeToggle } from "@/lib/relo/theme";
+import { FlowingGradientsCanvas } from "../FlowingGradientsCanvas";
+import { LightDarkToggle } from "../LightDarkToggle";
 import { Meter } from "./studio-ui";
 import { useRelo } from "@/lib/relo/store";
+import { useTheme } from "@/lib/relo/theme";
 import { TIER_CREDIT_LIMITS, TIER_META } from "@/lib/relo/data";
 import {
   DropdownMenu,
@@ -33,14 +35,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-/* ==========================================================================
-   Studio shell.
-
-   The shell owns the sidebar, the global top bar and the responsive drawer.
-   It deliberately does NOT print the page title: each view renders its own
-   header, which is what stops every screen announcing its name twice.
-   ========================================================================== */
 
 interface NavItem {
   view: string;
@@ -52,30 +46,30 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Overview",
     items: [
-      { view: "home", label: "Home", icon: LayoutDashboard },
-      { view: "insights", label: "Insights", icon: TrendingUp },
+      { view: "home", label: "Dashboard", icon: LayoutDashboard },
+      { view: "insights", label: "Analytics", icon: TrendingUp },
     ],
   },
   {
     label: "Automate",
     items: [
-      { view: "automations", label: "Automations", icon: Workflow },
-      { view: "canvas", label: "Canvas", icon: GitBranch },
-      { view: "content", label: "Content", icon: CalendarDays },
+      { view: "automations", label: "Reels & Keywords", icon: Workflow },
+      { view: "canvas", label: "Visual Flow", icon: GitBranch },
+      { view: "content", label: "Planner", icon: CalendarDays },
     ],
   },
   {
     label: "Audience",
     items: [
-      { view: "leads", label: "Leads", icon: Users },
-      { view: "campaigns", label: "Campaigns", icon: Send },
+      { view: "leads", label: "Captured Leads", icon: Users },
+      { view: "campaigns", label: "Broadcasts", icon: Send },
     ],
   },
   {
     label: "Storefront",
     items: [
-      { view: "products", label: "Products", icon: Package },
-      { view: "bio", label: "Link in bio", icon: Globe },
+      { view: "products", label: "Offers & Links", icon: Package },
+      { view: "bio", label: "Bio Page", icon: Globe },
     ],
   },
   {
@@ -84,7 +78,6 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-/* Plan gating, kept in one place so the sidebar and the views agree. */
 function isLocked(view: string, plan: string) {
   if (plan === "free") {
     return ["campaigns", "products", "bio", "content"].includes(view);
@@ -94,8 +87,6 @@ function isLocked(view: string, plan: string) {
   }
   return false;
 }
-
-/* ── Nav item ───────────────────────────────────────────────────────────── */
 
 function NavRow({
   item,
@@ -108,7 +99,9 @@ function NavRow({
   locked: boolean;
   onClick: () => void;
 }) {
+  const { isDark } = useTheme();
   const Icon = item.icon;
+
   return (
     <button
       type="button"
@@ -116,36 +109,45 @@ function NavRow({
       disabled={locked}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-[13.5px] transition-all duration-200 ease-out",
+        "group relative flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-xs font-medium transition-all duration-200",
         active
-          ? "border-line/60 bg-surface-2/75 font-semibold text-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.05)] dark:bg-white/[0.055]"
+          ? isDark
+            ? "border-cyan-400/30 bg-cyan-500/15 text-cyan-300 font-semibold shadow-lg shadow-black/40"
+            : "border-cyan-500/40 bg-cyan-500/15 text-cyan-900 font-bold shadow-md shadow-cyan-500/10"
           : locked
-            ? "cursor-not-allowed border-transparent font-medium text-ink-3"
-            : "border-transparent font-medium text-ink-2 hover:border-line/50 hover:bg-surface-2/55 hover:text-ink dark:hover:bg-white/[0.035]"
+            ? isDark
+              ? "cursor-not-allowed border-transparent text-white/30"
+              : "cursor-not-allowed border-transparent text-zinc-400"
+            : isDark
+              ? "border-transparent text-white/65 hover:border-white/8 hover:bg-white/5 hover:text-white"
+              : "border-transparent text-zinc-600 hover:border-black/5 hover:bg-black/5 hover:text-zinc-900"
       )}
     >
       <span
-        aria-hidden
+        aria-hidden="true"
         className={cn(
-          "absolute -left-2.5 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-gradient-to-b from-signal to-brand-line transition-opacity duration-200",
+          "absolute -left-2.5 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-cyan-400 shadow-[0_0_8px_#00e5ff] transition-opacity duration-200",
           active ? "opacity-100" : "opacity-0"
         )}
       />
       <Icon
         className={cn(
           "size-4 shrink-0 transition-colors",
-          active ? "text-signal" : "text-ink-3 group-hover:text-ink-2"
+          active ? (isDark ? "text-cyan-400" : "text-cyan-600") : undefined
         )}
-        strokeWidth={1.75}
-        aria-hidden
+        strokeWidth={1.8}
+        aria-hidden="true"
       />
       <span className="truncate">{item.label}</span>
-      {locked && <Lock className="ml-auto size-3.5 shrink-0 text-ink-3" aria-hidden />}
+      {locked && (
+        <Lock
+          className={cn("ml-auto size-3 shrink-0", isDark ? "text-white/30" : "text-zinc-400")}
+          aria-hidden="true"
+        />
+      )}
     </button>
   );
 }
-
-/* ── Sidebar ────────────────────────────────────────────────────────────── */
 
 function Sidebar({
   view,
@@ -157,40 +159,80 @@ function Sidebar({
   onClose?: () => void;
 }) {
   const { plan, aiCredits, user } = useRelo();
+  const { isDark } = useTheme();
   const limit = TIER_CREDIT_LIMITS[plan];
   const pct = limit > 0 ? Math.round((aiCredits / limit) * 100) : 0;
   const tier = TIER_META[plan];
 
   return (
-    <div className="relative flex h-full flex-col bg-surface/70 backdrop-blur-2xl dark:bg-surface-2/70">
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-line/55 px-5">
-        <Logo onClick={() => go("home")} />
+    <div
+      className={cn(
+        "relative flex h-full flex-col border-r backdrop-blur-2xl transition-colors duration-300",
+        isDark
+          ? "border-white/8 bg-black/60"
+          : "border-black/8 bg-white/75 shadow-xl shadow-zinc-200/50"
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-16 shrink-0 items-center justify-between border-b px-5",
+          isDark ? "border-white/8" : "border-black/8"
+        )}
+      >
+        <div
+          onClick={() => go("home")}
+          className="flex items-center gap-2 cursor-pointer group"
+        >
+          <div className="size-7 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-xs text-white shadow-md shadow-cyan-500/20">
+            R
+          </div>
+          <span className={cn("font-bold tracking-tight text-sm", isDark ? "text-white" : "text-zinc-900")}>
+            RELO<span className="text-cyan-500">.AI</span>
+          </span>
+        </div>
+
         {onClose && (
           <button
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="grid size-8 place-items-center rounded-lg text-ink-3 transition-colors hover:bg-surface-2/70 hover:text-ink"
+            className={cn(
+              "grid size-8 place-items-center rounded-lg transition-colors",
+              isDark ? "text-white/50 hover:bg-white/10 hover:text-white" : "text-zinc-500 hover:bg-black/5 hover:text-zinc-900"
+            )}
           >
-            <X className="size-4" aria-hidden />
+            <X className="size-4" />
           </button>
         )}
       </div>
 
       {user?.isDemo && (
-        <div className="glass-chip mx-3 mb-3 mt-3 flex items-start gap-2.5 rounded-xl px-3 py-2.5">
-          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-signal shadow-[0_0_10px_var(--signal)]" aria-hidden />
-          <p className="text-[12px] leading-snug text-ink-2">
-            <span className="font-semibold text-ink">Demo workspace.</span> Every
-            screen is populated. Nothing you do here is saved to a real account.
+        <div
+          className={cn(
+            "mx-3 my-3 flex items-start gap-2 rounded-xl border p-2.5",
+            isDark
+              ? "border-white/8 bg-white/[0.03]"
+              : "border-cyan-500/20 bg-cyan-50/50"
+          )}
+        >
+          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-cyan-400 animate-pulse" />
+          <p className={cn("text-[11px] leading-snug", isDark ? "text-white/70" : "text-zinc-600")}>
+            <strong className={isDark ? "text-white" : "text-zinc-900"}>Demo Workspace.</strong> Preloaded with active sample campaigns.
           </p>
         </div>
       )}
 
-      <nav aria-label="Studio" className="flex-1 overflow-y-auto px-5 pb-4 pt-2">
+      <nav aria-label="Studio" className="flex-1 overflow-y-auto px-4 pb-4 pt-1 space-y-4">
         {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mb-5">
-            <p className="caption mb-2 px-1">{group.label}</p>
+          <div key={group.label}>
+            <p
+              className={cn(
+                "px-2 pb-1.5 text-[10px] font-mono uppercase tracking-widest",
+                isDark ? "text-white/40" : "text-zinc-400"
+              )}
+            >
+              {group.label}
+            </p>
             <div className="space-y-0.5">
               {group.items.map((item) => (
                 <NavRow
@@ -209,112 +251,133 @@ function Sidebar({
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-line/55 p-3">
-        <div className="mb-2.5 flex items-center justify-between rounded-xl border border-line/50 bg-surface-2/35 px-3 py-2 backdrop-blur-md lg:hidden">
-          <span className="text-[12px] font-medium text-ink-3">Theme</span>
-          <ThemeToggle />
-        </div>
-        <div className="relative overflow-hidden rounded-2xl border border-line/60 bg-gradient-to-br from-surface-2/80 to-surface/45 p-4 backdrop-blur-xl">
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -right-10 -top-12 size-32 rounded-full bg-[radial-gradient(circle,var(--glow-3),transparent_68%)] opacity-80"
-          />
-          <div className="relative flex items-baseline justify-between gap-2">
-            <p className="text-[13px] font-semibold text-ink">{tier.name} plan</p>
-            <span className="caption">{tier.price}</span>
+      <div className={cn("shrink-0 border-t p-3.5", isDark ? "border-white/8" : "border-black/8")}>
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-2xl border p-3.5 transition-colors",
+            isDark
+              ? "border-white/10 bg-white/[0.03]"
+              : "border-black/8 bg-black/[0.02]"
+          )}
+        >
+          <div className="flex items-baseline justify-between text-xs">
+            <span className={cn("font-semibold", isDark ? "text-white" : "text-zinc-900")}>
+              {tier.name} Plan
+            </span>
+            <span className={cn("font-mono text-[10px]", isDark ? "text-white/50" : "text-zinc-500")}>
+              {tier.price}
+            </span>
           </div>
-          <p className="relative mt-1.5 text-[12px] leading-snug text-ink-3">
-            {tier.blurb}
-          </p>
-
-          <div className="relative mt-3.5 flex items-baseline justify-between text-[12px]">
-            <span className="text-ink-3">AI credits</span>
-            <span className="font-mono font-semibold text-ink tnum">
+          <div className="mt-2 flex items-baseline justify-between text-[11px] font-mono">
+            <span className={isDark ? "text-white/50" : "text-zinc-500"}>Credits</span>
+            <span className={cn("font-bold", isDark ? "text-white" : "text-zinc-900")}>
               {aiCredits} / {limit}
             </span>
           </div>
-          <div className="relative mt-2">
-            <Meter pct={pct} tone={pct < 20 ? "warn" : "signal"} label="AI credits used" />
+          <div className={cn("mt-1.5 h-1 w-full rounded-full overflow-hidden", isDark ? "bg-white/10" : "bg-black/10")}>
+            <div
+              className="h-full rounded-full bg-cyan-400 transition-all"
+              style={{ width: `${pct}%` }}
+            />
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              go("settings");
-              onClose?.();
-            }}
-            className="relative mt-4 w-full rounded-xl bg-signal py-2 text-[12.5px] font-semibold text-signal-ink shadow-[0_10px_30px_-16px_var(--signal)] transition-all duration-150 ease-out hover:bg-signal-hover active:translate-y-px"
-          >
-            {plan === "studio" ? "Manage plan" : "Upgrade plan"}
-          </button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── Top bar ────────────────────────────────────────────────────────────── */
-
 function TopBar({ onMenu, onHome }: { onMenu: () => void; onHome: () => void }) {
   const { plan, aiCredits, user, signOut } = useRelo();
-  const limit = TIER_CREDIT_LIMITS[plan];
-  const pct = limit > 0 ? Math.round((aiCredits / limit) * 100) : 0;
-  const who = user?.isDemo ? "Demo guest" : user?.email ?? "Account";
+  const { isDark } = useTheme();
+  const who = user?.isDemo ? "Demo Creator" : user?.email ?? "Account";
   const initial = (user?.email?.[0] ?? "R").toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line/60 bg-canvas/65 px-4 backdrop-blur-2xl sm:px-6 lg:px-8">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-signal/25 to-transparent"
-      />
+    <header
+      className={cn(
+        "sticky top-0 z-30 flex h-16 items-center gap-3 border-b px-4 backdrop-blur-2xl transition-colors duration-300 sm:px-6 lg:px-8",
+        isDark
+          ? "border-white/8 bg-black/40 text-white"
+          : "border-black/8 bg-white/70 text-zinc-900 shadow-sm"
+      )}
+    >
       <button
         type="button"
         onClick={onMenu}
         aria-label="Open menu"
-        className="grid size-9 shrink-0 place-items-center rounded-xl border border-line/70 bg-surface/45 text-ink-2 backdrop-blur-md transition-colors hover:text-ink lg:hidden"
+        className={cn(
+          "grid size-9 shrink-0 place-items-center rounded-xl border lg:hidden transition-colors",
+          isDark
+            ? "border-white/10 bg-white/5 text-white/70 hover:text-white"
+            : "border-black/10 bg-black/5 text-zinc-600 hover:text-zinc-900"
+        )}
       >
-        <Menu className="size-4" aria-hidden />
+        <Menu className="size-4" />
       </button>
-      <Logo onClick={onHome} className="lg:hidden" />
 
-      <div className="hidden items-center gap-2 lg:flex">
-        <span className="glass-chip inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[12px] font-medium text-ink-2">
-          <span className="size-1.5 rounded-full bg-ok shadow-[0_0_8px_var(--ok)]" aria-hidden />
-          Instagram connected
+      <div className="hidden items-center gap-2.5 lg:flex">
+        <span
+          className={cn(
+            "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-mono font-medium",
+            isDark
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+              : "border-emerald-600/25 bg-emerald-50 text-emerald-800"
+          )}
+        >
+          <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          Instagram Connected · @relo.studio
         </span>
       </div>
 
-      <div className="ml-auto flex items-center gap-2.5">
-        <div className="glass-chip hidden items-center gap-3 rounded-full py-1 pl-3 pr-2.5 md:flex">
-          <span className="font-mono text-[12px] text-ink-2 tnum">
-            {aiCredits} credits
-          </span>
-          <span className="w-14">
-            <Meter pct={pct} tone={pct < 20 ? "warn" : "signal"} label="AI credits used" />
-          </span>
-        </div>
+      <div className="ml-auto flex items-center gap-3">
+        {/* Dark/Light Mode Toggle */}
+        <LightDarkToggle />
 
-        <ThemeToggle className="hidden sm:inline-flex" />
+        <div
+          className={cn(
+            "hidden sm:inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs",
+            isDark
+              ? "border-white/10 bg-white/5 text-white/80"
+              : "border-black/10 bg-black/5 text-zinc-700"
+          )}
+        >
+          <span>{aiCredits} credits</span>
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="Account menu"
-              className="glass-chip grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-bold text-ink transition-colors duration-150 hover:border-line-strong"
+              className={cn(
+                "grid size-9 shrink-0 place-items-center rounded-full border text-xs font-bold transition-all shadow-md",
+                isDark
+                  ? "border-white/15 bg-white/10 text-white hover:bg-white/20"
+                  : "border-black/15 bg-zinc-800 text-white hover:bg-zinc-700"
+              )}
             >
               {initial}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuContent
+            align="end"
+            className={cn(
+              "w-56 shadow-2xl backdrop-blur-xl",
+              isDark
+                ? "bg-black/90 border-white/12 text-white"
+                : "bg-white/95 border-black/10 text-zinc-900"
+            )}
+          >
             <DropdownMenuLabel className="flex flex-col gap-0.5">
-              <span className="text-[13px] font-semibold text-ink">{who}</span>
-              <span className="caption">{TIER_META[plan].name} plan</span>
+              <span className={cn("text-xs font-semibold", isDark ? "text-white" : "text-zinc-900")}>
+                {who}
+              </span>
+              <span className={cn("text-[10px] font-mono", isDark ? "text-white/40" : "text-zinc-500")}>
+                {TIER_META[plan].name} Plan
+              </span>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={signOut} className="gap-2.5">
-              <LogOut className="size-4" strokeWidth={1.75} aria-hidden />
+            <DropdownMenuSeparator className={isDark ? "bg-white/10" : "bg-black/10"} />
+            <DropdownMenuItem onSelect={signOut} className="gap-2 text-xs text-rose-500 focus:text-rose-600">
+              <LogOut className="size-3.5" />
               Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -323,8 +386,6 @@ function TopBar({ onMenu, onHome }: { onMenu: () => void; onHome: () => void }) 
     </header>
   );
 }
-
-/* ── Shell ──────────────────────────────────────────────────────────────── */
 
 export function StudioShell({
   view,
@@ -336,25 +397,23 @@ export function StudioShell({
   children: React.ReactNode;
 }) {
   const [drawer, setDrawer] = useState(false);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [view]);
 
-  useEffect(() => {
-    if (!drawer) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDrawer(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [drawer]);
-
   return (
-    <div className="relative isolate min-h-screen bg-canvas">
-      <LiquidBackdrop variant="studio" />
+    <div
+      className={cn(
+        "relative isolate min-h-screen transition-colors duration-300",
+        isDark ? "text-white" : "text-zinc-900"
+      )}
+    >
+      {/* 60fps Live Tide Swirl Blue Flowing Gradient Background */}
+      <FlowingGradientsCanvas variant="subtle" />
 
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-[248px] border-r border-line/60 lg:block">
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-[240px] lg:block">
         <Sidebar view={view} go={go} />
       </aside>
 
@@ -362,23 +421,17 @@ export function StudioShell({
         <div className="lg:hidden">
           <div
             onClick={() => setDrawer(false)}
-            className="fixed inset-0 z-30 bg-overlay backdrop-blur-sm"
-            aria-hidden
+            className="fixed inset-0 z-30 bg-black/70 backdrop-blur-sm"
           />
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Studio menu"
-            className="fixed inset-y-0 left-0 z-40 w-[272px] border-r border-line/70 shadow-[0_30px_90px_-30px_rgb(0_0_0/0.8)]"
-          >
+          <aside className="fixed inset-y-0 left-0 z-40 w-[260px]">
             <Sidebar view={view} go={go} onClose={() => setDrawer(false)} />
           </aside>
         </div>
       )}
 
-      <div className="relative z-10 lg:pl-[248px]">
+      <div className="relative z-10 lg:pl-[240px]">
         <TopBar onMenu={() => setDrawer(true)} onHome={() => go("home")} />
-        <div className="mx-auto min-h-[calc(100vh-4rem)] max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div className="mx-auto min-h-[calc(100vh-4rem)] max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div key={view} className="view-enter">
             {children}
           </div>

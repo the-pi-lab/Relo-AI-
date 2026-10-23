@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useHashRoute, ReloProvider, useRelo } from "@/lib/relo/store";
 import { ThemeProvider } from "@/lib/relo/theme";
+import { GradientProvider } from "@/lib/relo/gradients";
 import { LandingPage } from "./landing";
 import { LoginPage } from "./login";
 import { PrivacyPage, TermsPage, CookiesPage, NotFoundPage } from "./pages";
@@ -98,9 +99,11 @@ function Router() {
 export function ReloApp() {
   return (
     <ThemeProvider>
-      <ReloProvider>
-        <Router />
-      </ReloProvider>
+      <GradientProvider>
+        <ReloProvider>
+          <Router />
+        </ReloProvider>
+      </GradientProvider>
     </ThemeProvider>
   );
 }
