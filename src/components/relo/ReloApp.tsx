@@ -7,6 +7,10 @@ import { ThemeProvider } from "@/lib/relo/theme";
 import { LandingPage } from "./landing";
 import { LoginPage } from "./login";
 import { PrivacyPage, TermsPage, CookiesPage, NotFoundPage } from "./pages";
+import { ComparisonPage } from "./pages-compare";
+import { UseCasePage } from "./pages-usecases";
+import { AboutPage, CareersPage, AffiliatesPage, PricingPage } from "./pages-company";
+import { BlogPage, DocsPage, SecurityPage, ProductDetailPage } from "./pages-resources";
 import { CookieConsent } from "./cookie-consent";
 import { StudioShell } from "./studio/StudioShell";
 import { InsightsView } from "./studio/views-charts";
@@ -71,7 +75,16 @@ function Router() {
     }
   };
 
-  const key = route.name === "studio" ? `studio-${studioView}` : route.name;
+  const key = route.name === "studio" 
+    ? `studio-${studioView}` 
+    : route.name === "compare" 
+    ? `compare-${route.competitor}`
+    : route.name === "use-case"
+    ? `use-case-${route.niche}`
+    : route.name === "product"
+    ? `product-${route.feature}`
+    : route.name;
+
   const studioReady = status === "signed-in";
 
   return (
@@ -94,6 +107,16 @@ function Router() {
         {route.name === "privacy" && <PrivacyPage navigate={navigate} />}
         {route.name === "terms" && <TermsPage navigate={navigate} />}
         {route.name === "cookies" && <CookiesPage navigate={navigate} />}
+        {route.name === "about" && <AboutPage navigate={navigate} />}
+        {route.name === "careers" && <CareersPage navigate={navigate} />}
+        {route.name === "affiliates" && <AffiliatesPage navigate={navigate} />}
+        {route.name === "pricing" && <PricingPage navigate={navigate} />}
+        {route.name === "blog" && <BlogPage navigate={navigate} />}
+        {route.name === "docs" && <DocsPage navigate={navigate} />}
+        {route.name === "security" && <SecurityPage navigate={navigate} />}
+        {route.name === "compare" && <ComparisonPage competitor={route.competitor} navigate={navigate} />}
+        {route.name === "use-case" && <UseCasePage niche={route.niche} navigate={navigate} />}
+        {route.name === "product" && <ProductDetailPage feature={route.feature} navigate={navigate} />}
         {route.name === "notfound" && <NotFoundPage navigate={navigate} />}
 
         {route.name === "studio" &&

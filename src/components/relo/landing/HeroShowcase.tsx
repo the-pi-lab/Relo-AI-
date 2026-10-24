@@ -13,151 +13,167 @@ interface HeroShowcaseProps {
 
 export function HeroShowcase({ onStartFree, onSeeHowItWorks }: HeroShowcaseProps) {
   return (
-    <section className="relative overflow-hidden pt-12 pb-16 md:pt-18 md:pb-24">
-      {/* Glow aura */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-10 -translate-x-1/2 size-[650px] rounded-full opacity-25 blur-3xl"
-        style={{
-          background: "radial-gradient(circle, var(--signal) 0%, rgba(106,7,228,0.2) 50%, transparent 75%)",
-        }}
-      />
+    <section className="relative px-4 sm:px-6 lg:px-8 pt-4 pb-16">
+      {/* ── Main Hero Frame Container with Full Photo Background ── */}
+      <div className="relative mx-auto max-w-[1360px] min-h-[820px] md:min-h-[880px] lg:min-h-[920px] rounded-3xl sm:rounded-[36px] overflow-hidden border border-white/20 shadow-2xl flex flex-col justify-between p-6 sm:p-10 md:p-14 text-center">
+        {/* The Full Background Photo */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/images/relo/hero-creator.jpg"
+            alt="RELO Creators celebrating viral growth with glowing phone flashlights"
+            fill
+            priority
+            className="object-cover object-[center_35%]"
+          />
+          {/* Multi-layered cinematic gradient overlays for high-contrast typography and subtle bottom vignette */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/85 via-black/40 to-black/90 pointer-events-none" />
+          <div 
+            aria-hidden
+            className="absolute inset-0 pointer-events-none opacity-30"
+            style={{
+              background: "radial-gradient(ellipse at 50% 20%, rgba(106,7,228,0.6) 0%, transparent 65%)"
+            }}
+          />
+        </div>
 
-      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 text-center">
-        {/* Top Trust Capsule */}
-        <Reveal>
-          <div className="inline-flex items-center gap-2 rounded-full border border-signal/25 bg-signal-wash px-3.5 py-1 text-[12px] font-semibold text-signal shadow-[var(--sh-1)]">
-            <Sparkles className="size-3.5 animate-pulse" />
-            <span>The #1 Instagram DM Automation OS for Creators</span>
-          </div>
-        </Reveal>
+        {/* ── Top Region: Badges, Headline, Subtitle, and CTAs ── */}
+        <div className="relative z-10 mx-auto max-w-4xl flex flex-col items-center pt-4 sm:pt-8">
+          {/* Trust Capsule */}
+          <Reveal>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-[12px] sm:text-[13px] font-semibold text-white backdrop-blur-xl shadow-lg">
+              <Sparkles className="size-3.5 text-signal-bright animate-pulse" />
+              <span>The #1 Instagram DM Automation OS for Creators</span>
+            </div>
+          </Reveal>
 
-        {/* Main Headline */}
-        <Reveal delay={0.06}>
-          <h1 className="mt-5 text-4xl font-extrabold tracking-[-0.04em] text-ink sm:text-6xl md:text-7xl lg:leading-[1.08]">
-            Unlimited Free <br className="hidden sm:inline" />
-            <span className="bg-gradient-to-r from-signal via-[#9B42F5] to-[#E22295] bg-clip-text text-transparent">
-              DM Automations
-            </span>
-          </h1>
-        </Reveal>
+          {/* Main Headline */}
+          <Reveal delay={0.06}>
+            <h1 className="mt-6 text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-black tracking-[-0.04em] text-white leading-[1.05]">
+              Unlimited Free <br />
+              <span className="bg-gradient-to-r from-[#C084FC] via-[#F472B6] to-[#FB7185] bg-clip-text text-transparent drop-shadow-sm">
+                DM Automations
+              </span>
+            </h1>
+          </Reveal>
 
-        {/* Subtitle */}
-        <Reveal delay={0.12}>
-          <p className="mx-auto mt-5 max-w-2xl text-base sm:text-lg leading-relaxed text-ink-2">
-            Fuel curiosity and boost engagement with instant automated DMs. Turn every Reel comment, 
-            story reply, and question into a loyal customer and measurable sale.
-          </p>
-        </Reveal>
+          {/* Subtitle */}
+          <Reveal delay={0.12}>
+            <p className="mt-5 max-w-2xl text-base sm:text-lg md:text-xl leading-relaxed text-white/85 font-medium">
+              Fuel curiosity and boost engagement with instant automated DMs. Turn every Reel comment, 
+              story reply, and question into a loyal customer and measurable sale.
+            </p>
+          </Reveal>
 
-        {/* CTA Buttons */}
-        <Reveal delay={0.18}>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3.5">
-            <Button
-              variant="signal"
-              size="lg"
-              onClick={onStartFree}
-              className="obsidian h-12 px-6 text-[15px] font-bold shadow-[0_12px_24px_-8px_rgba(106,7,228,0.4)] transition-transform hover:-translate-y-0.5"
-            >
-              Start for free
-              <ArrowRight className="size-4 ml-1.5" />
-            </Button>
-            <button
-              type="button"
-              onClick={onSeeHowItWorks}
-              className="inline-flex h-12 items-center justify-center rounded-xl border border-line bg-surface/80 px-6 text-[14.5px] font-semibold text-ink backdrop-blur-md transition-colors hover:border-line-strong hover:bg-surface-2"
-            >
-              See how it works
-            </button>
-          </div>
-
-          <p className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[12px] text-ink-3">
-            <span className="inline-flex items-center gap-1.5">
-              <Check className="size-3.5 text-ok" strokeWidth={2.5} />
-              Free plan forever
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Check className="size-3.5 text-ok" strokeWidth={2.5} />
-              No credit card required
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Check className="size-3.5 text-ok" strokeWidth={2.5} />
-              Meta Graph API compliant
-            </span>
-          </p>
-        </Reveal>
-
-        {/* ── Visual Frame: The Crowd & Creator Photo with Interactive Overlays ── */}
-        <Reveal delay={0.24} y={30}>
-          <div className="relative mx-auto mt-12 max-w-5xl overflow-hidden rounded-3xl border border-white/20 bg-surface shadow-2xl">
-            {/* The Image */}
-            <div className="relative aspect-[16/9] w-full overflow-hidden">
-              <Image
-                src="/images/relo/hero-creator.jpg"
-                alt="Creators using RELO AI with phone lights glowing"
-                fill
-                priority
-                className="object-cover object-center"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none" />
+          {/* CTA Buttons */}
+          <Reveal delay={0.18}>
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={onStartFree}
+                className="obsidian h-13 px-8 text-[15.5px] font-extrabold rounded-2xl shadow-[0_12px_32px_-8px_rgba(106,7,228,0.7)] transition-all hover:scale-105 active:scale-95 inline-flex items-center gap-2"
+              >
+                <span>Start for free</span>
+                <ArrowRight className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={onSeeHowItWorks}
+                className="h-13 px-7 text-[15px] font-bold text-white rounded-2xl border border-white/25 bg-white/10 backdrop-blur-xl transition-all hover:bg-white/20 hover:border-white/40"
+              >
+                See how it works
+              </button>
             </div>
 
-            {/* Overlay 1: Comment Trigger (Left) */}
-            <div className="absolute left-4 top-6 sm:left-8 sm:top-10 max-w-[260px] sm:max-w-[310px] text-left">
-              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-0.5 text-[10.5px] font-bold text-white/90 backdrop-blur-md border border-white/10">
-                <span className="grid size-4 place-items-center rounded-full bg-signal text-[9px] font-black text-white">
-                  1
-                </span>
-                When someone comments...
-              </div>
+            {/* Guarantees */}
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12.5px] font-semibold text-white/80">
+              <span className="inline-flex items-center gap-1.5">
+                <Check className="size-4 text-emerald-400" strokeWidth={3} />
+                Free plan forever
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Check className="size-4 text-emerald-400" strokeWidth={3} />
+                No credit card required
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Check className="size-4 text-emerald-400" strokeWidth={3} />
+                Official Meta Graph API compliant
+              </span>
+            </div>
+          </Reveal>
+        </div>
 
-              <div className="rounded-2xl border border-white/20 bg-black/75 p-3.5 text-white backdrop-blur-xl shadow-2xl transition-transform duration-300 hover:scale-[1.02]">
-                <div className="flex items-start gap-2.5">
-                  <div className="grid size-7 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-amber-400 to-rose-500 text-[10px] font-black text-white">
-                    P
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center justify-between text-[11px] font-bold text-white/90">
-                      <span>priya.shoots</span>
-                      <Heart className="size-3 text-rose-500 fill-rose-500" />
-                    </p>
-                    <p className="mt-0.5 text-[12px] font-medium text-white/80">
-                      Send me the link for the <span className="rounded bg-signal/40 px-1 py-0.5 font-bold text-signal-bright border border-signal/50">trial</span>
-                    </p>
-                    <p className="mt-1 text-[9.5px] font-semibold text-white/50">Reply</p>
+        {/* ── Lower Region: Floating Interactive Overlay Cards Across the Crowd Scene ── */}
+        <Reveal delay={0.24} y={25}>
+          <div className="relative z-10 mx-auto w-full max-w-5xl pt-10 sm:pt-14 pb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 items-end gap-6">
+              
+              {/* Overlay 1: Comment Trigger (Left Column) */}
+              <div className="text-left w-full max-w-[340px] mx-auto md:mx-0">
+                <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-[11px] font-bold text-white/95 backdrop-blur-xl border border-white/15 shadow-md">
+                  <span className="grid size-4 place-items-center rounded-full bg-signal text-[9.5px] font-black text-white">
+                    1
+                  </span>
+                  When someone comments...
+                </div>
+
+                <div className="rounded-2xl border border-white/25 bg-black/80 p-4 text-white backdrop-blur-2xl shadow-2xl transition-transform duration-300 hover:scale-[1.02]">
+                  <div className="flex items-start gap-3">
+                    <div className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-amber-400 to-rose-500 text-[11px] font-black text-white shadow">
+                      P
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center justify-between text-[11.5px] font-bold text-white">
+                        <span>priya.shoots</span>
+                        <Heart className="size-3.5 text-rose-500 fill-rose-500" />
+                      </p>
+                      <p className="mt-1 text-[12.5px] font-medium text-white/90">
+                        Send me the link for the <span className="rounded bg-signal/60 px-1.5 py-0.5 font-bold text-white border border-signal">trial</span>
+                      </p>
+                      <p className="mt-1.5 text-[10px] font-semibold text-white/50">2m ago · Reply</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Overlay 2: Text them in DMs (Right) */}
-            <div className="absolute right-4 top-14 sm:right-8 sm:top-18 max-w-[260px] sm:max-w-[320px] text-left">
-              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-0.5 text-[10.5px] font-bold text-white/90 backdrop-blur-md border border-white/10">
-                <span className="grid size-4 place-items-center rounded-full bg-signal text-[9px] font-black text-white">
-                  2
-                </span>
-                Text them in DMs
-              </div>
-
-              <div className="rounded-2xl border border-white/20 bg-black/80 p-3.5 text-white backdrop-blur-xl shadow-2xl transition-transform duration-300 hover:scale-[1.02]">
-                <p className="text-[12px] font-medium text-white/90 leading-snug">
-                  Here&apos;s your link! Enjoy your free trial pack ❤️
-                </p>
-                <div className="mt-2.5">
-                  <div className="flex h-8 items-center justify-center rounded-lg bg-white text-[11.5px] font-bold text-black shadow-md transition-opacity hover:opacity-90 cursor-pointer">
-                    Get Free Access
+              {/* Overlay 2: Center Social Proof Badge */}
+              <div className="flex justify-center order-last md:order-none">
+                <div className="inline-flex items-center gap-3 rounded-full border border-white/30 bg-black/80 px-5 py-2.5 text-white backdrop-blur-2xl shadow-2xl">
+                  <span className="relative flex size-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full size-2.5 bg-emerald-500" />
+                  </span>
+                  <div className="text-left">
+                    <p className="text-[13.5px] font-extrabold tracking-tight">60,000+ Creators</p>
+                    <p className="text-[10.5px] text-white/60 font-medium">growing with RELO in 2026</p>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Overlay 3: Social Proof Badge Pill (Bottom Center) */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 sm:bottom-6">
-              <div className="inline-flex items-center gap-2.5 rounded-full border border-white/25 bg-black/70 px-4 py-1.5 text-white backdrop-blur-xl shadow-2xl">
-                <span className="flex size-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-[13px] font-extrabold tracking-tight">50K+ Creators</span>
-                <span className="text-white/50 text-[11px]">growing on RELO</span>
+              {/* Overlay 3: Text them in DMs (Right Column) */}
+              <div className="text-left w-full max-w-[340px] mx-auto md:ml-auto md:mr-0">
+                <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-[11px] font-bold text-white/95 backdrop-blur-xl border border-white/15 shadow-md">
+                  <span className="grid size-4 place-items-center rounded-full bg-signal text-[9.5px] font-black text-white">
+                    2
+                  </span>
+                  Text them in DMs
+                </div>
+
+                <div className="rounded-2xl border border-white/25 bg-black/85 p-4 text-white backdrop-blur-2xl shadow-2xl transition-transform duration-300 hover:scale-[1.02]">
+                  <p className="text-[12.5px] font-medium text-white/95 leading-snug">
+                    Here&apos;s your link! Enjoy your free trial pack ❤️
+                  </p>
+                  <div className="mt-3">
+                    <div 
+                      onClick={onStartFree}
+                      className="flex h-9 items-center justify-center rounded-xl bg-white text-[12px] font-bold text-black shadow-md transition-opacity hover:opacity-90 cursor-pointer"
+                    >
+                      Get Free Access →
+                    </div>
+                  </div>
+                  <p className="mt-2 text-right text-[10px] font-semibold text-white/50">Delivered · Seen</p>
+                </div>
               </div>
+
             </div>
           </div>
         </Reveal>

@@ -43,6 +43,16 @@ export type Route =
   | { name: "privacy" }
   | { name: "terms" }
   | { name: "cookies" }
+  | { name: "about" }
+  | { name: "careers" }
+  | { name: "affiliates" }
+  | { name: "pricing" }
+  | { name: "blog" }
+  | { name: "docs" }
+  | { name: "security" }
+  | { name: "compare"; competitor: string }
+  | { name: "use-case"; niche: string }
+  | { name: "product"; feature: string }
   | { name: "notfound" };
 
 const LANDING_SECTIONS = [
@@ -65,11 +75,32 @@ const VIEW_ALIASES: Record<string, string> = {
 
 export function parseHash(hash: string): Route {
   const h = hash.replace(/^#\/?/, "").split("?")[0];
-  if (h === "" || LANDING_SECTIONS.includes(h)) return { name: "landing" };
+  if (h === "" || (LANDING_SECTIONS.includes(h) && !hash.includes("#/"))) return { name: "landing" };
   if (h === "login") return { name: "login" };
   if (h === "privacy") return { name: "privacy" };
   if (h === "terms") return { name: "terms" };
   if (h === "cookies") return { name: "cookies" };
+  if (h === "about") return { name: "about" };
+  if (h === "careers") return { name: "careers" };
+  if (h === "affiliates") return { name: "affiliates" };
+  if (h === "pricing") return { name: "pricing" };
+  if (h === "blog") return { name: "blog" };
+  if (h === "docs") return { name: "docs" };
+  if (h === "security") return { name: "security" };
+
+  if (h.startsWith("compare/")) {
+    const competitor = h.slice("compare/".length);
+    return { name: "compare", competitor };
+  }
+  if (h.startsWith("use-cases/")) {
+    const niche = h.slice("use-cases/".length);
+    return { name: "use-case", niche };
+  }
+  if (h.startsWith("product/")) {
+    const feature = h.slice("product/".length);
+    return { name: "product", feature };
+  }
+
   if (h === "studio" || h.startsWith("studio/")) {
     const raw = h === "studio" ? "home" : h.slice("studio/".length) || "home";
     return { name: "studio", view: VIEW_ALIASES[raw] ?? raw };
