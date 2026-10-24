@@ -12,6 +12,7 @@
  */
 
 import { API_URL, metaOAuthUrl } from "./config";
+import { DEMO_TOKEN, demoResponse } from "./demo";
 import type {
   Account,
   Automation,
@@ -170,6 +171,21 @@ interface Envelope<T> {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, query, signal, publicCall } = options;
   const token = getToken();
+
+  /* Demo mode: serve canned reads locally, refuse writes with a friendly
+     error. No request ever leaves the browser. */
+  if (token === DEMO_TOKEN) {
+    const canned = demoResponse(path, method);
+    if (canned === null) {
+      throw new ApiError(
+        "DEMO_MODE",
+        "Demo mode is read-only. Sign in with a real account to save changes.",
+        403
+      );
+    }
+    return canned as T;
+  }
+
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -395,6 +411,13 @@ export const getLeads = (
 /** CSV export is a raw stream, not an envelope, so it bypasses `request`. */
 export const downloadLeadsCsv = async (accountId: string): Promise<Blob> => {
   const token = getToken();
+  if (token === DEMO_TOKEN) {
+    throw new ApiError(
+      "DEMO_MODE",
+      "Exports are disabled in demo mode. Sign in with a real account to download your leads.",
+      403
+    );
+  }
   const response = await fetch(
     `${API_URL}${withQuery("/api/leads/export", { accountId })}`,
     {

@@ -47,16 +47,16 @@ export function buttonClass({
   className?: string;
 } = {}): string {
   return cn(
-    "relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-semibold",
+    "relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold tracking-[-0.01em]",
     "transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
     "active:translate-y-px",
     "disabled:pointer-events-none disabled:opacity-45",
-    size === "sm" && "h-8 px-3 text-[12.5px]",
-    size === "md" && "h-9 px-3.5 text-[13.5px]",
-    size === "lg" && "h-11 px-5 text-[14.5px]",
+    size === "sm" && "h-8 px-3.5 text-[12.5px]",
+    size === "md" && "h-10 px-4.5 text-[13.5px]",
+    size === "lg" && "h-12 px-6 text-[15px]",
     variant === "signal" &&
-      "bg-signal text-signal-ink shadow-[var(--sh-1)] hover:bg-signal-hover",
+      "bg-signal text-signal-ink shadow-[0_8px_24px_-10px_var(--signal)] hover:bg-signal-hover hover:-translate-y-px",
     variant === "ink" && "bg-ink text-ink-invert shadow-[var(--sh-1)] hover:bg-ink/88",
     variant === "outline" &&
       "border border-line-strong bg-surface text-ink hover:border-ink-3 hover:bg-surface-2 dark:bg-surface-3 dark:hover:bg-surface-3/80",
@@ -133,8 +133,8 @@ export function Logo({
     >
       <span
         className={cn(
-          "grid shrink-0 place-items-center rounded-[7px] bg-brand text-brand-ink",
-          "transition-colors duration-150 ease-out group-hover:bg-brand-hover",
+          "grid shrink-0 place-items-center rounded-[9px] ember-gradient text-brand-ink shadow-[0_6px_16px_-6px_var(--signal)]",
+          "transition-transform duration-300 ease-out group-hover:-rotate-6",
           size === "md" ? "size-7" : "size-8"
         )}
       >
@@ -142,7 +142,7 @@ export function Logo({
       </span>
       <span
         className={cn(
-          "font-extrabold tracking-[-0.045em] text-ink",
+          "font-heading font-bold tracking-[-0.04em] text-ink",
           size === "md" ? "text-[17px]" : "text-[19px]"
         )}
       >

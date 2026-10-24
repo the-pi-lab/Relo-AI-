@@ -41,24 +41,24 @@ const ThemeCtx = createContext<{
   isDark: boolean;
   set: (c: ThemeChoice) => void;
 }>({
-  choice: "dark",
-  theme: "dark",
-  isDark: true,
+  choice: "light",
+  theme: "light",
+  isDark: false,
   set: () => {},
 });
 
 function systemTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "light";
 }
 
 function readChoice(): ThemeChoice {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   try {
     const v = window.localStorage.getItem(THEME_KEY);
-    return v === "light" || v === "dark" || v === "system" ? v : "dark";
+    return v === "light" || v === "light" || v === "system" ? v : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 }
 
@@ -69,8 +69,8 @@ function paint(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [choice, setChoice] = useState<ThemeChoice>("dark");
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [choice, setChoice] = useState<ThemeChoice>("light");
+  const [theme, setTheme] = useState<Theme>("light");
 
   /* adopt the stored choice after mount */
   useEffect(() => {

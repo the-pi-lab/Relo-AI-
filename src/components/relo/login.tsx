@@ -1,5 +1,8 @@
 "use client";
 
+const getSrc = (img: any): string => (typeof img === "string" ? img : img?.src ?? "");
+
+
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,8 +14,10 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { ThemeToggle } from "@/lib/relo/theme";
 import { useRelo } from "@/lib/relo/store";
 import * as api from "@/lib/relo/api";
+import { DEMO_TOKEN, DEMO_USER } from "@/lib/relo/demo";
 import { TURNSTILE_SITE_KEY } from "@/lib/relo/config";
 import { cn } from "@/lib/utils";
+import loginImg from "@/assets/creator-fashion.jpg";
 
 const ASSURANCES = [
   "Runs on Instagram's official API",
@@ -124,6 +129,17 @@ export function LoginPage({ navigate }: { navigate: (to: string) => void }) {
 
   const captchaConfigured = Boolean(TURNSTILE_SITE_KEY);
 
+  /* Demo mode: a local, read-only session with sample data — no email code,
+     no server account. */
+  const enterDemo = () => {
+    api.saveSession(DEMO_TOKEN, DEMO_USER);
+    completeSignIn(DEMO_USER);
+    toast.success("Welcome to the demo", {
+      description: "You're exploring with sample data. Changes aren't saved.",
+    });
+    navigate("/studio");
+  };
+
   return (
     <div className="relative isolate grid min-h-screen overflow-hidden lg:grid-cols-[1.05fr_1fr]">
       <LiquidBackdrop variant="page" />
@@ -131,7 +147,8 @@ export function LoginPage({ navigate }: { navigate: (to: string) => void }) {
       {/* The argument, on the brand's navy surface, so the form reads as
           the only place to act. */}
       <aside className="relative z-10 hidden flex-col justify-between overflow-hidden bg-brand p-12 text-brand-ink lg:flex">
-        <BrandAurora />
+        <img src={getSrc(loginImg)} alt="" aria-hidden width={864} height={1152} className="absolute inset-0 h-full w-full object-cover opacity-60" />
+        <BrandAurora className="opacity-80" />
         <div
           aria-hidden
           className="absolute inset-0 bg-[linear-gradient(180deg,rgb(16_5_32/0.14)_0%,transparent_40%,rgb(16_5_32/0.5)_100%)]"
@@ -256,6 +273,27 @@ export function LoginPage({ navigate }: { navigate: (to: string) => void }) {
                     )}
                   </Button>
                 </form>
+
+                <div className="mt-5 flex items-center gap-3" aria-hidden>
+                  <span className="h-px flex-1 bg-line" />
+                  <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-3">
+                    or
+                  </span>
+                  <span className="h-px flex-1 bg-line" />
+                </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="lg"
+                  className="mt-4 w-full"
+                  onClick={enterDemo}
+                >
+                  Explore the demo instead
+                </Button>
+                <p className="mt-2.5 text-center text-[12px] leading-relaxed text-ink-3">
+                  No email needed — look around the dashboard with sample data.
+                </p>
 
                 <p className="mt-5 text-[12.5px] leading-relaxed text-ink-3">
                   By signing in you agree to the{" "}

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+
 @import "tw-animate-css";
 
 /* ==========================================================================
@@ -25,42 +26,36 @@
 /* ── Light ──────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
+  --font-display: "Manrope";
+  --font-heading: "Bricolage Grotesque";
+  --font-code: "JetBrains Mono";
 
-  /* Matte canvas, never paper-white: the whole dashboard's depth comes from
-     this one decision. Cards are the only pure #fff surfaces in the app. */
-  --canvas: #e8eef6;
+  /* Zorcha-style daylight: warm paper, near-black ink, ember signal. */
+  --canvas: #f4f2ee;
   --surface: #ffffff;
-  --surface-2: #f4f8fd;
-  --surface-3: #e2eaf4;
+  --surface-2: #faf8f5;
+  --surface-3: #ece9e3;
 
-  --ink: #0b1220;
-  --ink-2: #46566c;
-  /* Dark enough to clear 4.5:1 on surface-3, the darkest surface we put
-     muted text on. Do not lighten this to taste: `.caption`, `.small`,
-     `.meta` and shadcn's muted-foreground all read from it. */
-  --ink-3: #55657c;
+  --ink: #121110;
+  --ink-2: #4a4743;
+  --ink-3: #66625c;
   --ink-invert: #ffffff;
 
-  --signal: #0a63c9;
-  --signal-hover: #084d9c;
+  --signal: #e8461e;
+  --signal-hover: #c93a15;
   --signal-ink: #ffffff;
-  --signal-wash: rgb(10 99 201 / 0.09);
-  /* Decorative only — never used for text. The vivid end of the blue ramp. */
-  --signal-bright: #0ea5e9;
+  --signal-wash: rgb(232 70 30 / 0.09);
+  --signal-bright: #ff7a45;
 
-  /* Brand constants. Surfaces that must stay navy regardless of theme (login
-     panel, closing band) read these. */
-  --brand: #06182f;
-  --brand-hover: #0b2a4d;
-  --brand-line: #1d4ed8;
+  --brand: #161412;
+  --brand-hover: #2a2723;
+  --brand-line: #e8461e;
   --brand-ink: #ffffff;
 
-  /* The tactile obsidian anchor. High-value CTAs only: one per screen, so the
-     eye always knows where the primary action is. */
-  --obsidian: #071329;
-  --obsidian-hover: #0d1f3d;
-  --obsidian-edge: rgb(0 0 0 / 0.22);
-  --obsidian-glow: inset 0 11px 16px rgb(186 230 253 / 0.28);
+  --obsidian: #161412;
+  --obsidian-hover: #2a2723;
+  --obsidian-edge: rgb(0 0 0 / 0.2);
+  --obsidian-glow: inset 0 10px 16px rgb(255 255 255 / 0.12);
 
   --ok: #15803d;
   --ok-wash: rgb(21 128 61 / 0.1);
@@ -72,46 +67,40 @@
   --info: #0e7490;
   --info-wash: rgb(14 116 144 / 0.1);
 
-  --line: rgb(11 24 43 / 0.09);
-  --line-strong: rgb(11 24 43 / 0.18);
-  --line-faint: rgb(11 24 43 / 0.05);
+  --line: rgb(22 20 18 / 0.08);
+  --line-strong: rgb(22 20 18 / 0.16);
+  --line-faint: rgb(22 20 18 / 0.045);
 
-  /* Elevation reads as light, not as a grey box: wide, low-opacity, blue-black. */
-  --sh-1: 0 1px 2px rgb(9 30 66 / 0.05), 0 1px 1px rgb(9 30 66 / 0.03);
-  --sh-2: 0 4px 10px -2px rgb(9 30 66 / 0.06), 0 10px 30px -15px rgb(9 30 66 / 0.1);
-  --sh-3: 0 15px 35px -10px rgb(9 30 66 / 0.12), 0 40px 80px -32px rgb(9 30 66 / 0.18);
-  --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.85);
+  --sh-1: 0 1px 2px rgb(30 20 10 / 0.04), 0 1px 1px rgb(30 20 10 / 0.03);
+  --sh-2: 0 4px 12px -4px rgb(30 20 10 / 0.08), 0 14px 32px -18px rgb(30 20 10 / 0.12);
+  --sh-3: 0 18px 40px -14px rgb(30 20 10 / 0.16), 0 50px 90px -40px rgb(30 20 10 / 0.22);
+  --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.9);
 
-  /* Menus sit on the same white as cards in the daylight theme. */
   --popover: var(--surface);
-  --overlay: rgb(6 18 34 / 0.45);
+  --overlay: rgb(18 16 14 / 0.42);
   --hero-glow: transparent;
 
-  --chart-1: #0a63c9;
-  --chart-2: #0891b2;
+  --chart-1: #e8461e;
+  --chart-2: #f59e0b;
   --chart-3: #15803d;
-  --chart-4: #a16207;
-  --chart-5: #4338ca;
+  --chart-4: #0e7490;
+  --chart-5: #121110;
 
-  /* Liquid light. Cool blue and cyan, never a warm cast — the swirl canvas
-     underneath is already this family. */
-  --glow-1: rgb(14 165 233 / 0.18);
-  --glow-2: rgb(59 130 246 / 0.13);
-  --glow-3: rgb(34 211 238 / 0.15);
-  --glow-4: rgb(6 24 47 / 0.08);
+  --glow-1: rgb(255 122 69 / 0.16);
+  --glow-2: rgb(245 158 11 / 0.1);
+  --glow-3: rgb(232 70 30 / 0.1);
+  --glow-4: rgb(22 20 18 / 0.05);
 
-  /* Glass. Over the matte canvas the cards go *more* opaque, not less: the
-     contrast against #e8eef6 is what makes them lift. */
-  --glass: rgb(255 255 255 / 0.76);
-  --glass-strong: rgb(255 255 255 / 0.92);
-  --glass-edge: rgb(11 24 43 / 0.08);
-  --glass-highlight: rgb(255 255 255 / 0.95);
-  --glass-shadow: 0 10px 30px -15px rgb(9 30 66 / 0.14),
-    inset 0 1px 0 rgb(255 255 255 / 0.9);
-  --grain-opacity: 0.18;
+  --glass: rgb(255 255 255 / 0.62);
+  --glass-strong: rgb(255 255 255 / 0.86);
+  --glass-edge: rgb(255 255 255 / 0.7);
+  --glass-highlight: rgb(255 255 255 / 0.9);
+  --glass-shadow: 0 12px 34px -16px rgb(30 20 10 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.95);
+  --grain-opacity: 0.12;
 
-  --radius: 9px;
-  --wrap: 1180px;
+  --radius: 12px;
+  --wrap: 1200px;
 }
 
 /* ── Dark ───────────────────────────────────────────────────────────────── */
@@ -291,7 +280,7 @@
     line-height: 1.6;
     /* Plus Jakarta's stylistic sets round the 'a', 'g', 'l' and the numerals.
        Without these two flags the family renders like any other grotesque. */
-    font-feature-settings: "ss03" on, "ss01" on;
+    
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -354,24 +343,28 @@
   }
 
   .display {
+    font-family: var(--font-heading), var(--font-display), sans-serif;
     font-size: clamp(2.85rem, 1.55rem + 5.1vw, 5rem);
     line-height: 0.94;
     font-weight: 720;
     letter-spacing: -0.048em;
   }
   .h1 {
+    font-family: var(--font-heading), var(--font-display), sans-serif;
     font-size: clamp(2rem, 1.35rem + 2.6vw, 3.2rem);
     line-height: 1.02;
     font-weight: 720;
     letter-spacing: -0.036em;
   }
   .h2 {
+    font-family: var(--font-heading), var(--font-display), sans-serif;
     font-size: clamp(1.65rem, 1.2rem + 1.6vw, 2.2rem);
     line-height: 1.1;
     font-weight: 700;
     letter-spacing: -0.03em;
   }
   .h3 {
+    font-family: var(--font-heading), var(--font-display), sans-serif;
     font-size: 1.25rem;
     line-height: 1.3;
     font-weight: 700;
@@ -603,8 +596,8 @@
     width: 100%;
     align-items: center;
     gap: 0.65rem;
-    border-radius: var(--radius-md);
-    padding: 0.5rem 0.625rem;
+    border-radius: 12px;
+    padding: 0.5rem 0.7rem;
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--ink-2);
@@ -617,9 +610,10 @@
     color: var(--ink);
   }
   .nav-item[data-active="true"] {
-    background-color: var(--signal-wash);
-    color: var(--ink);
+    background-color: var(--ink);
+    color: var(--ink-invert);
     font-weight: 600;
+    box-shadow: 0 8px 18px -10px rgb(20 12 6 / 0.55);
   }
   .nav-item[data-active="true"]::before {
     content: "";
@@ -631,6 +625,7 @@
     translate: 0 -50%;
     border-radius: 999px;
     background-color: var(--signal);
+    display: none;
   }
 
   .quota-track {
@@ -666,10 +661,10 @@
 
   .brand-aurora {
     background-image:
-      radial-gradient(80% 120% at 10% 8%, rgb(34 211 238 / 0.24), transparent 58%),
-      radial-gradient(70% 100% at 84% 16%, rgb(37 99 235 / 0.42), transparent 62%),
-      radial-gradient(90% 120% at 55% 112%, rgb(6 24 47 / 0.96), transparent 70%),
-      linear-gradient(135deg, #03101f 0%, #06182f 46%, #020913 100%);
+      radial-gradient(80% 120% at 10% 8%, rgb(255 122 69 / 0.32), transparent 58%),
+      radial-gradient(70% 100% at 84% 16%, rgb(232 70 30 / 0.4), transparent 62%),
+      radial-gradient(90% 120% at 55% 112%, rgb(20 14 10 / 0.96), transparent 70%),
+      linear-gradient(135deg, #1a120d 0%, #241510 46%, #0d0907 100%);
     background-size: 140% 140%;
     animation: brand-drift 24s ease-in-out infinite alternate;
   }
@@ -847,4 +842,82 @@ h2,
 h3,
 h4 {
   text-wrap: balance;
+}
+
+/* ── Zorcha-style landing utilities ─────────────────────────────────────── */
+@utility font-heading {
+  font-family: var(--font-heading), var(--font-display), sans-serif;
+}
+@utility hero-title {
+  font-family: var(--font-heading), sans-serif;
+  font-size: clamp(2.9rem, 1.2rem + 6.4vw, 6.4rem);
+  line-height: 0.92;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+}
+@utility section-title {
+  font-family: var(--font-heading), sans-serif;
+  font-size: clamp(2.1rem, 1.1rem + 3.4vw, 4rem);
+  line-height: 0.98;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+@utility eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+@utility frost {
+  background-color: rgb(255 255 255 / 0.55);
+  border: 1px solid rgb(255 255 255 / 0.65);
+  box-shadow: 0 10px 30px -12px rgb(20 10 5 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+@utility frost-dark {
+  background-color: rgb(20 18 16 / 0.32);
+  border: 1px solid rgb(255 255 255 / 0.22);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+@utility photo-scrim {
+  background: linear-gradient(180deg, rgb(10 8 6 / 0.45) 0%, rgb(10 8 6 / 0.05) 38%, rgb(10 8 6 / 0.15) 70%, rgb(10 8 6 / 0.7) 100%);
+}
+@utility text-on-photo {
+  color: #fff;
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.25);
+}
+@utility marquee {
+  animation: marquee 38s linear infinite;
+}
+@utility float-y {
+  animation: float-y 7s ease-in-out infinite;
+}
+@utility float-y-slow {
+  animation: float-y 10s ease-in-out infinite reverse;
+}
+@utility ember-gradient {
+  background-image: linear-gradient(120deg, var(--signal) 0%, var(--signal-bright) 55%, #f59e0b 100%);
+}
+@utility ember-text {
+  background-image: linear-gradient(100deg, var(--signal) 0%, var(--signal-bright) 60%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility warm-aurora {
+  background:
+    radial-gradient(60% 50% at 85% 0%, var(--glow-1), transparent 70%),
+    radial-gradient(50% 40% at 0% 30%, var(--glow-2), transparent 70%),
+    radial-gradient(40% 40% at 60% 100%, var(--glow-3), transparent 70%),
+    var(--canvas);
+}
+@keyframes marquee {
+  to { transform: translateX(-50%); }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-16px) rotate(3deg); }
 }

@@ -11,26 +11,45 @@
 
 const trimTrailing = (value: string) => value.replace(/\/+$/, "");
 
-/** Where the Cloudflare Worker lives. Empty means "same origin" (proxied). */
-export const API_URL = trimTrailing(process.env.NEXT_PUBLIC_API_URL ?? "");
+const getEnv = (key: string, viteKey: string, fallback = ""): string => {
+  if (typeof process !== "undefined" && process.env && process.env[key]) {
+    return process.env[key]!;
+  }
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env[viteKey]) {
+      // @ts-ignore
+      return import.meta.env[viteKey];
+    }
+  } catch (_) {}
+  return fallback;
+};
+
+/** Where the Cloudflare Worker lives. In local dev, defaults to http://localhost:8787. */
+export const API_URL = trimTrailing(
+  getEnv("NEXT_PUBLIC_API_URL", "VITE_API_URL", "http://localhost:8787")
+);
 
 /** The public origin of this app, used for OAuth redirects and share links. */
-export const APP_URL = trimTrailing(process.env.NEXT_PUBLIC_APP_URL ?? "");
+export const APP_URL = trimTrailing(
+  getEnv("NEXT_PUBLIC_APP_URL", "VITE_APP_URL", "http://localhost:3000")
+);
 
 /** Meta (Facebook) app id. The matching secret lives only on the Worker. */
-export const META_APP_ID = (process.env.NEXT_PUBLIC_META_APP_ID ?? "").trim();
+export const META_APP_ID = getEnv("NEXT_PUBLIC_META_APP_ID", "VITE_META_APP_ID").trim();
 
 /**
  * The page Meta sends the creator back to after the OAuth dialog. It must be
  * registered verbatim in the Meta app's "Valid OAuth Redirect URIs".
  */
 export const META_REDIRECT_URI =
-  (process.env.NEXT_PUBLIC_META_REDIRECT_URI ?? "").trim() ||
+  getEnv("NEXT_PUBLIC_META_REDIRECT_URI", "VITE_META_REDIRECT_URI").trim() ||
   (typeof window !== "undefined" ? `${window.location.origin}/auth/meta/callback` : "");
 
 /** Cloudflare Turnstile site key. Without it the widget is simply not shown. */
-export const TURNSTILE_SITE_KEY = (
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""
+export const TURNSTILE_SITE_KEY = getEnv(
+  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
+  "VITE_TURNSTILE_SITE_KEY"
 ).trim();
 
 /**

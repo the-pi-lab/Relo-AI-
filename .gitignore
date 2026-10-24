@@ -33,6 +33,8 @@ dist-ssr
 .zcodeignore
 *.zip
 temp_relo_project/
+temp_relo_frontend/
+scratch/
 New folder/
 patch_editor2.py
 
