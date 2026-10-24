@@ -49,3 +49,8 @@ patch_editor2.py
 *.sln
 *.sw?
 .shots
+
+# Reference screenshots & QA artifacts (don't push to repo)
+Zorcha Screenshots/
+qa/
+docs/archive/
