@@ -279,14 +279,6 @@ async function runTests() {
     return { recipient_id: "customer_ig_999", message_id: "dm_sent_mid_888" };
   };
 
-  metaGraphClient.getUserFollowStatus = async () => {
-    return {
-      isFollowing: true,
-      latencyMs: 120,
-      decision: "ALLOW_VERIFIED_FOLLOWER",
-    };
-  };
-
   // Run Cron batch processor
   const cronResult = await processDueJobsBatch(env, { batchLimit: 10 });
   assert.strictEqual(cronResult.processedCount, 1);
@@ -326,7 +318,7 @@ async function runTests() {
     .get(testAccountId, "customer_ig_999");
   assert.ok(leadRow, "Lead must be stored in captured_leads");
   assert.strictEqual(leadRow.username, "sarah_growth");
-  assert.strictEqual(leadRow.follower_status_at_trigger, 1);
+  assert.strictEqual(leadRow.follower_status_at_trigger, null);
   assert.strictEqual(leadRow.total_dms_sent, 1);
 
   console.log("✓ Cron batch processor passed (atomic execution, Spintax comment reply, 3-button DM, lead capture).");

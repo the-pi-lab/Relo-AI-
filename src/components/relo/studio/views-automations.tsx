@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   Copy,
   Download,
+  Loader2,
   Pencil,
   Plus,
   Search,
@@ -15,34 +16,81 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+
 import { useRelo } from "@/lib/relo/store";
-import { fmtNum, timeAgo, uid, type Automation, type TemplateButton } from "@/lib/relo/data";
-import { ViewHead, Panel, StatusPill, TagInput, Field, inputCls, EmptyState } from "./studio-ui";
+import * as api from "@/lib/relo/api";
+import {
+  fmtNum,
+  timeAgo,
+  type Automation,
+  type AutomationInput,
+  type TemplateButton,
+} from "@/lib/relo/data";
+import {
+  EmptyState,
+  ErrorNotice,
+  Field,
+  LoadingBlock,
+  Panel,
+  StatusPill,
+  TagInput,
+  ViewHead,
+  inputCls,
+} from "./studio-ui";
 import { Button, Pill } from "../chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 
 /* ══════════════════════════════════════════════════════════════════════
    AUTOMATIONS
    ═════════════════════════════════════════════════════════════════════ */
 
-/* The arm switch. It keeps real switch semantics: role, checked state and a
-   label, so assistive tech announces which automations are watching. */
-function ArmToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+const toInput = (automation: Automation): AutomationInput => ({
+  id: automation.id,
+  accountId: automation.accountId,
+  instagramMediaId: automation.instagramMediaId,
+  reelPermalink: automation.reelPermalink,
+  reelThumbnailUrl: automation.reelThumbnailUrl,
+  triggerKeywords: automation.triggerKeywords,
+  commentReplies: automation.commentReplies,
+  templateCard: automation.templateCard,
+  isActive: automation.isActive,
+  followUpEnabled: automation.followUpEnabled,
+  followUpDelayMinutes: automation.followUpDelayMinutes,
+});
+
+function ArmToggle({
+  on,
+  busy,
+  onToggle,
+  label,
+}: {
+  on: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={on}
-      aria-label="Toggle automation"
+      aria-label={label}
+      disabled={busy}
       onClick={onToggle}
       className={cn(
         "flex h-6 w-11 shrink-0 items-center rounded-full border px-0.5 transition-colors duration-150 ease-out",
         on
           ? "border-signal bg-signal"
-          : "border-line-strong bg-line-strong hover:border-ink-3 hover:bg-surface-3"
+          : "border-line-strong bg-line-strong hover:border-ink-3 hover:bg-surface-3",
+        busy && "opacity-60"
       )}
     >
       <span
@@ -57,181 +105,283 @@ function ArmToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export function AutomationsView() {
-  const { automations, reels, deleteAutomation, toggleAutomation, pushActivity, saveAutomation } = useRelo();
-  const [editing, setEditing] = useState<Automation | null>(null);
+  const {
+    account,
+    plan,
+    limits,
+    automations,
+    reels,
+    saveAutomation,
+    deleteAutomation,
+  } = useRelo();
+
+  const [draft, setDraft] = useState<AutomationInput | null>(null);
   const [open, setOpen] = useState(false);
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const canCreate = Boolean(account) && (plan !== "free" || !account?.freeReelConsumed);
 
   const openNew = () => {
-    const reel = reels[0];
-    setEditing({
-      id: "",
-      reelId: reel.id,
-      reelCaption: reel.caption,
+    if (!account) return;
+    const reel = reels.data[0];
+    setDraft({
+      accountId: account.id,
+      instagramMediaId: reel?.id ?? "",
+      reelPermalink: reel?.permalink ?? "",
+      reelThumbnailUrl: reel?.thumbnailUrl,
       triggerKeywords: [],
-      commentReplies: ["", "", ""],
-      followGateEnabled: false,
-      templateCard: { title: "", subtitle: "", buttons: [{ type: "web_url", title: "", url: "" }] },
+      commentReplies: Array.from({ length: limits.replyMin }, () => ""),
+      templateCard: {
+        title: "",
+        subtitle: "",
+        buttons: [{ type: "web_url", title: "", url: "" }],
+      },
       isActive: true,
       followUpEnabled: false,
       followUpDelayMinutes: 60,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      triggersToday: 0,
-      dmsSent: 0,
-      clicks: 0,
     });
     setOpen(true);
   };
 
-  const openEdit = (a: Automation) => {
-    setEditing(structuredClone(a));
+  const openEdit = (automation: Automation) => {
+    setDraft(toInput(automation));
     setOpen(true);
   };
 
-  const save = (a: Automation) => {
-    const trimmed: Automation = {
-      ...a,
-      id: a.id || uid("auto"),
-      commentReplies: a.commentReplies.filter((r) => r.trim()),
-      templateCard: {
-        ...a.templateCard,
-        buttons: a.templateCard.buttons.filter((b) => b.title.trim()),
-      },
-      updatedAt: Date.now(),
-    };
-    if (!trimmed.triggerKeywords.length || !trimmed.commentReplies.length || !trimmed.templateCard.title.trim()) {
-      toast.error("Give it a keyword, at least one reply, and a card title.");
-      return false;
+  const toggle = async (automation: Automation) => {
+    setToggling(automation.id);
+    setActionError(null);
+    try {
+      await saveAutomation({ ...toInput(automation), isActive: !automation.isActive });
+      toast.success(automation.isActive ? "Automation paused" : "Automation armed");
+    } catch (caught) {
+      setActionError(api.errorMessage(caught));
+    } finally {
+      setToggling(null);
     }
-    saveAutomation(trimmed);
-    pushActivity("system", `Automation ${a.id ? "updated" : "created"}: "${trimmed.templateCard.title}"`);
-    return true;
   };
 
-  const remove = (a: Automation) => {
-    deleteAutomation(a.id);
-    toast.success("Automation deleted.");
+  const remove = async (automation: Automation) => {
+    setActionError(null);
+    try {
+      await deleteAutomation(automation.id);
+      setConfirmDelete(null);
+      toast.success("Automation deleted");
+    } catch (caught) {
+      setActionError(api.errorMessage(caught));
+    }
   };
+
+  const reelsUnavailable = reels.error && reels.error.code === "GRAPH_API_ERROR";
 
   return (
     <div className="space-y-6">
       <ViewHead
-        title="Automations"
-        sub="Pick a reel. Arm the keywords. Design the DM card. RELO handles every comment after that."
+        title="Reels & keywords"
+        sub="Pick a Reel, choose the words people comment, and design the private reply. RELO answers the comment in public and the DM in private."
       >
-        <Button variant="signal" onClick={openNew}>
-          <Plus className="size-4" strokeWidth={1.75} aria-hidden /> New automation
+        <Button
+          variant="signal"
+          onClick={openNew}
+          disabled={!canCreate || !account}
+        >
+          <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+          New automation
         </Button>
       </ViewHead>
 
-      {automations.length === 0 ? (
+      {plan === "free" && account?.freeReelConsumed && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface/60 px-4 py-3">
+          <p className="text-[13px] text-ink-2">
+            <span className="font-semibold text-ink">Free tier used.</span> One
+            automated Reel per lifetime. Pro makes it unlimited.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setShowUpgrade(true)}>
+            Compare plans
+          </Button>
+        </div>
+      )}
+
+      {showUpgrade && (
+        <div className="rounded-xl border border-signal/30 bg-signal-wash px-4 py-3 text-[13px] text-ink-2">
+          Open <span className="font-semibold text-ink">Settings → Billing</span>{" "}
+          to move to Pro (₹199/mo) or Studio (₹499/mo).
+          <button
+            type="button"
+            onClick={() => setShowUpgrade(false)}
+            className="ml-2 font-semibold text-signal hover:text-signal-hover"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {reelsUnavailable && (
+        <ErrorNotice
+          message="Instagram did not return your Reels, so new automations cannot pick a video yet."
+          detail={reels.error?.code}
+          onRetry={() => void reels.refresh()}
+        />
+      )}
+
+      {actionError && (
+        <ErrorNotice message={actionError} onRetry={() => setActionError(null)} />
+      )}
+
+      {automations.loading && automations.data.length === 0 ? (
+        <LoadingBlock label="Loading automations" />
+      ) : automations.error ? (
+        <ErrorNotice
+          message={automations.error.message}
+          detail={automations.error.code}
+          onRetry={() => void automations.refresh()}
+        />
+      ) : automations.data.length === 0 ? (
         <EmptyState
           title="No automations yet"
-          sub="Your first one takes about two minutes. Pick your best reel and a keyword your fans already type."
+          sub="Pick your best Reel and the keyword your audience already types in the comments. The first comment after saving gets an answer."
         >
-          <Button variant="signal" onClick={openNew}>
-            <Plus className="size-4" strokeWidth={1.75} aria-hidden /> Create automation
+          <Button variant="signal" onClick={openNew} disabled={!account}>
+            <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+            Create automation
           </Button>
         </EmptyState>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {automations.map((a) => (
-            <article
-              key={a.id}
-              className="glass-card flex flex-col rounded-2xl p-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <p className="line-clamp-2 text-[13.5px] font-semibold leading-snug text-ink">
-                  {a.reelCaption}
-                </p>
-                <ArmToggle on={a.isActive} onToggle={() => toggleAutomation(a.id)} />
-              </div>
+          {automations.data.map((automation) => {
+            const clicks = (automation.shortLinks ?? []).reduce(
+              (sum, link) => sum + link.clickCount,
+              0
+            );
+            return (
+              <article key={automation.id} className="glass-card flex flex-col rounded-2xl p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="line-clamp-2 text-[13.5px] font-semibold leading-snug text-ink">
+                    {automation.reelPermalink
+                      ? automation.reelPermalink.replace(/^https?:\/\/(www\.)?instagram\.com\//, "")
+                      : automation.instagramMediaId}
+                  </p>
+                  <ArmToggle
+                    on={automation.isActive}
+                    busy={toggling === automation.id}
+                    onToggle={() => void toggle(automation)}
+                    label={`${automation.isActive ? "Pause" : "Arm"} automation`}
+                  />
+                </div>
 
-              <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
-                {a.triggerKeywords.map((k) => (
-                  <span
-                    key={k}
-                    className="rounded-md border border-line/70 bg-surface-2/70 px-1.5 py-0.5 font-mono text-[11px] text-ink-2"
-                  >
-                    #{k}
-                  </span>
-                ))}
-                <span className="font-mono text-[11px] text-ink-3 tnum">
-                  {a.commentReplies.length} replies
-                </span>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-line/70 bg-surface-2/45 p-3">
-                <p className="truncate text-[13px] font-semibold text-ink">
-                  {a.templateCard.title || "Untitled card"}
-                </p>
-                {a.templateCard.subtitle && (
-                  <p className="truncate text-[11.5px] text-ink-3">{a.templateCard.subtitle}</p>
-                )}
-                <div className="mt-2.5 space-y-1.5">
-                  {a.templateCard.buttons.slice(0, 3).map((b, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        "truncate rounded-md px-2.5 py-1.5 text-center text-[11.5px] font-semibold",
-                        i === 0
-                          ? "bg-signal text-signal-ink"
-                          : "border border-line/80 bg-surface/55 text-ink-2"
-                      )}
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {automation.triggerKeywords.slice(0, 5).map((keyword) => (
+                    <span
+                      key={keyword}
+                      className="rounded-md border border-line/70 bg-surface-2/70 px-1.5 py-0.5 font-mono text-[11px] text-ink-2"
                     >
-                      {b.title || "Untitled button"}
+                      #{keyword}
+                    </span>
+                  ))}
+                  {automation.triggerKeywords.length > 5 && (
+                    <span className="font-mono text-[11px] text-ink-3">
+                      +{automation.triggerKeywords.length - 5}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-line/70 bg-surface-2/45 p-3">
+                  <p className="truncate text-[13px] font-semibold text-ink">
+                    {automation.templateCard.title || "Untitled card"}
+                  </p>
+                  {automation.templateCard.subtitle && (
+                    <p className="truncate text-[11.5px] text-ink-3">
+                      {automation.templateCard.subtitle}
+                    </p>
+                  )}
+                  <div className="mt-2.5 space-y-1.5">
+                    {automation.templateCard.buttons.slice(0, 3).map((button, index) => (
+                      <div
+                        key={`${button.title}-${index}`}
+                        className={cn(
+                          "truncate rounded-md px-2.5 py-1.5 text-center text-[11.5px] font-semibold",
+                          index === 0
+                            ? "bg-signal text-signal-ink"
+                            : "border border-line/80 bg-surface/55 text-ink-2"
+                        )}
+                      >
+                        {button.title || "Untitled button"}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4">
+                  {[
+                    ["Replies", String(automation.commentReplies.length)],
+                    ["Clicks", fmtNum(clicks)],
+                    ["Updated", timeAgo(automation.updatedAt)],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="caption">{label}</p>
+                      <p className="mt-1 truncate font-mono text-[13px] font-semibold text-ink tnum">
+                        {value}
+                      </p>
                     </div>
                   ))}
                 </div>
-              </div>
 
-              {/* mt-auto keeps the figures and the actions on one line across the
-                  whole row, however long the card title runs. */}
-              <div className="mt-auto pt-4">
-                <div className="grid grid-cols-3 gap-3 border-t border-line pt-4">
-                  {([["DMs", fmtNum(a.dmsSent)], ["Clicks", fmtNum(a.clicks)], ["Today", fmtNum(a.triggersToday)]] as const).map(
-                    ([label, value]) => (
-                      <div key={label}>
-                        <p className="caption">{label}</p>
-                        <p className="mt-1 font-mono text-[15px] font-semibold text-ink tnum">{value}</p>
-                      </div>
-                    )
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3.5">
+                  <StatusPill status={automation.isActive ? "live" : "paused"} />
+                  {confirmDelete === automation.id ? (
+                    <span className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void remove(automation)}
+                        className="rounded-md bg-bad px-2.5 py-1 text-[11.5px] font-semibold text-bad-ink"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(null)}
+                        className="rounded-md border border-line px-2.5 py-1 text-[11.5px] font-semibold text-ink-2"
+                      >
+                        Keep
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(automation)}
+                        className="grid size-8 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                        aria-label="Edit automation"
+                      >
+                        <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(automation.id)}
+                        className="grid size-8 place-items-center rounded-md text-ink-3 transition-colors hover:bg-bad-wash hover:text-bad"
+                        aria-label="Delete automation"
+                      >
+                        <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />
+                      </button>
+                    </span>
                   )}
                 </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-4">
-                <StatusPill status={a.isActive ? "live" : "paused"} />
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(a)}
-                    className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-ink"
-                    aria-label="Edit automation"
-                  >
-                    <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(a)}
-                    className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors duration-150 ease-out hover:bg-bad-wash hover:text-bad"
-                    aria-label="Delete automation"
-                  >
-                    <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
 
       <AutomationEditor
-        draft={editing}
+        draft={draft}
         open={open}
+        plan={plan}
+        limits={limits}
         onClose={() => setOpen(false)}
-        onSave={save}
-        onChange={setEditing}
+        onDraftChange={setDraft}
       />
     </div>
   );
@@ -239,106 +389,251 @@ export function AutomationsView() {
 
 /* ── editor ──────────────────────────────────────────────────────────── */
 
-/* The dialog's close button is a direct child of the content, so the sticky
-   header would otherwise paint over it. Lift it clear and give it a hover
-   state that is not a fade. */
 const DIALOG_CLOSE =
   "[&>[data-slot=dialog-close]]:z-20 [&>[data-slot=dialog-close]]:grid [&>[data-slot=dialog-close]]:size-8 [&>[data-slot=dialog-close]]:place-items-center [&>[data-slot=dialog-close]]:rounded-md [&>[data-slot=dialog-close]]:text-ink-3 [&>[data-slot=dialog-close]]:opacity-100 [&>[data-slot=dialog-close]]:transition-colors [&>[data-slot=dialog-close]]:hover:bg-surface-2 [&>[data-slot=dialog-close]]:hover:text-ink";
 
 function AutomationEditor({
   draft,
   open,
+  plan,
+  limits,
   onClose,
-  onSave,
-  onChange,
+  onDraftChange,
 }: {
-  draft: Automation | null;
+  draft: AutomationInput | null;
   open: boolean;
+  plan: "free" | "pro" | "studio";
+  limits: ReturnType<typeof useRelo>["limits"];
   onClose: () => void;
-  onSave: (a: Automation) => boolean;
-  onChange: (a: Automation) => void;
+  onDraftChange: (draft: AutomationInput) => void;
 }) {
-  const { reels } = useRelo();
+  const { reels, saveAutomation } = useRelo();
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setStep(0);
+      setError(null);
+    }
+  }, [open]);
+
   if (!draft) return null;
-  const set = (patch: Partial<Automation>) => onChange({ ...draft, ...patch });
-  const setCard = (patch: Partial<Automation["templateCard"]>) =>
+
+  const set = (patch: Partial<AutomationInput>) => onDraftChange({ ...draft, ...patch });
+  const setCard = (patch: Partial<AutomationInput["templateCard"]>) =>
     set({ templateCard: { ...draft.templateCard, ...patch } });
-  const setBtn = (i: number, patch: Partial<TemplateButton>) => {
-    const buttons = draft.templateCard.buttons.map((b, idx) => (idx === i ? { ...b, ...patch } : b));
-    setCard({ buttons });
+  const setButton = (index: number, patch: Partial<TemplateButton>) =>
+    setCard({
+      buttons: draft.templateCard.buttons.map((button, position) =>
+        position === index ? { ...button, ...patch } : button
+      ),
+    });
+
+  const selectedReel = reels.data.find((reel) => reel.id === draft.instagramMediaId);
+  const steps = ["Reel", "Replies", "DM card", "Delivery"];
+
+  const validate = (): string | null => {
+    if (!draft.instagramMediaId || !draft.reelPermalink) {
+      return "Pick the Reel this automation watches.";
+    }
+    if (draft.triggerKeywords.length === 0) {
+      return "Add at least one keyword (use * to match every comment).";
+    }
+    const replies = draft.commentReplies.map((reply) => reply.trim()).filter(Boolean);
+    if (replies.length < limits.replyMin || replies.length > limits.replyMax) {
+      return plan === "free"
+        ? "The Free tier runs exactly two reply variations."
+        : `Use between ${limits.replyMin} and ${limits.replyMax} reply variations.`;
+    }
+    if (!draft.templateCard.title.trim()) return "Give the DM card a title.";
+    if (draft.templateCard.title.trim().length > 80) {
+      return "Card titles are limited to 80 characters.";
+    }
+    if ((draft.templateCard.subtitle ?? "").length > 80) {
+      return "Card subtitles are limited to 80 characters.";
+    }
+    const buttons = draft.templateCard.buttons.filter((button) => button.title.trim());
+    if (buttons.length === 0) return "Add at least one button.";
+    if (buttons.length > limits.buttons) {
+      return plan === "free"
+        ? "Free allows two buttons — RELO adds its own branded button after them."
+        : "At most three buttons per card.";
+    }
+    for (const button of buttons) {
+      if (button.title.trim().length > 20) {
+        return "Button labels are limited to 20 characters.";
+      }
+      if (button.type === "web_url" && !/^https:\/\/[^\s"'<>]+$/.test(button.url ?? "")) {
+        return "URL buttons need an https:// link.";
+      }
+    }
+    return null;
   };
 
-  const steps = [{ label: "Trigger" }, { label: "Replies" }, { label: "DM card" }, { label: "Extras" }];
+  const submit = async () => {
+    const problem = validate();
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await saveAutomation({
+        ...draft,
+        triggerKeywords: draft.triggerKeywords.map((keyword) => keyword.trim()).filter(Boolean),
+        commentReplies: draft.commentReplies.map((reply) => reply.trim()).filter(Boolean),
+        templateCard: {
+          ...draft.templateCard,
+          title: draft.templateCard.title.trim(),
+          subtitle: draft.templateCard.subtitle?.trim() || undefined,
+          buttons: draft.templateCard.buttons
+            .filter((button) => button.title.trim())
+            .map((button) => ({
+              ...button,
+              title: button.title.trim(),
+              url: button.url?.trim() || undefined,
+            })),
+        },
+      });
+      toast.success(draft.id ? "Automation updated" : "Automation armed");
+      onClose();
+    } catch (caught) {
+      setError(api.errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (!v ? onClose() : null)}>
+    <Dialog open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <DialogContent
         className={cn(
-          "max-h-[92vh] gap-0 overflow-y-auto rounded-2xl border-line/60 bg-surface/85 p-0 shadow-[var(--sh-3)] backdrop-blur-2xl sm:max-w-2xl",
+          "max-h-[92vh] gap-0 overflow-y-auto rounded-2xl border-line/60 bg-surface/90 p-0 shadow-[var(--sh-3)] backdrop-blur-2xl sm:max-w-2xl",
           DIALOG_CLOSE
         )}
       >
-        <DialogHeader className="sticky top-0 z-10 border-b border-line/60 bg-surface/85 px-6 py-4 backdrop-blur-2xl">
-          <DialogTitle className="h4 text-ink">{draft.id ? "Edit automation" : "New automation"}</DialogTitle>
+        <DialogHeader className="sticky top-0 z-10 border-b border-line/60 bg-surface/92 px-5 py-4 backdrop-blur-2xl sm:px-6">
+          <DialogTitle className="h4 text-ink">
+            {draft.id ? "Edit automation" : "New automation"}
+          </DialogTitle>
           <DialogDescription className="text-[12.5px] text-ink-3">
-            Trigger, replies, card and extras. Everything saves in your demo studio.
+            Saved to your connected account. Nothing is sent until a matching
+            comment arrives.
           </DialogDescription>
+
           <div className="mt-3.5 flex gap-1" role="group" aria-label="Automation steps">
-            {steps.map((s, i) => (
+            {steps.map((label, index) => (
               <button
-                key={s.label}
+                key={label}
                 type="button"
-                aria-current={step === i ? "step" : undefined}
-                onClick={() => setStep(i)}
+                aria-current={step === index ? "step" : undefined}
+                onClick={() => setStep(index)}
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-2 rounded-md border py-1.5 text-[12px] font-medium transition-colors duration-150 ease-out",
-                  step === i
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-md border py-1.5 text-[12px] font-medium transition-colors",
+                  step === index
                     ? "border-line bg-surface-2 text-ink"
                     : "border-transparent text-ink-3 hover:bg-surface-2 hover:text-ink"
                 )}
               >
-                <span className="font-mono text-[10px] tnum">{String(i + 1).padStart(2, "0")}</span>
-                {s.label}
+                <span className="font-mono text-[10px] tnum">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                {label}
               </button>
             ))}
           </div>
         </DialogHeader>
 
-        <div className="px-6 py-5">
+        <div className="px-5 py-5 sm:px-6">
           {step === 0 && (
             <div className="space-y-5">
-              <Field label="Which reel" hint="From your connected account.">
-                <div className="grid gap-2">
-                  {reels.map((r, i) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => set({ reelId: r.id, reelCaption: r.caption })}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150 ease-out",
-                        draft.reelId === r.id
-                          ? "border-line-strong bg-surface-2"
-                          : "border-line bg-surface hover:border-line-strong hover:bg-surface-2"
-                      )}
-                    >
-                      <span className="caption shrink-0">R{String(i + 1).padStart(2, "0")}</span>
-                      <span className="line-clamp-2 flex-1 text-[13px] font-medium text-ink">{r.caption}</span>
-                      <span className="shrink-0 font-mono text-[11px] text-ink-3 tnum">
-                        {fmtNum(r.commentsCount)} comments
-                      </span>
-                      <Check
-                        className={cn("size-4 shrink-0 text-signal", draft.reelId === r.id ? "" : "invisible")}
-                        strokeWidth={1.75}
-                        aria-hidden
-                      />
-                    </button>
-                  ))}
-                </div>
+              <Field label="Which Reel" hint="From your connected account.">
+                {reels.loading && reels.data.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-6 text-[13px] text-ink-3">
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    Loading your Reels
+                  </div>
+                ) : reels.error ? (
+                  <ErrorNotice
+                    message={reels.error.message}
+                    detail={reels.error.code}
+                    onRetry={() => void reels.refresh()}
+                  />
+                ) : reels.data.length === 0 ? (
+                  <p className="rounded-lg border border-line px-3 py-5 text-[13px] text-ink-3">
+                    No Reels were returned for this account. Publish one on
+                    Instagram, then refresh.
+                  </p>
+                ) : (
+                  <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                    {reels.data.map((reel, index) => {
+                      const active = draft.instagramMediaId === reel.id;
+                      return (
+                        <button
+                          key={reel.id}
+                          type="button"
+                          onClick={() =>
+                            set({
+                              instagramMediaId: reel.id,
+                              reelPermalink: reel.permalink,
+                              reelThumbnailUrl: reel.thumbnailUrl,
+                            })
+                          }
+                          className={cn(
+                            "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                            active
+                              ? "border-line-strong bg-surface-2"
+                              : "border-line bg-surface hover:border-line-strong hover:bg-surface-2"
+                          )}
+                        >
+                          <span className="caption shrink-0">
+                            R{String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span className="line-clamp-2 flex-1 text-[13px] font-medium text-ink">
+                            {reel.caption?.trim() || reel.permalink}
+                          </span>
+                          {reel.hasActiveAutomation && (
+                            <Pill tone="ok" className="shrink-0">
+                              automated
+                            </Pill>
+                          )}
+                          <Check
+                            className={cn(
+                              "size-4 shrink-0 text-signal",
+                              active ? "" : "invisible"
+                            )}
+                            strokeWidth={1.75}
+                            aria-hidden
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </Field>
+
+              {selectedReel?.hasActiveAutomation && !draft.id && (
+                <p className="rounded-lg border border-warn/30 bg-warn-wash px-3 py-2.5 text-[12.5px] text-warn">
+                  This Reel already has an automation. A second one can shadow the
+                  first, so edit the existing rule instead.
+                </p>
+              )}
+
               <Field label="Trigger keywords" hint="Whole-word match. Enter or comma to add.">
-                <TagInput tags={draft.triggerKeywords} onChange={(triggerKeywords) => set({ triggerKeywords })} placeholder="notion, template, send…" />
+                <TagInput
+                  tags={draft.triggerKeywords}
+                  onChange={(triggerKeywords) => set({ triggerKeywords })}
+                  placeholder="price, link, guide…"
+                  max={25}
+                />
               </Field>
+              <p className="text-[12px] leading-relaxed text-ink-3">
+                Use <span className="font-mono text-ink-2">*</span> to answer
+                every comment on the Reel, not just keyword matches.
+              </p>
             </div>
           )}
 
@@ -346,23 +641,35 @@ function AutomationEditor({
             <div className="space-y-4">
               <Field
                 label="Public reply variations"
-                hint={`${draft.commentReplies.length}/8, three or more reads less like a bot.`}
+                hint={`${draft.commentReplies.length} of ${limits.replyMax}`}
               >
                 <div className="space-y-2">
-                  {draft.commentReplies.map((r, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                  {draft.commentReplies.map((reply, index) => (
+                    <div key={index} className="flex items-center gap-2">
                       <input
-                        value={r}
-                        onChange={(e) =>
-                          set({ commentReplies: draft.commentReplies.map((x, idx) => (idx === i ? e.target.value : x)) })}
-                        placeholder={`variation ${i + 1}`}
+                        value={reply}
+                        onChange={(event) =>
+                          set({
+                            commentReplies: draft.commentReplies.map((value, position) =>
+                              position === index ? event.target.value : value
+                            ),
+                          })
+                        }
+                        placeholder={`variation ${index + 1}`}
+                        maxLength={600}
                         className={inputCls}
                       />
-                      {draft.commentReplies.length > 3 && (
+                      {draft.commentReplies.length > limits.replyMin && (
                         <button
                           type="button"
-                          onClick={() => set({ commentReplies: draft.commentReplies.filter((_, idx) => idx !== i) })}
-                          className="grid size-9 shrink-0 place-items-center rounded-md text-ink-3 transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-bad"
+                          onClick={() =>
+                            set({
+                              commentReplies: draft.commentReplies.filter(
+                                (_, position) => position !== index
+                              ),
+                            })
+                          }
+                          className="grid size-9 shrink-0 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-2 hover:text-bad"
                           aria-label="Remove variation"
                         >
                           <X className="size-3.5" strokeWidth={1.75} aria-hidden />
@@ -372,53 +679,74 @@ function AutomationEditor({
                   ))}
                 </div>
               </Field>
-              {draft.commentReplies.length < 8 && (
+
+              {draft.commentReplies.length < limits.replyMax && (
                 <button
                   type="button"
-                  onClick={() => set({ commentReplies: [...draft.commentReplies, ""] })}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-ink-2 transition-colors duration-150 ease-out hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
+                  onClick={() =>
+                    set({ commentReplies: [...draft.commentReplies, ""] })
+                  }
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
                 >
-                  <Plus className="size-3.5" strokeWidth={1.75} aria-hidden /> Add variation
+                  <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+                  Add variation
                 </button>
               )}
+
               <div className="flex items-start gap-2.5 rounded-lg border border-line bg-signal-wash px-4 py-3">
                 <Timer className="mt-0.5 size-4 shrink-0 text-signal" strokeWidth={1.75} aria-hidden />
                 <p className="text-[13px] leading-relaxed text-ink-2">
-                  Replies rotate so the same comment never gets the same words twice. RELO then holds a random{" "}
-                  <span className="font-semibold text-ink">30 to 90 seconds</span> pause before DMing.
+                  RELO picks a different variation each time and holds a short
+                  random pause before the DM so replies do not look robotic.
                 </p>
               </div>
+
+              {plan === "free" && (
+                <p className="text-[12px] text-ink-3">
+                  Free runs exactly two variations. Pro and Studio allow three to
+                  eight.
+                </p>
+              )}
             </div>
           )}
 
           {step === 2 && (
             <div className="space-y-4">
-              <Field label="Card title">
+              <Field label="Card title" hint="Max 80 characters.">
                 <input
                   value={draft.templateCard.title}
-                  onChange={(e) => setCard({ title: e.target.value })}
+                  onChange={(event) => setCard({ title: event.target.value })}
                   placeholder="The Creator OS, free pack"
+                  maxLength={80}
                   className={inputCls}
                 />
               </Field>
               <Field label="Subtitle" hint="Optional.">
                 <input
                   value={draft.templateCard.subtitle ?? ""}
-                  onChange={(e) => setCard({ subtitle: e.target.value })}
-                  placeholder="3 templates · No email needed"
+                  onChange={(event) => setCard({ subtitle: event.target.value })}
+                  placeholder="3 templates · no email needed"
+                  maxLength={80}
                   className={inputCls}
                 />
               </Field>
+
               <div>
-                <p className="caption mb-2">Buttons · up to three</p>
+                <p className="caption mb-2">
+                  Buttons · up to {limits.buttons}
+                </p>
                 <div className="space-y-2.5">
-                  {draft.templateCard.buttons.map((b, i) => (
-                    <div key={i} className="rounded-lg border border-line bg-surface-2 p-3">
+                  {draft.templateCard.buttons.map((button, index) => (
+                    <div key={index} className="rounded-lg border border-line bg-surface-2 p-3">
                       <div className="flex items-center gap-2">
                         <select
-                          value={b.type}
-                          onChange={(e) => setBtn(i, { type: e.target.value as TemplateButton["type"] })}
-                          className="rounded-md border border-line-strong bg-surface px-2 py-1.5 font-mono text-[11px] text-ink outline-none transition-[border-color,box-shadow] duration-150 ease-out focus:border-signal focus:ring-[3px] focus:ring-signal/18"
+                          value={button.type}
+                          onChange={(event) =>
+                            setButton(index, {
+                              type: event.target.value as TemplateButton["type"],
+                            })
+                          }
+                          className="rounded-md border border-line-strong bg-surface px-2 py-1.5 font-mono text-[11px] text-ink outline-none focus:border-signal focus:ring-[3px] focus:ring-signal/18"
                           aria-label="Button type"
                         >
                           <option value="web_url">URL</option>
@@ -426,26 +754,33 @@ function AutomationEditor({
                           <option value="phone_number">Phone</option>
                         </select>
                         <input
-                          value={b.title}
-                          onChange={(e) => setBtn(i, { title: e.target.value })}
+                          value={button.title}
+                          onChange={(event) => setButton(index, { title: event.target.value })}
                           placeholder="Download free pack"
+                          maxLength={20}
                           className={cn(inputCls, "flex-1 py-1.5")}
                         />
                         {draft.templateCard.buttons.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => setCard({ buttons: draft.templateCard.buttons.filter((_, idx) => idx !== i) })}
-                            className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors duration-150 ease-out hover:bg-surface-3 hover:text-bad"
+                            onClick={() =>
+                              setCard({
+                                buttons: draft.templateCard.buttons.filter(
+                                  (_, position) => position !== index
+                                ),
+                              })
+                            }
+                            className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-3 hover:text-bad"
                             aria-label="Remove button"
                           >
                             <X className="size-3.5" strokeWidth={1.75} aria-hidden />
                           </button>
                         )}
                       </div>
-                      {b.type === "web_url" && (
+                      {button.type === "web_url" && (
                         <input
-                          value={b.url ?? ""}
-                          onChange={(e) => setBtn(i, { url: e.target.value })}
+                          value={button.url ?? ""}
+                          onChange={(event) => setButton(index, { url: event.target.value })}
                           placeholder="https://yourshop.in/pack"
                           className={cn(inputCls, "mt-2 py-1.5 font-mono text-[12px]")}
                         />
@@ -453,17 +788,25 @@ function AutomationEditor({
                     </div>
                   ))}
                 </div>
-                {draft.templateCard.buttons.length < 3 && (
+                {draft.templateCard.buttons.length < limits.buttons && (
                   <button
                     type="button"
                     onClick={() =>
-                      setCard({ buttons: [...draft.templateCard.buttons, { type: "web_url", title: "", url: "" }] })}
-                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-ink-2 transition-colors duration-150 ease-out hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
+                      setCard({
+                        buttons: [
+                          ...draft.templateCard.buttons,
+                          { type: "web_url", title: "", url: "" },
+                        ],
+                      })
+                    }
+                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
                   >
-                    <Plus className="size-3.5" strokeWidth={1.75} aria-hidden /> Add button
+                    <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+                    Add button
                   </button>
                 )}
               </div>
+
               <div className="rounded-lg border border-line bg-surface-2 p-4">
                 <p className="caption mb-2">Preview</p>
                 <div className="rounded-lg border border-line bg-surface p-3">
@@ -471,22 +814,33 @@ function AutomationEditor({
                     {draft.templateCard.title || "Your card title"}
                   </p>
                   {draft.templateCard.subtitle && (
-                    <p className="font-mono text-[11px] text-ink-3">{draft.templateCard.subtitle}</p>
+                    <p className="font-mono text-[11px] text-ink-3">
+                      {draft.templateCard.subtitle}
+                    </p>
                   )}
                   <div className="mt-2.5 space-y-1.5">
-                    {draft.templateCard.buttons.filter((b) => b.title.trim()).map((b, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-center text-[11.5px] font-semibold",
-                          i === 0 ? "bg-signal text-signal-ink" : "border border-line bg-surface text-ink-2"
-                        )}
-                      >
-                        {b.title}
-                      </div>
-                    ))}
+                    {draft.templateCard.buttons
+                      .filter((button) => button.title.trim())
+                      .map((button, index) => (
+                        <div
+                          key={`${button.title}-${index}`}
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-center text-[11.5px] font-semibold",
+                            index === 0
+                              ? "bg-signal text-signal-ink"
+                              : "border border-line bg-surface text-ink-2"
+                          )}
+                        >
+                          {button.title}
+                        </div>
+                      ))}
                   </div>
                 </div>
+                <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-3">
+                  {plan === "free"
+                    ? "Free adds a branded “Automated by RELO” button after yours."
+                    : "Every https:// button gets its own tracked short link."}
+                </p>
               </div>
             </div>
           )}
@@ -495,61 +849,122 @@ function AutomationEditor({
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-4 rounded-lg border border-line bg-surface-2 px-4 py-3.5">
                 <div>
-                  <p className="text-[13px] font-semibold text-ink">Follow-gate</p>
-                  <p className="text-[12px] text-ink-3">DM only lands after they follow you.</p>
+                  <p className="text-[13px] font-semibold text-ink">Arm now</p>
+                  <p className="text-[12px] text-ink-3">
+                    Start watching this Reel as soon as you save.
+                  </p>
                 </div>
-                <Switch checked={draft.followGateEnabled} onCheckedChange={(followGateEnabled) => set({ followGateEnabled })} />
+                <Switch
+                  checked={draft.isActive}
+                  onCheckedChange={(isActive) => set({ isActive })}
+                />
               </div>
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-line bg-surface-2 px-4 py-3.5">
+
+              <div
+                className={cn(
+                  "flex items-center justify-between gap-4 rounded-lg border border-line bg-surface-2 px-4 py-3.5",
+                  !limits.followUps && "opacity-60"
+                )}
+              >
                 <div>
-                  <p className="text-[13px] font-semibold text-ink">Follow-up DM</p>
-                  <p className="text-[12px] text-ink-3">Nudge non-clickers once.</p>
+                  <p className="text-[13px] font-semibold text-ink">
+                    Follow-up DM
+                    {!limits.followUps && (
+                      <span className="ml-2 font-mono text-[10px] uppercase text-ink-3">
+                        Pro
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[12px] text-ink-3">
+                    One extra nudge to people who did not tap.
+                  </p>
                 </div>
-                <Switch checked={draft.followUpEnabled} onCheckedChange={(followUpEnabled) => set({ followUpEnabled })} />
+                <Switch
+                  checked={draft.followUpEnabled && limits.followUps}
+                  disabled={!limits.followUps}
+                  onCheckedChange={(followUpEnabled) => set({ followUpEnabled })}
+                />
               </div>
-              {draft.followUpEnabled && (
-                <Field label="Follow-up delay" hint="Minutes.">
+
+              {draft.followUpEnabled && limits.followUps && (
+                <Field label="Follow-up delay" hint={`${draft.followUpDelayMinutes} minutes`}>
                   <input
                     type="range"
-                    min={15}
-                    max={240}
-                    step={15}
+                    min={5}
+                    max={720}
+                    step={5}
                     value={draft.followUpDelayMinutes}
-                    onChange={(e) => set({ followUpDelayMinutes: Number(e.target.value) })}
+                    onChange={(event) =>
+                      set({ followUpDelayMinutes: Number(event.target.value) })
+                    }
                     className="w-full accent-signal"
                   />
-                  <p className="mt-1 text-right font-mono text-[12px] text-signal tnum">
-                    {draft.followUpDelayMinutes} min
-                  </p>
                 </Field>
               )}
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-line bg-surface-2 px-4 py-3.5">
-                <div>
-                  <p className="text-[13px] font-semibold text-ink">Arm immediately</p>
-                  <p className="text-[12px] text-ink-3">Start watching comments on save.</p>
-                </div>
-                <Switch checked={draft.isActive} onCheckedChange={(isActive) => set({ isActive })} />
+
+              <div className="rounded-lg border border-line bg-surface px-4 py-3">
+                <p className="caption">Summary</p>
+                <dl className="mt-2 space-y-1.5 text-[12.5px]">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-3">Reel</dt>
+                    <dd className="truncate font-mono text-ink">
+                      {draft.reelPermalink.replace(/^https?:\/\//, "") || "—"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-3">Keywords</dt>
+                    <dd className="font-mono text-ink">{draft.triggerKeywords.length}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-3">Variations</dt>
+                    <dd className="font-mono text-ink">{draft.commentReplies.length}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-3">Buttons</dt>
+                    <dd className="font-mono text-ink">
+                      {draft.templateCard.buttons.filter((button) => button.title.trim()).length}
+                    </dd>
+                  </div>
+                </dl>
               </div>
             </div>
           )}
+
+          {error && (
+            <p
+              role="alert"
+              className="mt-4 rounded-lg border border-bad/30 bg-bad-wash px-3.5 py-2.5 text-[12.5px] text-bad"
+            >
+              {error}
+            </p>
+          )}
         </div>
 
-        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line/60 bg-surface/85 px-6 py-4 backdrop-blur-2xl">
+        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line/60 bg-surface/92 px-5 py-4 backdrop-blur-2xl sm:px-6">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setStep(Math.max(0, step - 1))}
             className={cn(step === 0 && "invisible")}
           >
-            <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden /> Back
+            <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden />
+            Back
           </Button>
+
           {step < 3 ? (
             <Button variant="signal" size="sm" onClick={() => setStep(step + 1)}>
-              Next <ArrowRight className="size-3.5" strokeWidth={1.75} aria-hidden />
+              Next
+              <ArrowRight className="size-3.5" strokeWidth={1.75} aria-hidden />
             </Button>
           ) : (
-            <Button variant="signal" size="sm" onClick={() => { if (onSave(draft)) { toast.success(draft.id ? "Automation updated." : "Automation armed."); onClose(); } }}>
-              {draft.id ? "Save changes" : "Arm automation"}
+            <Button
+              variant="signal"
+              size="sm"
+              onClick={() => void submit()}
+              disabled={saving}
+            >
+              {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+              {saving ? "Saving" : draft.id ? "Save changes" : "Arm automation"}
             </Button>
           )}
         </div>
@@ -562,8 +977,6 @@ function AutomationEditor({
    LEADS
    ═════════════════════════════════════════════════════════════════════ */
 
-/* A missing value reads as a hairline rather than an em dash, so the column
-   stays scannable and the character never appears in the interface. */
 function EmptyCell({ label }: { label: string }) {
   return (
     <span className="inline-flex items-center align-middle">
@@ -573,50 +986,65 @@ function EmptyCell({ label }: { label: string }) {
   );
 }
 
+const PAGE_SIZE = 50;
+
 export function LeadsView() {
-  const { leads, deleteLead } = useRelo();
-  const [q, setQ] = useState("");
+  const { account, leads, leadsLoading, leadsError, loadLeads } = useRelo();
+  const [query, setQuery] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const lastQuery = useRef("");
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return leads;
-    return leads.filter(
-      (l) =>
-        l.username.toLowerCase().includes(needle) ||
-        l.emailCollected?.toLowerCase().includes(needle) ||
-        l.sourceReelCaption.toLowerCase().includes(needle)
-    );
-  }, [leads, q]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (lastQuery.current === query) return;
+      lastQuery.current = query;
+      setOffset(0);
+      void loadLeads({ search: query.trim() || undefined, limit: PAGE_SIZE, offset: 0 });
+    }, 320);
+    return () => window.clearTimeout(timer);
+  }, [query, loadLeads]);
 
-  const exportCsv = () => {
-    const header = "username,follower_at_trigger,email,dms_sent,first_seen,last_seen,clicked_button,source_reel";
-    const rows = filtered.map((l) =>
-      [
-        l.username,
-        l.followerStatusAtTrigger ? "follower" : "non-follower",
-        l.emailCollected ?? "",
-        l.totalDmsSent,
-        new Date(l.firstInteractionAt).toISOString(),
-        new Date(l.lastInteractionAt).toISOString(),
-        l.clickedButton ?? "",
-        `"${l.sourceReelCaption.replace(/"/g, "''")}"`,
-      ].join(",")
-    );
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relo-leads-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Exported ${filtered.length} leads to CSV.`);
+  const page = useMemo(() => {
+    if (offset === 0) return 1;
+    return Math.floor(offset / PAGE_SIZE) + 1;
+  }, [offset]);
+
+  const pages = Math.max(1, Math.ceil(leads.total / PAGE_SIZE));
+
+  const exportCsv = async () => {
+    if (!account) return;
+    setExporting(true);
+    try {
+      const blob = await api.downloadLeadsCsv(account.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `relo-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Lead list exported");
+    } catch (caught) {
+      toast.error(api.errorMessage(caught));
+    } finally {
+      setExporting(false);
+    }
   };
+
+  if (!account) {
+    return (
+      <EmptyState
+        title="No account connected"
+        sub="Leads are stored per Instagram account. Connect one and the people who comment will appear here."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
       <ViewHead
-        title="Leads"
-        sub={`${leads.length} people raised their hand by commenting. ${leads.filter((l) => l.followerStatusAtTrigger).length} were already followers.`}
+        title="Captured leads"
+        sub={`${fmtNum(leads.total)} people in this account's list. Every row is someone who commented on an automated Reel.`}
       >
         <div className="relative">
           <Search
@@ -625,65 +1053,69 @@ export function LeadsView() {
             aria-hidden
           />
           <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search @username, email, reel…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search username or email"
             aria-label="Search leads"
-            className={cn(inputCls, "h-8 w-[240px] py-0 pl-9 pr-3 text-[13px]")}
+            className={cn(inputCls, "h-8 w-[220px] py-0 pl-9 pr-3 text-[13px]")}
           />
         </div>
-        <Button variant="outline" size="sm" onClick={exportCsv}>
-          <Download className="size-3.5" strokeWidth={1.75} aria-hidden /> Export CSV
+        <Button variant="outline" size="sm" onClick={() => void exportCsv()} disabled={exporting}>
+          <Download className="size-3.5" strokeWidth={1.75} aria-hidden />
+          {exporting ? "Exporting" : "Export CSV"}
         </Button>
       </ViewHead>
+
+      {leadsError && (
+        <ErrorNotice
+          message={leadsError.message}
+          detail={leadsError.code}
+          onRetry={() => void loadLeads({ search: query.trim() || undefined, limit: PAGE_SIZE, offset })}
+        />
+      )}
 
       <Panel
         title="All leads"
         bodyClassName="p-0"
         actions={
           <span className="caption tnum">
-            {filtered.length} of {leads.length}
+            {leadsLoading ? "Loading…" : `${fmtNum(leads.total)} total`}
           </span>
         }
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
+          <table className="w-full min-w-[720px] text-left">
             <thead>
               <tr className="border-b border-line">
                 <th scope="col" className="caption px-5 py-3 font-medium">Lead</th>
-                <th scope="col" className="caption px-5 py-3 font-medium">Status</th>
                 <th scope="col" className="caption px-5 py-3 font-medium">Email</th>
                 <th scope="col" className="caption px-5 py-3 text-right font-medium">DMs</th>
+                <th scope="col" className="caption px-5 py-3 text-right font-medium">First seen</th>
                 <th scope="col" className="caption px-5 py-3 text-right font-medium">Last seen</th>
-                <th scope="col" className="caption px-5 py-3 font-medium">Clicked</th>
-                <th scope="col" className="px-5 py-3 text-right">
-                  <span className="sr-only">Actions</span>
-                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {filtered.map((l) => (
-                <tr key={l.id} className="transition-colors duration-150 ease-out hover:bg-surface-2">
+              {leads.leads.map((lead) => (
+                <tr key={lead.id} className="transition-colors hover:bg-surface-2">
                   <td className="px-5 py-3">
-                    <p className="text-[13.5px] font-semibold text-ink">@{l.username}</p>
-                    <p className="max-w-56 truncate font-mono text-[11px] text-ink-3">{l.sourceReelCaption}</p>
+                    <p className="text-[13.5px] font-semibold text-ink">
+                      {lead.username ? `@${lead.username}` : "Instagram user"}
+                    </p>
+                    <p className="max-w-56 truncate font-mono text-[11px] text-ink-3">
+                      {lead.instagramScopedId}
+                    </p>
                   </td>
                   <td className="px-5 py-3">
-                    <Pill tone={l.followerStatusAtTrigger ? "info" : "neutral"}>
-                      {l.followerStatusAtTrigger ? "follower" : "new"}
-                    </Pill>
-                  </td>
-                  <td className="px-5 py-3">
-                    {l.emailCollected ? (
+                    {lead.emailCollected ? (
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard?.writeText(l.emailCollected!);
-                          toast.success("Email copied.");
+                          void navigator.clipboard?.writeText(lead.emailCollected!);
+                          toast.success("Email copied");
                         }}
-                        className="group inline-flex items-center gap-1.5 font-mono text-[12.5px] text-ink-2 transition-colors duration-150 ease-out hover:text-signal"
+                        className="group inline-flex items-center gap-1.5 font-mono text-[12.5px] text-ink-2 transition-colors hover:text-signal"
                       >
-                        {l.emailCollected}
+                        {lead.emailCollected}
                         <Copy
                           className="size-3.5 shrink-0 text-ink-3 transition-colors group-hover:text-signal"
                           strokeWidth={1.75}
@@ -694,37 +1126,81 @@ export function LeadsView() {
                       <EmptyCell label="No email collected" />
                     )}
                   </td>
-                  <td className="px-5 py-3 text-right font-mono text-[12.5px] text-ink tnum">{l.totalDmsSent}</td>
+                  <td className="px-5 py-3 text-right font-mono text-[12.5px] text-ink tnum">
+                    {lead.totalDmsSent}
+                  </td>
                   <td className="px-5 py-3 text-right font-mono text-[12.5px] text-ink-2 tnum">
-                    {timeAgo(l.lastInteractionAt)}
+                    {timeAgo(lead.firstInteractionAt)}
                   </td>
-                  <td className="px-5 py-3">
-                    {l.clickedButton ? <Pill tone="ok">{l.clickedButton}</Pill> : <EmptyCell label="No button clicked" />}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        deleteLead(l.id);
-                        toast.success(`@${l.username} removed.`);
-                      }}
-                      className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors duration-150 ease-out hover:bg-bad-wash hover:text-bad"
-                      aria-label={`Delete lead ${l.username}`}
-                    >
-                      <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />
-                    </button>
+                  <td className="px-5 py-3 text-right font-mono text-[12.5px] text-ink-2 tnum">
+                    {timeAgo(lead.lastInteractionAt)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && (
+
+          {leads.leads.length === 0 && !leadsLoading && (
             <div className="border-t border-line px-6 py-14 text-center">
-              <p className="text-[13.5px] font-medium text-ink-2">No leads match “{q}”.</p>
-              <p className="meta mt-1">Try another handle or clear the search.</p>
+              <p className="text-[13.5px] font-medium text-ink-2">
+                {query ? `No leads match “${query}”.` : "No leads yet."}
+              </p>
+              <p className="meta mt-1">
+                {query
+                  ? "Try another handle or clear the search."
+                  : "The first person to comment a keyword on an active Reel lands here."}
+              </p>
+            </div>
+          )}
+
+          {leadsLoading && leads.leads.length === 0 && (
+            <div className="border-t border-line px-6 py-14 text-center text-[13px] text-ink-3">
+              Loading leads
             </div>
           )}
         </div>
+
+        {leads.total > PAGE_SIZE && (
+          <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3">
+            <span className="font-mono text-[11.5px] text-ink-3">
+              Page {page} of {pages}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset === 0 || leadsLoading}
+                onClick={() => {
+                  const next = Math.max(0, offset - PAGE_SIZE);
+                  setOffset(next);
+                  void loadLeads({
+                    search: query.trim() || undefined,
+                    limit: PAGE_SIZE,
+                    offset: next,
+                  });
+                }}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset + PAGE_SIZE >= leads.total || leadsLoading}
+                onClick={() => {
+                  const next = offset + PAGE_SIZE;
+                  setOffset(next);
+                  void loadLeads({
+                    search: query.trim() || undefined,
+                    limit: PAGE_SIZE,
+                    offset: next,
+                  });
+                }}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Panel>
     </div>
   );

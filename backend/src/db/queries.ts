@@ -240,12 +240,13 @@ export async function upsertCapturedLead(
     accountId: AccountId;
     instagramScopedId: InstagramUserId;
     username?: string;
-    isFollower: boolean;
+    /** `null` means unknown — Meta exposes no follower lookup for commenters. */
+    isFollower: boolean | null;
     email?: string;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  const followerInt = lead.isFollower ? 1 : 0;
+  const followerInt = lead.isFollower === null ? null : lead.isFollower ? 1 : 0;
 
   await db
     .prepare(
@@ -300,7 +301,6 @@ export async function getActiveAutomationsForMedia(
     reelThumbnailUrl: row.reel_thumbnail_url || undefined,
     triggerKeywords: JSON.parse(row.trigger_keywords),
     commentReplies: JSON.parse(row.comment_replies),
-    followGateEnabled: Boolean(row.follow_gate_enabled),
     templateCard: JSON.parse(row.template_card) as TemplateCardConfig,
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
@@ -339,7 +339,6 @@ export async function getAutomationById(
     reelThumbnailUrl: row.reel_thumbnail_url || undefined,
     triggerKeywords: JSON.parse(row.trigger_keywords),
     commentReplies: JSON.parse(row.comment_replies),
-    followGateEnabled: Boolean(row.follow_gate_enabled),
     templateCard: JSON.parse(row.template_card) as TemplateCardConfig,
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
@@ -364,6 +363,71 @@ export async function markAccountTokenExpired(
        WHERE id = ?`
     )
     .bind(now, accountId)
+    .run();
+}
+
+/**
+ * 9d. Accounts whose long-lived token runs out inside `windowSeconds`, ignoring
+ * any account already retried in the last 12 hours so the cron cannot hammer
+ * Meta with the same failing exchange every minute.
+ */
+export async function getAccountsDueForTokenRefresh(
+  db: D1Database,
+  windowSeconds: number,
+  limit = 10
+): Promise<
+  Array<{
+    id: AccountId;
+    username: string;
+    accessTokenEncrypted: string;
+    tokenExpiresAt: number;
+  }>
+> {
+  const now = Math.floor(Date.now() / 1000);
+  const retryCutoff = now - 12 * 60 * 60;
+  const { results } = await db
+    .prepare(
+      `SELECT a.id, a.username, a.access_token_encrypted, a.token_expires_at
+       FROM connected_accounts a
+       WHERE a.is_active = 1
+         AND a.token_expires_at <= ?
+         AND NOT EXISTS (
+           SELECT 1 FROM webhook_logs l
+           WHERE l.account_id = a.id
+             AND l.event_type = 'token_refresh_attempt'
+             AND l.created_at >= ?
+         )
+       ORDER BY a.token_expires_at ASC
+       LIMIT ?`
+    )
+    .bind(now + windowSeconds, retryCutoff, Math.max(1, Math.min(50, limit)))
+    .all();
+
+  return (results || []).map((row: any) => ({
+    id: createAccountId(row.id),
+    username: row.username,
+    accessTokenEncrypted: row.access_token_encrypted,
+    tokenExpiresAt: Number(row.token_expires_at),
+  }));
+}
+
+/**
+ * 9e. Store a rotated token and its new expiry.
+ */
+export async function updateAccountToken(
+  db: D1Database,
+  accountId: AccountId,
+  accessTokenEncrypted: string,
+  tokenExpiresAt: number
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `UPDATE connected_accounts
+       SET access_token_encrypted = ?, token_expires_at = ?, updated_at = ?
+       WHERE id = ?`
+    )
+    .bind(accessTokenEncrypted, tokenExpiresAt, now, accountId)
     .run();
 }
 
@@ -756,7 +820,6 @@ export async function getAutomationsForAccount(
     reelThumbnailUrl: row.reel_thumbnail_url || undefined,
     triggerKeywords: JSON.parse(row.trigger_keywords),
     commentReplies: JSON.parse(row.comment_replies),
-    followGateEnabled: Boolean(row.follow_gate_enabled),
     templateCard: JSON.parse(row.template_card) as TemplateCardConfig,
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
@@ -779,7 +842,6 @@ export async function saveReelAutomation(
     reelThumbnailUrl?: string;
     triggerKeywords: string[];
     commentReplies: string[];
-    followGateEnabled: boolean;
     templateCard: TemplateCardConfig;
     isActive: boolean;
     followUpEnabled?: boolean;
@@ -812,7 +874,9 @@ export async function saveReelAutomation(
       automation.reelThumbnailUrl || null,
       JSON.stringify(automation.triggerKeywords),
       JSON.stringify(automation.commentReplies),
-      automation.followGateEnabled ? 1 : 0,
+      // The follower gate is retired: it called a Graph endpoint that does not
+      // exist. The column stays for schema compatibility and is always 0.
+      0,
       JSON.stringify(automation.templateCard),
       automation.isActive ? 1 : 0,
       now,
@@ -851,7 +915,8 @@ export async function getCapturedLeads(
     accountId: AccountId;
     instagramScopedId: InstagramUserId;
     username?: string;
-    followerStatusAtTrigger: boolean;
+    /** `null` when unknown; older rows may still hold 0/1. */
+    followerStatusAtTrigger: boolean | null;
     emailCollected?: string;
     totalDmsSent: number;
     firstInteractionAt: number;
@@ -894,7 +959,11 @@ export async function getCapturedLeads(
     accountId: createAccountId(row.account_id),
     instagramScopedId: createInstagramUserId(row.instagram_scoped_id),
     username: row.username || undefined,
-    followerStatusAtTrigger: Boolean(row.follower_status_at_trigger),
+    followerStatusAtTrigger:
+      row.follower_status_at_trigger === null ||
+      row.follower_status_at_trigger === undefined
+        ? null
+        : Boolean(row.follower_status_at_trigger),
     emailCollected: row.email_collected || undefined,
     totalDmsSent: row.total_dms_sent,
     firstInteractionAt: row.first_interaction_at,
@@ -938,7 +1007,13 @@ export async function getAllCapturedLeadsForExport(
     id: row.id,
     username: row.username || "anonymous",
     instagramScopedId: row.instagram_scoped_id,
-    followerStatusAtTrigger: row.follower_status_at_trigger ? "Follower" : "Non-Follower",
+    followerStatusAtTrigger:
+      row.follower_status_at_trigger === null ||
+      row.follower_status_at_trigger === undefined
+        ? "Unknown"
+        : row.follower_status_at_trigger
+          ? "Follower"
+          : "Non-Follower",
     emailCollected: row.email_collected || "",
     totalDmsSent: row.total_dms_sent,
     firstInteractionAt: new Date(row.first_interaction_at * 1000).toISOString(),
@@ -962,23 +1037,24 @@ export async function getAnalyticsSummary(
   totalLeads: number;
   totalComments: number;
   totalDmsSent: number;
-  followerConversionRate: number;
 }> {
   const now = Math.floor(Date.now() / 1000);
   const oneDayAgo = now - 86400;
 
-  const [
-    pendingRow,
-    completed24hRow,
-    failed24hRow,
-    leadsRow,
-    followerRow,
-  ] = (await Promise.all([
+  const [pendingRow, completed24hRow, failed24hRow, leadsRow, commentsRow] = (await Promise.all([
     db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND status = 'pending'`).bind(accountId).first(),
     db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND status = 'completed' AND updated_at >= ?`).bind(accountId, oneDayAgo).first(),
     db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND status = 'failed' AND updated_at >= ?`).bind(accountId, oneDayAgo).first(),
     db.prepare(`SELECT COUNT(*) as c, SUM(total_dms_sent) as totalDms FROM captured_leads WHERE account_id = ?`).bind(accountId).first(),
-    db.prepare(`SELECT COUNT(*) as c FROM captured_leads WHERE account_id = ? AND follower_status_at_trigger = 1`).bind(accountId).first(),
+    // Lifetime comments handled, not just the last 24 hours: follow-up DMs are
+    // not comments, so they are excluded to keep the funnel honest.
+    db
+      .prepare(
+        `SELECT COUNT(*) as c FROM jobs
+         WHERE account_id = ? AND status = 'completed' AND is_follow_up = 0`
+      )
+      .bind(accountId)
+      .first(),
   ])) as any[];
 
   const pendingJobs = Number(pendingRow?.c || 0);
@@ -986,9 +1062,8 @@ export async function getAnalyticsSummary(
   const failed24h = Number(failed24hRow?.c || 0);
   const totalLeads = Number(leadsRow?.c || 0);
   const totalDmsSent = Number(leadsRow?.totalDms || 0);
-  const followerCount = Number(followerRow?.c || 0);
+  const totalComments = Number(commentsRow?.c || 0);
 
-  const conversionRate = totalLeads > 0 ? Math.round((followerCount / totalLeads) * 100) : 0;
   const status = failed24h > 20 ? "degraded" : "healthy";
 
   return {
@@ -998,9 +1073,8 @@ export async function getAnalyticsSummary(
     completed24h,
     failed24h,
     totalLeads,
-    totalComments: completed24h + pendingJobs,
+    totalComments,
     totalDmsSent,
-    followerConversionRate: conversionRate,
   };
 }
 

@@ -17,6 +17,7 @@ import { parseWebhookEnvelope } from "./engine/parse";
 import { findMatchingKeyword } from "./engine/keyword";
 import { processDueJobsBatch } from "./engine/processor";
 import { processScheduledCampaigns } from "./engine/campaignWorker";
+import { refreshExpiringTokens } from "./engine/tokenRefresh";
 import {
   decideAiReply,
   buildProductCardReply,
@@ -299,6 +300,17 @@ export default {
           if (result.processedCount > 0) {
             console.log(
               `[Cron Queue] Processed ${result.processedCount} jobs: ${result.completedCount} completed, ${result.failedCount} failed, ${result.skippedCount} skipped.`
+            );
+          }
+
+          // Token upkeep: long-lived tokens last ~60 days and nothing else in
+          // the request path renews them, so expiring accounts are refreshed
+          // here (best effort — a rejected grant is surfaced as "reconnect
+          // needed" in Settings rather than retried in a loop).
+          const refreshed = await refreshExpiringTokens(env, { limit: 10 });
+          if (refreshed.refreshed > 0 || refreshed.failed > 0) {
+            console.log(
+              `[Token Refresh] scanned ${refreshed.scanned}, renewed ${refreshed.refreshed}, failed ${refreshed.failed}.`
             );
           }
 

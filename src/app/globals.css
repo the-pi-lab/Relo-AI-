@@ -4,9 +4,13 @@
 /* ==========================================================================
    RELO — two canvases, one signal
 
-   Light is "Paper & Signal": warm paper, near-black ink, one burnt ochre.
-   Dark is "Obsidian & Signal": obsidian black, amethyst brand surfaces, and
-   electric cyan for action, focus and live data.
+   Light is "Daylight Tide": pale blue paper, navy ink, azure signal.
+   Dark is "Tide at night": deep ocean black, navy surfaces, electric cyan for
+   action, focus and live data.
+
+   Both themes sit on top of the animated Tide Swirl canvas (see
+   components/relo/FlowingGradientsCanvas.tsx), so the base surface is a
+   translucent veil rather than a flat fill.
 
    Everything below is a single naming system. There is exactly one name per
    idea and no aliases, because aliases are how the previous token layer
@@ -22,29 +26,29 @@
 :root {
   color-scheme: light;
 
-  --canvas: #f5f3ef;
+  --canvas: #eaf2fb;
   --surface: #ffffff;
-  --surface-2: #eeeae3;
-  --surface-3: #e3ded4;
+  --surface-2: #e1ecf8;
+  --surface-3: #d1e1f2;
 
-  --ink: #16130f;
-  --ink-2: #5a544c;
-  /* Dark enough to clear 4.5:1 on surface-3, the lightest surface we put
+  --ink: #0a1424;
+  --ink-2: #3d4f68;
+  /* Dark enough to clear 4.5:1 on surface-3, the darkest surface we put
      muted text on. Do not lighten this to taste: `.caption`, `.small`,
      `.meta` and shadcn's muted-foreground all read from it. */
-  --ink-3: #665f52;
+  --ink-3: #4f6076;
   --ink-invert: #ffffff;
 
-  --signal: #c93a0e;
-  --signal-hover: #a92f08;
+  --signal: #0369a1;
+  --signal-hover: #075985;
   --signal-ink: #ffffff;
-  --signal-wash: rgb(201 58 14 / 0.09);
+  --signal-wash: rgb(3 105 161 / 0.1);
 
-  /* Brand constants, identical in both themes. Surfaces that must stay
-     amethyst regardless of theme (login panel, closing band) read these. */
-  --brand: #3b0a6b;
-  --brand-hover: #4c0f86;
-  --brand-line: #6d28d9;
+  /* Brand constants. Surfaces that must stay navy regardless of theme (login
+     panel, closing band) read these. */
+  --brand: #06182f;
+  --brand-hover: #0b2a4d;
+  --brand-line: #1d4ed8;
   --brand-ink: #ffffff;
 
   --ok: #15803d;
@@ -54,45 +58,44 @@
   --bad: #b91c1c;
   --bad-ink: #ffffff;
   --bad-wash: rgb(185 28 28 / 0.09);
-  --info: #0369a1;
-  --info-wash: rgb(3 105 161 / 0.1);
+  --info: #0e7490;
+  --info-wash: rgb(14 116 144 / 0.1);
 
-  --line: rgb(22 19 15 / 0.11);
-  --line-strong: rgb(22 19 15 / 0.2);
-  --line-faint: rgb(22 19 15 / 0.06);
+  --line: rgb(10 20 36 / 0.12);
+  --line-strong: rgb(10 20 36 / 0.22);
+  --line-faint: rgb(10 20 36 / 0.06);
 
-  --sh-1: 0 1px 1px rgb(22 19 15 / 0.04), 0 1px 3px rgb(22 19 15 / 0.05);
-  --sh-2: 0 2px 4px -1px rgb(22 19 15 / 0.06), 0 8px 20px -6px rgb(22 19 15 / 0.11);
-  --sh-3: 0 10px 28px -8px rgb(22 19 15 / 0.16), 0 32px 64px -24px rgb(22 19 15 / 0.24);
+  --sh-1: 0 1px 1px rgb(8 20 38 / 0.04), 0 1px 3px rgb(8 20 38 / 0.06);
+  --sh-2: 0 2px 4px -1px rgb(8 20 38 / 0.07), 0 8px 20px -6px rgb(8 20 38 / 0.12);
+  --sh-3: 0 10px 28px -8px rgb(8 20 38 / 0.16), 0 32px 64px -24px rgb(8 20 38 / 0.26);
   --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.8);
 
-  /* Menus sit on the same white as cards in the paper theme. */
+  /* Menus sit on the same white as cards in the daylight theme. */
   --popover: var(--surface);
-  --overlay: rgb(22 19 15 / 0.45);
+  --overlay: rgb(6 18 34 / 0.45);
   --hero-glow: transparent;
 
-  --chart-1: #c93a0e;
-  --chart-2: #1d4ed8;
+  --chart-1: #0369a1;
+  --chart-2: #0891b2;
   --chart-3: #15803d;
   --chart-4: #a16207;
-  --chart-5: #0f766e;
+  --chart-5: #4338ca;
 
-  /* Liquid light. Warm paper gets apricot and a whisper of violet, never a
-     cyberpunk field. The blobs are painted with radial gradients rather than
-     a blur filter, so they stay cheap on low-end phones. */
-  --glow-1: rgb(201 58 14 / 0.15);
-  --glow-2: rgb(109 40 217 / 0.09);
-  --glow-3: rgb(245 158 11 / 0.12);
-  --glow-4: rgb(59 10 107 / 0.07);
+  /* Liquid light. Cool blue and cyan, never a warm cast — the swirl canvas
+     underneath is already this family. */
+  --glow-1: rgb(14 165 233 / 0.18);
+  --glow-2: rgb(59 130 246 / 0.13);
+  --glow-3: rgb(34 211 238 / 0.15);
+  --glow-4: rgb(6 24 47 / 0.08);
 
   /* Glass. On paper it is white milk, not grey smoke. */
-  --glass: rgb(255 255 255 / 0.56);
-  --glass-strong: rgb(255 255 255 / 0.8);
-  --glass-edge: rgb(22 19 15 / 0.1);
+  --glass: rgb(255 255 255 / 0.58);
+  --glass-strong: rgb(255 255 255 / 0.82);
+  --glass-edge: rgb(10 20 36 / 0.1);
   --glass-highlight: rgb(255 255 255 / 0.9);
-  --glass-shadow: 0 30px 80px -44px rgb(22 19 15 / 0.3),
+  --glass-shadow: 0 30px 80px -44px rgb(6 24 47 / 0.32),
     inset 0 1px 0 rgb(255 255 255 / 0.85);
-  --grain-opacity: 0.2;
+  --grain-opacity: 0.18;
 
   --radius: 9px;
   --wrap: 1180px;
@@ -102,81 +105,77 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --canvas: #050505;
-  --surface: #14121a;
-  --surface-2: #0d0d10;
-  --surface-3: #21172d;
+  --canvas: #050b18;
+  --surface: #0b1526;
+  --surface-2: #071020;
+  --surface-3: #122238;
 
-  --ink: #f5f5f7;
-  --ink-2: #a1a1aa;
-  /* The reference muted grey (#71717A) measures 3.8:1 on a card — below AA
-     for the 11px labels it is used for. Lifted one step to #85858E, which
-     clears 4.5:1 on every surface (5.1:1 on surface-3) while staying muted. */
-  --ink-3: #85858e;
-  --ink-invert: #050505;
+  --ink: #eaf2ff;
+  --ink-2: #a4b6ce;
+  /* Lifted from the usual grey so 11px labels clear 4.5:1 on every surface. */
+  --ink-3: #8ba0bd;
+  --ink-invert: #050b18;
 
-  --signal: #00e5ff;
-  --signal-hover: #00c4d6;
-  --signal-ink: #050505;
-  --signal-wash: rgb(0 229 255 / 0.12);
+  --signal: #22d3ee;
+  --signal-hover: #67e8f9;
+  --signal-ink: #04121f;
+  --signal-wash: rgb(34 211 238 / 0.14);
 
-  --brand: #3b0a6b;
-  --brand-hover: #4c0f86;
-  --brand-line: #7c3aed;
+  --brand: #06182f;
+  --brand-hover: #0b2a4d;
+  --brand-line: #2563eb;
   --brand-ink: #ffffff;
 
-  --ok: #22c55e;
-  --ok-wash: rgb(34 197 94 / 0.13);
-  --warn: #f59e0b;
-  --warn-wash: rgb(245 158 11 / 0.13);
-  --bad: #ef4444;
-  --bad-ink: #050505;
-  --bad-wash: rgb(239 68 68 / 0.12);
-  --info: #38bdf8;
-  --info-wash: rgb(56 189 248 / 0.13);
+  --ok: #34d399;
+  --ok-wash: rgb(52 211 153 / 0.14);
+  --warn: #fbbf24;
+  --warn-wash: rgb(251 191 36 / 0.14);
+  --bad: #f87171;
+  --bad-ink: #1a0505;
+  --bad-wash: rgb(248 113 113 / 0.13);
+  --info: #7dd3fc;
+  --info-wash: rgb(125 211 252 / 0.12);
 
-  --line: #30283a;
-  --line-strong: #3d3547;
-  --line-faint: rgb(245 245 247 / 0.06);
+  --line: rgb(148 180 214 / 0.16);
+  --line-strong: rgb(148 180 214 / 0.28);
+  --line-faint: rgb(255 255 255 / 0.05);
 
   --sh-1: 0 1px 1px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.45);
   --sh-2: 0 2px 6px -1px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.6);
   --sh-3: 0 12px 32px -8px rgb(0 0 0 / 0.65), 0 36px 72px -28px rgb(0 0 0 / 0.8);
   --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.04);
 
-  /* Menus, tooltips and sheets lift to the amethyst surface. */
+  /* Menus, tooltips and sheets lift to the navy surface. */
   --popover: var(--surface-3);
-  --overlay: rgb(0 0 0 / 0.7);
-  --hero-glow: rgb(59 10 107 / 0.55);
+  --overlay: rgb(2 6 14 / 0.72);
+  --hero-glow: rgb(6 24 47 / 0.6);
 
-  --chart-1: #00e5ff;
-  --chart-2: #8b5cf6;
-  --chart-3: #22c55e;
-  --chart-4: #f59e0b;
-  --chart-5: #38bdf8;
+  --chart-1: #22d3ee;
+  --chart-2: #60a5fa;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #c084fc;
 
-  /* The same liquid field, now lit from inside: cyan, amethyst, violet and a
-     cold blue edge. Opacity is deliberately low; the glass should do most of
-     the work. */
-  --glow-1: rgb(0 229 255 / 0.13);
-  --glow-2: rgb(59 10 107 / 0.62);
-  --glow-3: rgb(124 58 237 / 0.2);
-  --glow-4: rgb(56 189 248 / 0.09);
+  /* The same liquid field, now lit from inside: cyan ribbon, cobalt core and a
+     cold highlight edge. Opacity is deliberately low; the glass does the work. */
+  --glow-1: rgb(34 211 238 / 0.2);
+  --glow-2: rgb(37 99 235 / 0.32);
+  --glow-3: rgb(14 165 233 / 0.18);
+  --glow-4: rgb(125 211 252 / 0.08);
 
-  /* Smoked glass. The tint is surface, the highlight is a single top edge. */
-  --glass: rgb(20 18 26 / 0.54);
-  --glass-strong: rgb(20 18 26 / 0.82);
-  --glass-edge: rgb(245 245 247 / 0.1);
-  --glass-highlight: rgb(255 255 255 / 0.09);
+  /* Smoked glass over the swirl. */
+  --glass: rgb(9 20 36 / 0.62);
+  --glass-strong: rgb(9 20 36 / 0.86);
+  --glass-edge: rgb(170 200 235 / 0.14);
+  --glass-highlight: rgb(255 255 255 / 0.08);
   --glass-shadow: 0 36px 90px -48px rgb(0 0 0 / 0.95),
     inset 0 1px 0 rgb(255 255 255 / 0.07);
-  --grain-opacity: 0.3;
+  --grain-opacity: 0.26;
 }
 
 /* ── Utilities generated from the tokens above ──────────────────────────── */
 @theme inline {
   --font-sans: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-editorial), ui-serif, Georgia, "Times New Roman", serif;
   --font-mono: var(--font-code), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --color-canvas: var(--canvas);
@@ -464,7 +463,7 @@
     border-color: color-mix(in srgb, var(--signal) 22%, var(--glass-edge));
     box-shadow:
       var(--glass-shadow),
-      0 0 0 1px rgb(0 229 255 / 0.03);
+      0 0 0 1px color-mix(in srgb, var(--signal) 8%, transparent);
   }
 
   .glass-chip {
@@ -473,14 +472,6 @@
     box-shadow: inset 0 1px 0 var(--glass-highlight);
     -webkit-backdrop-filter: blur(16px) saturate(140%);
     backdrop-filter: blur(16px) saturate(140%);
-  }
-
-  /* Editorial accent. One serif phrase per screen, never a serif body. */
-  .editorial {
-    font-family: var(--font-editorial), ui-serif, Georgia, serif;
-    font-style: italic;
-    font-weight: 400;
-    letter-spacing: -0.015em;
   }
 
   .text-gradient {
@@ -524,10 +515,10 @@
 
   .brand-aurora {
     background-image:
-      radial-gradient(80% 120% at 12% 12%, rgb(0 229 255 / 0.24), transparent 55%),
-      radial-gradient(70% 100% at 82% 18%, rgb(124 58 237 / 0.5), transparent 62%),
-      radial-gradient(90% 120% at 58% 110%, rgb(59 10 107 / 0.95), transparent 68%),
-      linear-gradient(135deg, #1d0638 0%, #3b0a6b 48%, #16052b 100%);
+      radial-gradient(80% 120% at 10% 8%, rgb(34 211 238 / 0.24), transparent 58%),
+      radial-gradient(70% 100% at 84% 16%, rgb(37 99 235 / 0.42), transparent 62%),
+      radial-gradient(90% 120% at 55% 112%, rgb(6 24 47 / 0.96), transparent 70%),
+      linear-gradient(135deg, #03101f 0%, #06182f 46%, #020913 100%);
     background-size: 140% 140%;
     animation: brand-drift 24s ease-in-out infinite alternate;
   }

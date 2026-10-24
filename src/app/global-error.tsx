@@ -3,7 +3,7 @@
 /* Last resort: replaces the root html/body when the layout itself fails.
    It cannot import the token stylesheet… but it can inline the two colours
    it needs, copied from `globals.css` (update there first if you tune these).
-   Rendered in the dark default since obsidian is the product's base theme. */
+   Rendered in the dark default since the deep navy theme is the product's base. */
 
 import { useEffect } from "react";
 
@@ -27,8 +27,8 @@ export default function GlobalError({
           display: "grid",
           placeItems: "center",
           padding: "24px",
-          background: "#050505",
-          color: "#f5f5f7",
+          background: "#050b18",
+          color: "#eaf2ff",
           fontFamily:
             "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
         }}
@@ -39,8 +39,8 @@ export default function GlobalError({
             width: "100%",
             padding: "2rem",
             textAlign: "center",
-            background: "#14121a",
-            border: "1px solid #30283a",
+            background: "#0b1526",
+            border: "1px solid #1d2f47",
             borderRadius: "12px",
           }}
         >
@@ -51,7 +51,7 @@ export default function GlobalError({
             style={{
               fontSize: "0.85rem",
               lineHeight: 1.6,
-              color: "#a1a1aa",
+              color: "#a4b6ce",
               margin: 0,
             }}
           >
@@ -66,8 +66,8 @@ export default function GlobalError({
               padding: "0.5rem 1.25rem",
               borderRadius: "8px",
               border: "1px solid transparent",
-              background: "#00e5ff",
-              color: "#050505",
+              background: "#22d3ee",
+              color: "#04121f",
               fontSize: "0.85rem",
               fontWeight: 600,
               cursor: "pointer",

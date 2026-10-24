@@ -4,7 +4,7 @@
    this file only trusts the token layer, so it renders even mid-crisis. */
 
 import { useEffect } from "react";
-import { Button } from "@/components/relo/chrome";
+import { buttonClass, Button } from "@/components/relo/chrome";
 
 export default function Error({
   error,
@@ -35,9 +35,9 @@ export default function Error({
           <Button variant="signal" onClick={reset}>
             Try again
           </Button>
-          <Button variant="outline" onClick={() => (window.location.href = "/")}>
+          <a href="/" className={buttonClass({ variant: "outline" })}>
             Go home
-          </Button>
+          </a>
         </div>
       </div>
     </main>

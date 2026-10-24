@@ -8,9 +8,9 @@
  * value is written to <html data-theme="light|dark">, which is the single
  * switch every colour token in globals.css keys off.
  *
- * Obsidian is the default for visitors with no stored choice: the product's
- * design system is dark-first, while light ("Paper & Signal") remains a
- * first-class, fully supported alternate.
+ * Dark ("Tide at night") is the default for visitors with no stored choice:
+ * the product's design system is dark-first, while light ("Daylight Tide")
+ * remains a first-class, fully supported alternate.
  *
  * The inline script in app/layout.tsx runs before first paint and sets the
  * same attribute, so there is no flash and no server/client disagreement:

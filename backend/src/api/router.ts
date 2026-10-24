@@ -774,7 +774,6 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     const commentReplies: string[] = body.commentReplies
       .map((reply) => reply.trim())
       .filter(Boolean);
-    const followGateEnabled = Boolean(body.followGateEnabled);
     const templateCard = body.templateCard as unknown as TemplateCardConfig;
 
     if (!accountId || !instagramMediaId || !reelPermalink) {
@@ -914,7 +913,6 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       reelThumbnailUrl: body?.reelThumbnailUrl,
       triggerKeywords,
       commentReplies,
-      followGateEnabled,
       templateCard,
       isActive: body?.isActive !== false,
       followUpEnabled,
@@ -942,7 +940,6 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         reelPermalink,
         triggerKeywords,
         commentReplies,
-        followGateEnabled,
         templateCard,
         isActive: body?.isActive !== false,
         followUpEnabled,
@@ -1135,7 +1132,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       return jsonError("NO_ACCOUNT", "Connect an Instagram account before upgrading.", 400);
     }
     // Price is decided here, never by the client.
-    const amountInr = plan === "studio" ? 399 : 149;
+    const amountInr = plan === "studio" ? 499 : 199;
     // A UPI reference is globally unique: scoping this to one account would let
     // the same transaction be claimed against a second account.
     const duplicate = (await env.DB

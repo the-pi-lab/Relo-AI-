@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useRef } from "react";
 import { useTheme } from "@/lib/relo/theme";
@@ -100,6 +100,12 @@ export function FlowingGradientsCanvas({
 
     const colors = isDark ? colorsDark : colorsLight;
 
+    /* People who ask the OS for less motion get one still frame of the same
+       swirl instead of a permanent animation loop. */
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     const render = () => {
       time += 0.006;
 
@@ -196,10 +202,12 @@ export function FlowingGradientsCanvas({
         ctx.restore();
       }
 
-      animFrameRef.current = requestAnimationFrame(render);
+      if (!reduceMotion) {
+        animFrameRef.current = requestAnimationFrame(render);
+      }
     };
 
-    animFrameRef.current = requestAnimationFrame(render);
+    render();
 
     return () => {
       window.removeEventListener("resize", resize);

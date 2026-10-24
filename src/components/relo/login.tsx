@@ -1,96 +1,140 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+
 import { Button, Field, Logo, inputClass } from "./chrome";
 import { BrandAurora, LiquidBackdrop } from "./ambient";
+import { Turnstile } from "./turnstile";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { ThemeToggle } from "@/lib/relo/theme";
-import { toast } from "sonner";
+import { useRelo } from "@/lib/relo/store";
+import * as api from "@/lib/relo/api";
+import { TURNSTILE_SITE_KEY } from "@/lib/relo/config";
 import { cn } from "@/lib/utils";
-
-/* Demo credentials. There is no mail server behind this, so the code is shown
-   on screen rather than pretending to be secret. */
-const DEMO_CODE = "482913";
 
 const ASSURANCES = [
   "Runs on Instagram's official API",
-  "Access tokens encrypted at rest",
-  "Disconnect and everything stops",
+  "Page access tokens encrypted at rest",
+  "Disconnecting deletes the stored token",
 ];
 
-export function LoginPage({
-  navigate,
-  onAuth,
-}: {
-  navigate: (to: string) => void;
-  onAuth: (email: string, demo?: boolean) => void;
-}) {
-  const [step, setStep] = useState<"email" | "otp">("email");
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function LoginPage({ navigate }: { navigate: (to: string) => void }) {
+  const { completeSignIn, status } = useRelo();
+
+  const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const [captchaFailed, setCaptchaFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [debugCode, setDebugCode] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (status === "signed-in") navigate("/studio");
+  }, [status, navigate]);
+
+  useEffect(() => {
     if (resendIn <= 0) return;
-    const t = window.setTimeout(() => setResendIn((s) => s - 1), 1000);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setResendIn((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
   }, [resendIn]);
 
-  const sendCode = () => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      toast.error("That address does not look right.");
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaKey((key) => key + 1);
+  };
+
+  const requireCaptcha = (): boolean => {
+    if (!TURNSTILE_SITE_KEY) return true;
+    if (captchaToken) return true;
+    setError(
+      captchaFailed
+        ? "The verification check could not load. Refresh the page and try again."
+        : "Complete the verification check first."
+    );
+    return false;
+  };
+
+  const sendCode = async () => {
+    const address = email.trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(address)) {
+      setError("Enter a valid email address.");
       emailRef.current?.focus();
       return;
     }
+    if (!requireCaptcha() || sending) return;
+
     setSending(true);
-    window.setTimeout(() => {
-      setSending(false);
-      setStep("otp");
-      setResendIn(30);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.sendOtp(address, captchaToken || undefined);
+      setEmail(address);
+      setStep("code");
       setCode("");
-      toast.success("Code sent", {
-        description: `This is a demo, so the code is ${DEMO_CODE}.`,
-        duration: 8000,
-      });
-    }, 700);
-  };
-
-  const verify = (value: string) => {
-    if (value.length !== 6) return;
-    setVerifying(true);
-    window.setTimeout(() => {
-      if (value === DEMO_CODE) {
-        toast.success("Welcome back.");
-        onAuth(email.trim());
-        navigate("/studio");
+      setResendIn(30);
+      setNotice(`We sent a six-digit code to ${address}.`);
+      setDebugCode(result.debugCode ?? null);
+      toast.success("Code sent", { description: `Check ${address}.` });
+    } catch (caught) {
+      const apiError = caught instanceof api.ApiError ? caught : null;
+      const retryAfter = apiError?.retryAfterSeconds;
+      if (retryAfter && retryAfter > 0) {
+        setResendIn(retryAfter);
+        setError(`A code was just sent. You can resend in ${retryAfter}s.`);
       } else {
-        setVerifying(false);
-        setCode("");
-        toast.error("That code is wrong.");
+        setError(api.errorMessage(caught));
       }
-    }, 650);
+      resetCaptcha();
+    } finally {
+      setSending(false);
+    }
   };
 
-  const demo = () => {
-    onAuth("demo@relo.app", true);
-    navigate("/studio");
+  const verify = async (value: string) => {
+    if (value.length !== 6 || verifying) return;
+    if (!requireCaptcha()) {
+      setCode("");
+      return;
+    }
+    setVerifying(true);
+    setError(null);
+    try {
+      const result = await api.verifyOtp(email, value, captchaToken || undefined);
+      completeSignIn(result.user);
+      toast.success("Signed in");
+      navigate("/studio");
+    } catch (caught) {
+      setError(api.errorMessage(caught));
+      setCode("");
+      setVerifying(false);
+      resetCaptcha();
+    }
   };
+
+  const captchaConfigured = Boolean(TURNSTILE_SITE_KEY);
 
   return (
-    <div className="relative isolate grid min-h-screen overflow-hidden bg-canvas lg:grid-cols-[1.1fr_1fr]">
+    <div className="relative isolate grid min-h-screen overflow-hidden lg:grid-cols-[1.05fr_1fr]">
       <LiquidBackdrop variant="page" />
 
-      {/* Left: the argument, on the brand's amethyst surface so the form
-          panel reads as the only place to act. */}
-      <div className="relative z-10 hidden flex-col justify-between overflow-hidden bg-brand p-12 text-brand-ink lg:flex">
+      {/* The argument, on the brand's navy surface, so the form reads as
+          the only place to act. */}
+      <aside className="relative z-10 hidden flex-col justify-between overflow-hidden bg-brand p-12 text-brand-ink lg:flex">
         <BrandAurora />
         <div
           aria-hidden
-          className="absolute inset-0 bg-[linear-gradient(180deg,rgb(16_5_32/0.18)_0%,transparent_38%,rgb(16_5_32/0.44)_100%)]"
+          className="absolute inset-0 bg-[linear-gradient(180deg,rgb(16_5_32/0.14)_0%,transparent_40%,rgb(16_5_32/0.5)_100%)]"
         />
 
         <div className="relative z-10 flex h-full flex-col justify-between">
@@ -101,36 +145,40 @@ export function LoginPage({
           />
 
           <div className="max-w-md">
-            <h2 className="h1">
-              Someone comments at 2am. They{" "}
-              <span className="editorial">still</span> get an answer.
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-brand-ink/55">
+              Comment to DM
+            </p>
+            <h2 className="mt-4 text-[2.1rem] font-[720] leading-[1.06] tracking-[-0.035em]">
+              Someone comments while you sleep. They still get the link.
             </h2>
-            <p className="mt-6 text-[15px] leading-relaxed opacity-70">
-              RELO replies in public, then sends a three-button DM with your offer
-              inside. It keeps working while you sleep, and every tap lands in your
-              lead list with its source attached.
+            <p className="mt-5 text-[15px] leading-relaxed text-brand-ink/72">
+              RELO answers the comment in public, then sends one private reply
+              with up to three buttons. Every person who taps through lands in
+              your lead list with the Reel that brought them in.
             </p>
 
-            <ul className="mt-10 divide-y divide-current/15 border-t border-current/15">
-              {ASSURANCES.map((a) => (
+            <ul className="mt-9 divide-y divide-brand-ink/15 border-t border-brand-ink/15">
+              {ASSURANCES.map((item) => (
                 <li
-                  key={a}
-                  className="flex items-center gap-3 py-3.5 text-[13.5px] opacity-80"
+                  key={item}
+                  className="flex items-center gap-3 py-3.5 text-[13.5px] text-brand-ink/78"
                 >
-                  <span className="size-1.5 rounded-full bg-signal shadow-[0_0_10px_var(--signal)]" aria-hidden />
-                  {a}
+                  <span
+                    aria-hidden
+                    className="size-1.5 shrink-0 rounded-full bg-brand-ink/60"
+                  />
+                  {item}
                 </li>
               ))}
             </ul>
           </div>
 
-          <p className="font-mono text-[11px] uppercase tracking-[0.1em] opacity-50">
+          <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-brand-ink/45">
             &copy; 2026 The Pi Lab
           </p>
         </div>
-      </div>
+      </aside>
 
-      {/* Right: the form */}
       <div className="relative z-10 flex flex-col">
         <div className="flex items-center justify-between p-5 sm:p-6">
           <Logo onClick={() => navigate("/")} className="lg:invisible" />
@@ -138,97 +186,133 @@ export function LoginPage({
         </div>
 
         <div className="flex flex-1 items-center justify-center px-5 pb-16 sm:px-6">
-          <div className="glass-panel view-enter w-full max-w-[440px] rounded-[28px] p-6 sm:p-9">
+          <div className="glass-panel view-enter w-full max-w-[430px] rounded-[26px] p-6 sm:p-8">
             {step === "email" ? (
               <>
                 <h1 className="h2 text-ink">Sign in</h1>
-                <p className="mt-3 text-[14px] leading-relaxed text-ink-2">
-                  Use any address to explore. No password, no confirmation email.
+                <p className="mt-2.5 text-[14px] leading-relaxed text-ink-2">
+                  We email you a six-digit code. No password to remember.
                 </p>
 
                 <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    sendCode();
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void sendCode();
                   }}
-                  className="mt-8"
+                  className="mt-7 space-y-5"
                 >
-                  <Field
-                    label="Email"
-                    htmlFor="relo-email"
-                    hint="Demo accepts anything"
-                  >
+                  <Field label="Email" htmlFor="relo-email">
                     <input
                       id="relo-email"
                       ref={emailRef}
                       type="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(event) => setEmail(event.target.value)}
                       placeholder="you@studio.in"
                       autoComplete="email"
                       autoFocus
                       className={cn(inputClass, "h-11")}
+                      aria-invalid={Boolean(error) || undefined}
                     />
                   </Field>
+
+                  {captchaConfigured && (
+                    <Turnstile
+                      siteKey={TURNSTILE_SITE_KEY}
+                      resetKey={captchaKey}
+                      onToken={setCaptchaToken}
+                      onError={() => setCaptchaFailed(true)}
+                    />
+                  )}
+
+                  {error && (
+                    <p
+                      role="alert"
+                      className="rounded-lg border border-bad/30 bg-bad-wash px-3 py-2.5 text-[13px] text-bad"
+                    >
+                      {error}
+                    </p>
+                  )}
 
                   <Button
                     type="submit"
                     variant="signal"
                     size="lg"
-                    className="mt-5 w-full"
+                    className="w-full"
                     disabled={sending}
                   >
-                    {sending ? "Sending" : "Send my code"}
-                    {!sending && <ArrowRight className="size-4" aria-hidden />}
+                    {sending ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                        Sending
+                      </>
+                    ) : (
+                      <>
+                        Email me a code
+                        <ArrowRight className="size-4" aria-hidden />
+                      </>
+                    )}
                   </Button>
                 </form>
 
-                <div className="my-7 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-line" aria-hidden />
-                  <span className="caption">or</span>
-                  <span className="h-px flex-1 bg-line" aria-hidden />
-                </div>
-
-                <Button variant="outline" size="lg" className="w-full" onClick={demo}>
-                  Open the demo studio
-                </Button>
-                <p className="mt-3 text-center text-[12.5px] text-ink-3">
-                  The demo opens with automations, leads and analytics already in it.
+                <p className="mt-5 text-[12.5px] leading-relaxed text-ink-3">
+                  By signing in you agree to the{" "}
+                  <button
+                    type="button"
+                    onClick={() => navigate("/terms")}
+                    className="font-semibold text-ink-2 underline decoration-line-strong underline-offset-2 hover:text-ink"
+                  >
+                    terms
+                  </button>{" "}
+                  and{" "}
+                  <button
+                    type="button"
+                    onClick={() => navigate("/privacy")}
+                    className="font-semibold text-ink-2 underline decoration-line-strong underline-offset-2 hover:text-ink"
+                  >
+                    privacy policy
+                  </button>
+                  .
                 </p>
               </>
             ) : (
               <>
                 <button
                   type="button"
-                  onClick={() => setStep("email")}
+                  onClick={() => {
+                    setStep("email");
+                    setError(null);
+                    setNotice(null);
+                    setCode("");
+                  }}
                   className="inline-flex items-center gap-2 text-[13.5px] font-semibold text-ink-2 transition-colors hover:text-ink"
                 >
                   <ArrowLeft className="size-4" aria-hidden />
-                  Different address
+                  Use a different address
                 </button>
 
-                <h1 className="h2 mt-6 text-ink">Check your inbox</h1>
-                <p className="mt-3 text-[14px] text-ink-2">
-                  Six digits sent to{" "}
-                  <span className="font-semibold text-ink">{email}</span>
+                <h1 className="h2 mt-5 text-ink">Check your inbox</h1>
+                <p className="mt-2.5 text-[14px] leading-relaxed text-ink-2">
+                  Enter the six-digit code sent to{" "}
+                  <span className="font-semibold text-ink">{email}</span>.
                 </p>
 
-                <div className="mt-8">
+                <div className="mt-7">
                   <InputOTP
                     maxLength={6}
                     value={code}
                     aria-label="Six digit verification code"
-                    onChange={(v) => {
-                      setCode(v);
-                      verify(v);
+                    onChange={(value) => {
+                      setCode(value);
+                      if (value.length === 6) void verify(value);
                     }}
                     disabled={verifying}
                   >
                     <InputOTPGroup className="gap-2">
-                      {Array.from({ length: 6 }).map((_, i) => (
+                      {Array.from({ length: 6 }).map((_, index) => (
                         <InputOTPSlot
-                          key={i}
-                          index={i}
+                          key={index}
+                          index={index}
                           className={cn(
                             "h-12 w-11 rounded-lg border border-line-strong bg-surface/55 font-mono text-[15px] text-ink backdrop-blur-md",
                             "transition-[border-color,box-shadow,background-color] duration-150 ease-out",
@@ -241,35 +325,66 @@ export function LoginPage({
                   </InputOTP>
                 </div>
 
-                <div
-                  aria-live="polite"
-                  className="mt-6 flex items-center gap-2 text-[13.5px] text-ink-3"
-                >
-                  {verifying ? (
-                    <span>Unlocking the studio</span>
-                  ) : resendIn > 0 ? (
+                {captchaConfigured && (
+                  <div className="mt-5">
+                    <Turnstile
+                      siteKey={TURNSTILE_SITE_KEY}
+                      resetKey={captchaKey}
+                      onToken={setCaptchaToken}
+                      onError={() => setCaptchaFailed(true)}
+                    />
+                  </div>
+                )}
+
+                {error && (
+                  <p
+                    role="alert"
+                    className="mt-4 rounded-lg border border-bad/30 bg-bad-wash px-3 py-2.5 text-[13px] text-bad"
+                  >
+                    {error}
+                  </p>
+                )}
+
+                {notice && !error && (
+                  <p className="mt-4 text-[13px] text-ink-3" aria-live="polite">
+                    {verifying ? "Checking that code…" : notice}
+                  </p>
+                )}
+
+                <div className="mt-5 flex items-center gap-2 text-[13.5px] text-ink-3">
+                  {resendIn > 0 ? (
                     <span>Resend available in {resendIn}s</span>
                   ) : (
                     <>
-                      <span>Did not arrive?</span>
+                      <span>Didn&apos;t arrive?</span>
                       <button
                         type="button"
-                        onClick={sendCode}
-                        className="font-semibold text-signal transition-colors hover:text-signal-hover"
+                        onClick={() => void sendCode()}
+                        disabled={sending}
+                        className="font-semibold text-signal transition-colors hover:text-signal-hover disabled:opacity-50"
                       >
-                        Resend it
+                        Send it again
                       </button>
                     </>
                   )}
                 </div>
 
-                <p className="mt-8 rounded-lg border border-line/70 bg-surface-2/45 px-3.5 py-3 font-mono text-[12px] text-ink-2">
-                  Demo code {DEMO_CODE} &middot; expires in 10 minutes &middot; 5 attempts
-                </p>
+                {debugCode && (
+                  <p className="mt-6 rounded-lg border border-warn/30 bg-warn-wash px-3.5 py-3 font-mono text-[12px] text-warn">
+                    Development code: {debugCode}
+                  </p>
+                )}
+
+                {verifying && (
+                  <p className="mt-4 inline-flex items-center gap-2 text-[13px] text-ink-3">
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    Signing you in
+                  </p>
+                )}
               </>
             )}
 
-            <div className="mt-8 border-t border-line pt-5">
+            <div className="mt-7 border-t border-line pt-4">
               <button
                 type="button"
                 onClick={() => navigate("/")}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useId, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, X } from "lucide-react";
+import { Lock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ── Sparkline ────────────────────────────────────────────────────────────
@@ -75,12 +75,16 @@ export function Sparkline({
 export function ViewHead({
   title,
   sub,
+  actions,
   children,
 }: {
   title: string;
   sub?: string;
+  actions?: React.ReactNode;
   children?: React.ReactNode;
 }) {
+  const aside = actions ?? children;
+
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
       <div>
@@ -89,7 +93,7 @@ export function ViewHead({
           <p className="mt-2.5 max-w-2xl text-[13.5px] leading-relaxed text-ink-2">{sub}</p>
         )}
       </div>
-      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
+      {aside && <div className="flex flex-wrap items-center gap-2">{aside}</div>}
     </div>
   );
 }
@@ -134,7 +138,6 @@ export function Panel({
 export function StatCard({
   label,
   value,
-  delta,
   suffix = "",
   prefix = "",
   hint,
@@ -142,13 +145,11 @@ export function StatCard({
 }: {
   label: string;
   value: number | string;
-  delta?: string;
   suffix?: string;
   prefix?: string;
   hint?: string;
   series?: number[];
 }) {
-  const up = delta?.startsWith("+");
   return (
     <div className="glass-card group relative overflow-hidden rounded-2xl p-5">
       <span
@@ -165,27 +166,9 @@ export function StatCard({
         {value}
         {suffix}
       </p>
-      {(delta || hint || series) && (
+      {(hint || (series && series.length > 1)) && (
         <p className="mt-3.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-          {delta && (
-            <>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 font-semibold",
-                  up ? "text-ok" : "text-bad"
-                )}
-              >
-                {up ? (
-                  <ArrowUpRight className="size-3.5" aria-hidden />
-                ) : (
-                  <ArrowDownRight className="size-3.5" aria-hidden />
-                )}
-                {delta.replace(/^[+-]/, "")}
-              </span>
-              <span className="text-ink-3">against last period</span>
-            </>
-          )}
-          {hint && !delta && <span className="text-ink-3">{hint}</span>}
+          {hint && <span className="text-ink-3">{hint}</span>}
           {series && series.length > 1 && (
             <span className="ml-auto opacity-60 transition-opacity duration-200 group-hover:opacity-100">
               <Sparkline data={series} />
@@ -339,8 +322,6 @@ export function EmptyState({
   );
 }
 
-/* ── Meter ──────────────────────────────────────────────────────────────── */
-
 export function Meter({
   pct,
   tone = "signal",
@@ -349,8 +330,7 @@ export function Meter({
   pct: number;
   tone?: "signal" | "amber" | "ok" | "warn";
   label?: string;
-}) {
-  const fill =
+}) {  const fill =
     tone === "ok"
       ? "bg-gradient-to-r from-ok/70 to-ok"
       : tone === "warn"
@@ -374,5 +354,84 @@ export function Meter({
         style={{ width: `${Math.min(100, Math.max(pct > 0 ? 3 : 0, pct))}%` }}
       />
     </div>
+  );
+}
+
+/* ── Async states ─────────────────────────────────────────────────────────
+   Every view loads from the Worker, so these three states are shared rather
+   than re-invented per view. */
+
+export function LoadingBlock({ label = "Loading" }: { label?: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2.5 rounded-2xl border border-line bg-surface/40 px-6 py-16 text-[13px] text-ink-3">
+      <span className="size-2 animate-pulse rounded-full bg-signal" aria-hidden />
+      {label}
+    </div>
+  );
+}
+
+export function ErrorNotice({
+  message,
+  onRetry,
+  detail,
+}: {
+  message: string;
+  onRetry?: () => void;
+  detail?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="rounded-xl border border-bad/30 bg-bad-wash px-4 py-3.5 text-[13px] leading-relaxed text-bad"
+    >
+      <p className="font-semibold">That did not work</p>
+      <p className="mt-1 text-bad/90">{message}</p>
+      {detail && <p className="mt-1.5 font-mono text-[11px] text-bad/75">{detail}</p>}
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2.5 rounded-md border border-bad/40 bg-surface/60 px-2.5 py-1 text-[12px] font-semibold text-bad transition-colors hover:bg-surface"
+        >
+          Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function LockedNotice({
+  feature,
+  plan,
+  message,
+  onUpgrade,
+}: {
+  feature: string;
+  plan: string;
+  message: string;
+  onUpgrade: () => void;
+}) {
+  return (
+    <Panel className="mx-auto max-w-xl">
+      <div className="py-6 text-center">
+        <span className="mx-auto grid size-11 place-items-center rounded-full border border-line bg-surface-2 text-ink-2">
+          <Lock className="size-5" aria-hidden />
+        </span>
+        <h2 className="h3 mt-4 text-ink">{feature} is a higher-tier feature</h2>
+        <p className="mx-auto mt-2 max-w-sm text-[13.5px] leading-relaxed text-ink-2">
+          {message}
+        </p>
+        <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+          Current plan: {plan}
+        </p>
+        <button
+          type="button"
+          onClick={onUpgrade}
+          className="mt-5 inline-flex h-9 items-center justify-center rounded-md bg-ink px-4 text-[13px] font-semibold text-ink-invert transition-colors hover:bg-ink/88"
+        >
+          See plans
+        </button>
+      </div>
+    </Panel>
   );
 }

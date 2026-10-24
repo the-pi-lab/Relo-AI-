@@ -20,14 +20,17 @@ const isDev = process.env.NODE_ENV === "development";
 function buildCsp(nonce: string): string {
   return [
     "default-src 'self'",
-    // 'strict-dynamic' lets the nonce'd Next bootstrap load its own chunks.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    // 'strict-dynamic' lets the nonce'd Next bootstrap load its own chunks,
+    // including the Turnstile widget script it injects at runtime.
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://challenges.cloudflare.com${isDev ? " 'unsafe-eval'" : ""}`,
     // Tailwind/Radix write inline style attributes; a nonce cannot cover those.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data: https:",
     "font-src 'self' data:",
     `connect-src 'self' https: wss:${isDev ? " ws: http://localhost:*" : ""}`,
     "media-src 'self' https:",
+    // The Turnstile challenge is an iframe on challenges.cloudflare.com.
+    "frame-src 'self' https://challenges.cloudflare.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

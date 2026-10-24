@@ -36,7 +36,7 @@ export interface CapturedLead {
   accountId: AccountId;
   instagramScopedId: InstagramUserId;
   username?: string;
-  followerStatusAtTrigger: boolean;
+  followerStatusAtTrigger: boolean | null;
   emailCollected?: string;
   totalDmsSent: number;
   firstInteractionAt: number;

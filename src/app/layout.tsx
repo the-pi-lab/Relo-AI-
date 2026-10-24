@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Schibsted_Grotesk, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { Schibsted_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -9,17 +9,6 @@ import { Toaster } from "@/components/ui/sonner";
 const display = Schibsted_Grotesk({
   variable: "--font-display",
   subsets: ["latin"],
-  display: "swap",
-});
-
-/* A single editorial italic, used only for one phrase per screen. It gives the
-   marketing and page titles a human cadence without turning the UI into a
-   magazine. */
-const editorial = Instrument_Serif({
-  variable: "--font-editorial",
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
   display: "swap",
 });
 
@@ -41,7 +30,7 @@ export const metadata: Metadata = {
     template: "%s · RELO",
   },
   description:
-    "RELO turns Instagram Reel comments into verified, three-button DMs through Instagram's official API. Set it once, sell forever.",
+    "RELO answers Instagram Reel comments with a public reply and a DM card, through Instagram's official API. Keyword triggers, click tracking, no per-contact pricing.",
   keywords: [
     "RELO",
     "Instagram automation",
@@ -52,7 +41,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "RELO: Comments in. Customers out.",
     description:
-      "Turn Reel comments into verified, three-button DMs through Instagram's official API. No per-contact pricing.",
+      "Turn Reel comments into DM cards with up to three buttons, through Instagram's official API. No per-contact pricing.",
     siteName: "RELO",
     type: "website",
     images: ["/og.png"],
@@ -61,7 +50,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "RELO: Comments in. Customers out.",
     description:
-      "Turn Reel comments into verified, three-button DMs through Instagram's official API. No per-contact pricing.",
+      "Turn Reel comments into DM cards with up to three buttons, through Instagram's official API. No per-contact pricing.",
     images: ["/og.png"],
   },
 };
@@ -94,7 +83,7 @@ export default async function RootLayout({
        intentional, not a bug. */
     <html
       lang="en"
-      className={`${display.variable} ${editorial.variable} ${code.variable}`}
+      className={`${display.variable} ${code.variable}`}
       suppressHydrationWarning
     >
       <head>

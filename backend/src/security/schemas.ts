@@ -102,7 +102,6 @@ export const automationSaveSchema = z.object({
   reelThumbnailUrl: optionalText(500),
   triggerKeywords: z.array(text(40)).max(25).default([]),
   commentReplies: z.array(text(600)).max(10).default([]),
-  followGateEnabled: flag,
   templateCard: templateCardSchema,
   isActive: flag,
   followUpEnabled: flag,

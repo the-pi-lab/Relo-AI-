@@ -55,7 +55,6 @@ export interface ReelAutomation {
   reelThumbnailUrl?: string;
   triggerKeywords: string[];
   commentReplies: string[]; // Min 3, max 8
-  followGateEnabled: boolean;
   templateCard: TemplateCardConfig;
   isActive: boolean;
   createdAt: number;

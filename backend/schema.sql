@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS reel_automations (
   reel_thumbnail_url TEXT,
   trigger_keywords TEXT NOT NULL, -- JSON array of normalized strings e.g. ["GUIDE", "VIP"]
   comment_replies TEXT NOT NULL, -- JSON array of min 3, max 8 variations with {spintax}
-  follow_gate_enabled INTEGER DEFAULT 1,
+  follow_gate_enabled INTEGER DEFAULT 0, -- retired: kept so schema stays compatible
   template_card TEXT NOT NULL, -- JSON object: { title, subtitle, imageUrl, buttons }
   is_active INTEGER DEFAULT 1,
   created_at INTEGER DEFAULT (unixepoch()),
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS captured_leads (
   account_id TEXT NOT NULL REFERENCES connected_accounts(id) ON DELETE CASCADE,
   instagram_scoped_id TEXT NOT NULL,
   username TEXT,
-  follower_status_at_trigger INTEGER, -- 1 = Follower, 0 = Non-follower
+  follower_status_at_trigger INTEGER, -- NULL = unknown (Meta exposes no follower lookup)
   email_collected TEXT,
   total_dms_sent INTEGER DEFAULT 1,
   first_interaction_at INTEGER DEFAULT (unixepoch()),

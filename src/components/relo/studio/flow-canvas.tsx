@@ -1,55 +1,81 @@
 "use client";
 
 /**
- * The flow canvas: a node editor for automations.
+ * Canvas — a planning board for a comment-to-DM sequence.
  *
- *   · pannable, zoomable dotted canvas (scroll zooms to the cursor)
- *   · draggable step cards with real input and output ports
- *   · drag from a port to connect, or use the add chip under it
- *   · searchable step library on the left, inspector on the right
- *   · Test workflow lights the graph up in execution order
- *   · Save and Active controls, autosave on leave, Delete and Esc keys
+ * The Worker only executes the automation attached to a Reel (`reel_automations`);
+ * a saved flow is a stored blueprint of the intended chain. The copy here says
+ * that plainly instead of pretending this graph runs.
+ *
+ * The graph shape is the one `backend/src/engine/flowGraph.ts` validates:
+ *
+ *   { nodes: [{ id, type, position: {x,y}, config }], edges: [{ id, source, target }] }
+ *
+ * and the rules are the same: exactly one `trigger_comment`, at most 50 nodes,
+ * a straight chain with no branches, orphans or loops. Because a chain has one
+ * obvious shape, the editor keeps the order in sync with the edges instead of
+ * asking the creator to drag wires; dragging only moves a card on the board.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  MessageCircle,
-  Reply,
-  LayoutTemplate,
-  Mail,
-  Hourglass,
-  GitBranch,
-  Sparkles,
-  StickyNote,
-  Plus,
-  Search,
-  X,
-  Trash2,
-  Copy,
-  Save,
-  Play,
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
   Check,
-  Minus,
+  ChevronDown,
+  Hourglass,
+  Info,
+  LayoutTemplate,
+  Loader2,
+  Mail,
   Maximize,
-  CircleCheck,
+  MessageCircle,
+  Minus,
+  Plus,
+  Reply,
+  Save,
+  Search,
+  Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
+
 import { useRelo } from "@/lib/relo/store";
-import { uid, type Flow, type FlowNode, type FlowNodeType } from "@/lib/relo/data";
-import { Field, ViewHead, inputCls } from "./studio-ui";
+import * as api from "@/lib/relo/api";
+import {
+  uid,
+  type Flow,
+  type FlowEdge,
+  type FlowNode,
+  type FlowNodeType,
+} from "@/lib/relo/data";
+import {
+  EmptyState,
+  ErrorNotice,
+  Field,
+  LoadingBlock,
+  LockedNotice,
+  ViewHead,
+  inputCls,
+} from "./studio-ui";
 import { Button } from "../chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 
 /* ── geometry ─────────────────────────────────────────────────────────── */
 
-const NODE_W = 212;
-const NODE_H = 54;
-const PORT_Y = 26;
-const GRID = 16;
-const Z_MIN = 0.35;
-const Z_MAX = 2;
+const NODE_W = 236;
+const NODE_H = 78;
+const PORT_Y = 30;
+const STEP_X = 292;
+const Z_MIN = 0.4;
+const Z_MAX = 1.8;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+/* ── node catalogue ───────────────────────────────────────────────────── */
 
 const NODE_META: Record<
   FlowNodeType,
@@ -57,168 +83,292 @@ const NODE_META: Record<
     icon: typeof MessageCircle;
     label: string;
     sub: string;
-    /* Icon colour only. Step identity is carried by the glyph, never by a
-       filled tile, so a canvas full of steps stays calm to scan. */
+    group: "Start" | "Messages" | "Timing";
     tone: string;
-    group: string;
-    hasIn: boolean;
-    hasOut: boolean;
   }
 > = {
   trigger_comment: {
-    icon: MessageCircle, label: "Comment trigger", sub: "A new comment matches a keyword",
-    tone: "text-chart-2", group: "Triggers", hasIn: false, hasOut: true,
+    icon: MessageCircle,
+    label: "Comment trigger",
+    sub: "A comment matches a keyword",
+    group: "Start",
+    tone: "text-chart-2",
   },
   action_reply: {
-    icon: Reply, label: "Public reply", sub: "Reply publicly to the comment",
-    tone: "text-warn", group: "Messages", hasIn: true, hasOut: true,
+    icon: Reply,
+    label: "Public reply",
+    sub: "Answer under the comment",
+    group: "Messages",
+    tone: "text-warn",
   },
   action_dm_card: {
-    icon: LayoutTemplate, label: "DM card", sub: "3-button template card",
-    tone: "text-signal", group: "Messages", hasIn: true, hasOut: true,
+    icon: LayoutTemplate,
+    label: "DM card",
+    sub: "A card with up to three buttons",
+    group: "Messages",
+    tone: "text-signal",
   },
   action_dm_text: {
-    icon: Mail, label: "DM text", sub: "Plain text direct message",
-    tone: "text-ok", group: "Messages", hasIn: true, hasOut: true,
-  },
-  action_condition: {
-    icon: GitBranch, label: "If / branch", sub: "Split the flow on comment text",
-    tone: "text-chart-5", group: "Flow", hasIn: true, hasOut: true,
+    icon: Mail,
+    label: "DM text",
+    sub: "A plain direct message",
+    group: "Messages",
+    tone: "text-ok",
   },
   action_wait: {
-    icon: Hourglass, label: "Wait", sub: "Human-paced pause",
-    tone: "text-ink-3", group: "Flow", hasIn: true, hasOut: true,
-  },
-  action_ai_text: {
-    icon: Sparkles, label: "AI reply", sub: "AI writes the message",
-    tone: "text-signal", group: "AI", hasIn: true, hasOut: true,
-  },
-  note: {
-    icon: StickyNote, label: "Sticky note", sub: "A note to your future self",
-    tone: "text-warn", group: "Utilities", hasIn: false, hasOut: false,
+    icon: Hourglass,
+    label: "Wait",
+    sub: "Pause before the next step",
+    group: "Timing",
+    tone: "text-ink-3",
   },
 };
 
-const GROUPS = ["Triggers", "Messages", "Flow", "AI", "Utilities"];
+const NODE_TYPES = Object.keys(NODE_META) as FlowNodeType[];
+const GROUPS: Array<"Start" | "Messages" | "Timing"> = ["Start", "Messages", "Timing"];
 
-function defaultParams(type: FlowNodeType): Record<string, string> {
+interface CardButton {
+  title: string;
+  url?: string;
+}
+
+const defaultConfig = (type: FlowNodeType): Record<string, unknown> => {
   switch (type) {
-    case "trigger_comment": return { keywords: "notion, template", match: "whole word" };
-    case "action_reply": return { text: "Just sent it. Check your DMs." };
+    case "trigger_comment":
+      return { keywords: [], mediaId: "" };
+    case "action_reply":
+      return { text: "Sent it to your DMs — check your inbox." };
     case "action_dm_card":
-      return { title: "The Creator OS free pack", subtitle: "3 templates, no email needed", button: "Download free pack", url: "https://" };
-    case "action_dm_text": return { text: "Made it useful? Reply here if you get stuck." };
-    case "action_wait": return { minutes: "45" };
-    case "action_condition": return { contains: "price" };
-    case "action_ai_text": return { prompt: "Answer questions about my products. Warm, two sentences at most." };
-    case "note": return { text: "The story: comment in, customer out." };
+      return { title: "", subtitle: "", buttons: [] as CardButton[] };
+    case "action_dm_text":
+      return { text: "" };
+    case "action_wait":
+      return { minutes: 30 };
   }
+};
+
+/* typed readers: node config is untrusted JSON from the API */
+const asText = (value: unknown, fallback = ""): string =>
+  typeof value === "string" ? value : fallback;
+const asNumber = (value: unknown, fallback: number): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const asTextList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+const asButtons = (value: unknown): CardButton[] =>
+  Array.isArray(value)
+    ? value.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const raw = item as { title?: unknown; url?: unknown };
+        const title = asText(raw.title).slice(0, 20);
+        if (!title) return [];
+        const url = asText(raw.url);
+        return [{ title, url: url || undefined }];
+      })
+    : [];
+
+/* ── chain helpers ────────────────────────────────────────────────────── */
+
+/** Reads the chain from the trigger outward. Anything unreachable is ignored. */
+function chainOf(graph: Flow["graph"]): FlowNode[] {
+  const trigger = graph.nodes.find((node) => node.type === "trigger_comment");
+  if (!trigger) return [];
+
+  const next = new Map<string, string>();
+  for (const edge of graph.edges) next.set(edge.source, edge.target);
+
+  const chain: FlowNode[] = [];
+  const seen = new Set<string>();
+  let cursor: FlowNode | undefined = trigger;
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    chain.push(cursor);
+    const nextId = next.get(cursor.id);
+    cursor = nextId ? graph.nodes.find((node) => node.id === nextId) : undefined;
+  }
+  return chain;
 }
 
-function nodeSummary(n: FlowNode): string {
-  const p = n.params;
-  switch (n.type) {
+/** Edges are derived from order, so the graph can never branch or loop. */
+function graphFrom(nodes: FlowNode[]): Flow["graph"] {
+  const edges: FlowEdge[] = [];
+  for (let i = 1; i < nodes.length; i += 1) {
+    edges.push({
+      id: `${nodes[i - 1].id}->${nodes[i].id}`,
+      source: nodes[i - 1].id,
+      target: nodes[i].id,
+    });
+  }
+  return { nodes, edges };
+}
+
+function summaryOf(node: FlowNode): string {
+  const config = node.config;
+  switch (node.type) {
     case "trigger_comment": {
-      const kws = p?.keywords ?? "";
-      const list = kws
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (list.length) return list.map((k) => `#${k}`).join(" ");
-      /* legacy nodes carry their note in `detail`, so show it verbatim */
-      return n.detail ?? "no keywords yet";
+      const keywords = asTextList(config.keywords);
+      return keywords.length ? keywords.map((word) => `#${word}`).join(" ") : "No keywords yet";
     }
-    case "action_reply": return p?.text ?? n.detail ?? "reply text";
-    case "action_dm_card": return p?.title ?? n.detail ?? "template card";
-    case "action_dm_text": return p?.text ?? n.detail ?? "message";
-    case "action_wait": return p?.minutes ? `${p.minutes} min wait` : (n.detail ?? "pause");
-    case "action_condition": return p?.contains ? `contains \u201c${p.contains}\u201d` : (n.detail ?? "branch");
-    case "action_ai_text": return "AI · 1 credit / reply";
-    case "note": return p?.text ?? n.detail ?? "";
+    case "action_reply":
+      return asText(config.text) || "No reply text yet";
+    case "action_dm_card":
+      return asText(config.title) || "Untitled card";
+    case "action_dm_text":
+      return asText(config.text) || "No message yet";
+    case "action_wait":
+      return `${asNumber(config.minutes, 30)} minute wait`;
   }
 }
 
-interface Selection {
-  kind: "node" | "edge";
-  id: string;
+/* ── drag helper type ─────────────────────────────────────────────────── */
+
+interface Viewport {
+  x: number;
+  y: number;
+  z: number;
 }
-
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
-const snap = (v: number) => Math.round(v / GRID) * GRID;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   CanvasView
-   ═══════════════════════════════════════════════════════════════════════ */
 
 export function CanvasView() {
-  const { flows, saveFlow, pushActivity } = useRelo();
+  const { account, plan, limits, flows, reels, saveFlow, deleteFlow } = useRelo();
 
-  const [flow, setFlow] = useState<Flow>(() =>
-    flows[0]
-      ? structuredClone(flows[0])
-      : {
-          id: uid("flow"),
-          name: "Untitled flow",
-          isActive: false,
-          isPublished: false,
-          nodes: [
-            {
-              id: uid("n"),
-              type: "trigger_comment",
-              x: GRID * 2,
-              y: GRID * 4,
-              label: "Comment trigger",
-              params: defaultParams("trigger_comment"),
-            },
-          ],
-          edges: [],
-        }
-  );
-
-  const [sel, setSel] = useState<Selection | null>(null);
+  const [draft, setDraft] = useState<Flow | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
   const [search, setSearch] = useState("");
-  const [pendingFrom, setPendingFrom] = useState<string | null>(null);
-  const [connect, setConnect] = useState<{ from: string; x: number; y: number } | null>(null);
-  const [view, setView] = useState({ x: 0, y: 0, z: 1 });
-  const [tested, setTested] = useState<string[]>([]);
-  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [confirmFlowDelete, setConfirmFlowDelete] = useState(false);
+  const [pendingFlow, setPendingFlow] = useState<string | null>(null);
+  const [view, setView] = useState<Viewport>({ x: 0, y: 0, z: 1 });
 
-  const vpRef = useRef<HTMLDivElement>(null);
-  const flowRef = useRef(flow);
-  flowRef.current = flow;
+  const viewportRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
-  const selRef = useRef(sel);
-  selRef.current = sel;
+  const draftRef = useRef<Flow | null>(draft);
+  draftRef.current = draft;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
-  /* ── coordinate + mutation helpers ── */
+  /* ── keep the draft in step with the server copy ──
+     Only react to a new array from the store. Re-syncing whenever `dirty`
+     flips would race the refresh that follows a save and could drop a flow
+     the server has not listed yet. */
 
-  const toWorld = useCallback((clientX: number, clientY: number) => {
-    const r = vpRef.current?.getBoundingClientRect();
-    if (!r) return { x: 0, y: 0 };
-    const v = viewRef.current;
-    return { x: (clientX - r.left - v.x) / v.z, y: (clientY - r.top - v.y) / v.z };
-  }, []);
+  const lastDataRef = useRef<Flow[] | null>(null);
 
-  const mutate = useCallback((fn: (f: Flow) => Flow) => {
-    setFlow((f) => fn(f));
+  useEffect(() => {
+    if (lastDataRef.current === flows.data) return;
+    lastDataRef.current = flows.data;
+    if (dirtyRef.current) return;
+    setDraft((current) => {
+      const stored = current && flows.data.find((flow) => flow.id === current.id);
+      return stored ?? flows.data[0] ?? null;
+    });
+  }, [flows.data]);
+
+
+  useEffect(() => {
+    if (selected && !draft?.graph.nodes.some((node) => node.id === selected)) {
+      setSelected(null);
+    }
+  }, [draft, selected]);
+
+  const chain = useMemo(() => (draft ? chainOf(draft.graph) : []), [draft]);
+
+  /* ── mutation helpers ── */
+
+  const mutate = useCallback((updater: (flow: Flow) => Flow) => {
+    setDraft((current) => (current ? updater(current) : current));
     setDirty(true);
-    setTested([]);
+    setFormError(null);
   }, []);
 
-  /* ── pan (bare canvas only) + deselect ── */
+  const replaceChain = useCallback(
+    (nodes: FlowNode[]) => {
+      mutate((flow) => ({ ...flow, graph: graphFrom(nodes) }));
+    },
+    [mutate]
+  );
 
-  const startPan = (e: React.PointerEvent) => {
-    if (e.button !== 0 || e.target !== e.currentTarget) return;
-    setSel(null);
-    const startX = e.clientX;
-    const startY = e.clientY;
+  const addNode = (type: FlowNodeType) => {
+    const flow = draftRef.current;
+    if (!flow) return;
+
+    const nodes = chainOf(flow.graph);
+    if (nodes.length >= 50) {
+      setFormError("A flow holds at most 50 steps.");
+      return;
+    }
+    if (type === "trigger_comment" && nodes.some((node) => node.type === "trigger_comment")) {
+      setFormError("A flow has exactly one trigger. Add messages after it instead.");
+      return;
+    }
+
+    const last = nodes[nodes.length - 1];
+    const node: FlowNode = {
+      id: uid("n"),
+      type,
+      position: last
+        ? { x: last.position.x + STEP_X, y: last.position.y }
+        : { x: 96, y: 96 },
+      config: defaultConfig(type),
+    };
+
+    replaceChain([...nodes, node]);
+    setSelected(node.id);
+    setPalette(false);
+    setSearch("");
+    toast.success(`${NODE_META[type].label} added`);
+  };
+
+  const removeNode = (id: string) => {
+    const flow = draftRef.current;
+    if (!flow) return;
+    replaceChain(chainOf(flow.graph).filter((node) => node.id !== id));
+    setSelected(null);
+    toast("Step removed");
+  };
+
+  const moveNode = (id: string, direction: -1 | 1) => {
+    const flow = draftRef.current;
+    if (!flow) return;
+    const nodes = chainOf(flow.graph);
+    const from = nodes.findIndex((node) => node.id === id);
+    const to = from + direction;
+    if (from < 0 || to <= 0 || to >= nodes.length) return;
+    const next = [...nodes];
+    [next[from], next[to]] = [next[to], next[from]];
+    replaceChain(next);
+  };
+
+  const setConfig = (id: string, patch: Record<string, unknown>) => {
+    mutate((flow) => ({
+      ...flow,
+      graph: {
+        ...flow.graph,
+        nodes: flow.graph.nodes.map((node) =>
+          node.id === id ? { ...node, config: { ...node.config, ...patch } } : node
+        ),
+      },
+    }));
+  };
+
+  /* ── pan + drag ── */
+
+  const startPan = (event: React.PointerEvent) => {
+    if (event.button !== 0 || event.target !== event.currentTarget) return;
+    setSelected(null);
+    const startX = event.clientX;
+    const startY = event.clientY;
     const origin = { ...viewRef.current };
-    const move = (ev: PointerEvent) => {
-      setView((v) => ({ ...v, x: origin.x + (ev.clientX - startX), y: origin.y + (ev.clientY - startY) }));
+    const move = (native: PointerEvent) => {
+      setView((current) => ({
+        ...current,
+        x: origin.x + (native.clientX - startX),
+        y: origin.y + (native.clientY - startY),
+      }));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -228,50 +378,34 @@ export function CanvasView() {
     window.addEventListener("pointerup", up);
   };
 
-  /* ── wheel zoom, anchored at the cursor (n8n feel) ── */
+  const startDrag = (event: React.PointerEvent, node: FlowNode) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    setSelected(node.id);
 
-  useEffect(() => {
-    const el = vpRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const r = el.getBoundingClientRect();
-      const cx = e.clientX - r.left;
-      const cy = e.clientY - r.top;
-      setView((v) => {
-        const z2 = clamp(v.z * Math.exp(-e.deltaY * 0.0016), Z_MIN, Z_MAX);
-        const k = z2 / v.z;
-        return { z: z2, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k };
-      });
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = { ...node.position };
 
-  /* ── node drag ── */
-
-  const startNodeDrag = (e: React.PointerEvent, node: FlowNode) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    setSel({ kind: "node", id: node.id });
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const ox = node.x;
-    const oy = node.y;
-    const move = (ev: PointerEvent) => {
-      const v = viewRef.current;
-      const nx = ox + (ev.clientX - startX) / v.z;
-      const ny = oy + (ev.clientY - startY) / v.z;
-      setFlow((f) => ({
-        ...f,
-        nodes: f.nodes.map((n) => (n.id === node.id ? { ...n, x: nx, y: ny } : n)),
-      }));
+    const move = (native: PointerEvent) => {
+      const zoom = viewRef.current.z;
+      const x = origin.x + (native.clientX - startX) / zoom;
+      const y = origin.y + (native.clientY - startY) / zoom;
+      setDraft((current) =>
+        current
+          ? {
+              ...current,
+              graph: {
+                ...current.graph,
+                nodes: current.graph.nodes.map((item) =>
+                  item.id === node.id ? { ...item, position: { x, y } } : item
+                ),
+              },
+            }
+          : current
+      );
     };
     const up = () => {
-      setFlow((f) => ({
-        ...f,
-        nodes: f.nodes.map((n) => (n.id === node.id ? { ...n, x: snap(n.x), y: snap(n.y) } : n)),
-      }));
       setDirty(true);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -280,868 +414,1085 @@ export function CanvasView() {
     window.addEventListener("pointerup", up);
   };
 
-  /* ── drag-from-port connection ── */
-
-  const startConnect = (e: React.PointerEvent, from: FlowNode) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    const w = toWorld(e.clientX, e.clientY);
-    setConnect({ from: from.id, x: w.x, y: w.y });
-    const move = (ev: PointerEvent) => {
-      const p = toWorld(ev.clientX, ev.clientY);
-      setConnect((c) => (c ? { ...c, x: p.x, y: p.y } : c));
-    };
-    const up = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      const p = toWorld(ev.clientX, ev.clientY);
-      const f = flowRef.current;
-      const target = f.nodes.find(
-        (n) =>
-          n.id !== from.id &&
-          NODE_META[n.type].hasIn &&
-          p.x >= n.x - 10 &&
-          p.x <= n.x + NODE_W + 10 &&
-          p.y >= n.y - 10 &&
-          p.y <= n.y + NODE_H + 14
-      );
-      if (target) {
-        const exists = f.edges.some((ed) => ed.from === from.id && ed.to === target.id);
-        if (exists) {
-          toast.error("Those steps are already connected");
-        } else {
-          mutate((fl) => ({ ...fl, edges: [...fl.edges, { id: uid("e"), from: from.id, to: target.id }] }));
-          toast.success(`Connected ${NODE_META[from.type].label} to ${NODE_META[target.type].label}`);
-        }
-      }
-      setConnect(null);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
-
-  /* ── add node (wires itself when opened from a “+” chip) ── */
-
-  const addNode = (type: FlowNodeType) => {
-    const r = vpRef.current?.getBoundingClientRect();
-    const v = viewRef.current;
-    const cx = r ? (r.width / 2 - v.x) / v.z : 200;
-    const cy = r ? (r.height / 2 - v.y) / v.z : 160;
-    const n: FlowNode = {
-      id: uid("n"),
-      type,
-      x: snap(cx - NODE_W / 2 + (Math.random() * 2 - 1) * 28),
-      y: snap(cy - NODE_H / 2 + (Math.random() * 2 - 1) * 28),
-      label: NODE_META[type].label,
-      params: defaultParams(type),
-    };
-    mutate((f) => {
-      const from = pendingFrom && f.nodes.some((x) => x.id === pendingFrom) ? pendingFrom : null;
-      return from
-        ? { ...f, nodes: [...f.nodes, n], edges: [...f.edges, { id: uid("e"), from, to: n.id }] }
-        : { ...f, nodes: [...f.nodes, n] };
-    });
-    setPendingFrom(null);
-    setPalette(false);
-    setSearch("");
-    setSel({ kind: "node", id: n.id });
-    toast.success(`${NODE_META[type].label} added`);
-  };
-
-  /* ── selection, inspector actions ── */
-
-  const selNode = sel?.kind === "node" ? (flow.nodes.find((n) => n.id === sel.id) ?? null) : null;
-  const selEdge = sel?.kind === "edge" ? (flow.edges.find((e) => e.id === sel.id) ?? null) : null;
-
-  const deleteSel = useCallback(() => {
-    const s = selRef.current;
-    if (!s) return;
-    if (s.kind === "node") {
-      mutate((f) => ({
-        ...f,
-        nodes: f.nodes.filter((n) => n.id !== s.id),
-        edges: f.edges.filter((e) => e.from !== s.id && e.to !== s.id),
-      }));
-      toast("Step removed");
-    } else {
-      mutate((f) => ({ ...f, edges: f.edges.filter((e) => e.id !== s.id) }));
-      toast("Connection removed");
-    }
-    setSel(null);
-  }, [mutate]);
-
-  const duplicateNode = (n: FlowNode) => {
-    const copy: FlowNode = { ...structuredClone(n), id: uid("n"), x: snap(n.x + 36), y: snap(n.y + 36) };
-    mutate((f) => ({ ...f, nodes: [...f.nodes, copy] }));
-    setSel({ kind: "node", id: copy.id });
-    toast.success("Step duplicated");
-  };
-
-  const setParam = (id: string, key: string, value: string) =>
-    mutate((f) => ({
-      ...f,
-      nodes: f.nodes.map((n) => (n.id === id ? { ...n, params: { ...(n.params ?? {}), [key]: value } } : n)),
-    }));
-
-  const setLabel = (id: string, label: string) =>
-    mutate((f) => ({ ...f, nodes: f.nodes.map((n) => (n.id === id ? { ...n, label } : n)) }));
-
-  /* ── keyboard: delete removes selection, escape closes everything ── */
+  /* ── zoom on wheel, but never over a panel ──
+     This is the fix for the reported bug: the palette and the inspector are
+     scrollable panels that live inside the viewport. Their wheel events used to
+     reach this handler, which called preventDefault() and zoomed the canvas
+     instead of scrolling the panel. Anything marked [data-canvas-panel] is
+     handed back to the browser. */
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if (e.key === "Escape") {
-        setSel(null);
+    const element = viewportRef.current;
+    if (!element) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-canvas-panel]")) return;
+      event.preventDefault();
+
+      const rect = element.getBoundingClientRect();
+      const px = event.clientX - rect.left;
+      const py = event.clientY - rect.top;
+      setView((current) => {
+        const zoom = clamp(current.z * Math.exp(-event.deltaY * 0.0016), Z_MIN, Z_MAX);
+        const ratio = zoom / current.z;
+        return {
+          z: zoom,
+          x: px - (px - current.x) * ratio,
+          y: py - (py - current.y) * ratio,
+        };
+      });
+    };
+
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, []);
+
+  /* ── fit the chain into view ── */
+
+  const fitView = useCallback(() => {
+    const flow = draftRef.current;
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!flow || !rect) return;
+    const nodes = chainOf(flow.graph);
+    if (!nodes.length) {
+      setView({ x: 0, y: 0, z: 1 });
+      return;
+    }
+    const minX = Math.min(...nodes.map((node) => node.position.x));
+    const minY = Math.min(...nodes.map((node) => node.position.y));
+    const maxX = Math.max(...nodes.map((node) => node.position.x + NODE_W));
+    const maxY = Math.max(...nodes.map((node) => node.position.y + NODE_H));
+    const pad = 72;
+    const zoom = clamp(
+      Math.min(
+        (rect.width - pad * 2) / Math.max(1, maxX - minX),
+        (rect.height - pad * 2) / Math.max(1, maxY - minY),
+        1
+      ),
+      Z_MIN,
+      1
+    );
+    setView({
+      z: zoom,
+      x: (rect.width - (maxX - minX) * zoom) / 2 - minX * zoom,
+      y: (rect.height - (maxY - minY) * zoom) / 2 - minY * zoom,
+    });
+  }, []);
+
+  const fitOnceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draft) return;
+    if (fitOnceRef.current === draft.id) return;
+    fitOnceRef.current = draft.id;
+    const timer = window.setTimeout(fitView, 50);
+    return () => window.clearTimeout(timer);
+  }, [draft, fitView]);
+
+  /* ── keyboard ── */
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      if (event.key === "Escape") {
         setPalette(false);
-        setPendingFrom(null);
+        setSelected(null);
+        setPendingFlow(null);
+        return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && selRef.current) {
-        e.preventDefault();
-        deleteSel();
+      if (typing) return;
+      if ((event.key === "Delete" || event.key === "Backspace") && selected) {
+        event.preventDefault();
+        removeNode(selected);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteSel]);
+    // removeNode reads the draft from a ref, so it is safe to bind once
+  }, [selected]);
 
-  /* ── test run: the graph lights up in execution order ── */
+  /* ── save / create / delete ── */
 
-  const runTest = () => {
-    const f = flowRef.current;
-    const triggers = f.nodes.filter((n) => n.type === "trigger_comment");
-    if (!triggers.length) {
-      toast.error("Start with a Comment trigger. Every flow needs an entry.");
-      return;
-    }
-    const outMap = new Map<string, string[]>();
-    f.edges.forEach((e) => outMap.set(e.from, [...(outMap.get(e.from) ?? []), e.to]));
-    const order: string[] = [];
-    const seen = new Set<string>();
-    const queue = triggers.map((n) => n.id);
-    while (queue.length) {
-      const id = queue.shift()!;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      order.push(id);
-      (outMap.get(id) ?? []).forEach((t) => {
-        if (!seen.has(t)) queue.push(t);
-      });
-    }
-    const steps = order.filter((id) => f.nodes.find((n) => n.id === id)?.type !== "note");
-    if (steps.length <= 1) {
-      toast.error("Connect the trigger to at least one step");
-      return;
-    }
-    setTested([]);
-    steps.forEach((id, i) =>
-      window.setTimeout(() => setTested((prev) => (prev.includes(id) ? prev : [...prev, id])), 460 * (i + 1))
-    );
-    window.setTimeout(
-      () => {
-        toast.success(`Test run clean, ${steps.length} steps in sequence`);
-        pushActivity("system", `Test run on \u201c${f.name}\u201d`, `${steps.length} steps executed in order`);
-      },
-      460 * steps.length + 240
-    );
-  };
-
-  /* ── save / activate ── */
-
-  const save = () => {
-    saveFlow(flowRef.current);
-    setDirty(false);
-    toast.success("Workflow saved");
-  };
-
-  const activate = (next: boolean) => {
-    const f = { ...flowRef.current, isActive: next, isPublished: next ? true : flowRef.current.isPublished };
-    setFlow(f);
-    setDirty(false);
-    saveFlow(f);
-    toast.success(next ? "Workflow is live" : "Workflow paused");
-    pushActivity("system", next ? `Activated \u201c${f.name}\u201d` : `Paused \u201c${f.name}\u201d`, "from the canvas");
-  };
-
-  /* autosave when leaving the canvas with unsaved edits */
-  useEffect(
-    () => () => {
-      if (dirtyRef.current) {
-        saveFlow(flowRef.current);
-        toast("Canvas autosaved");
+  const problem = useMemo(() => {
+    if (!draft) return "Nothing to save.";
+    if (!draft.name.trim()) return "Give the flow a name.";
+    const nodes = draft.graph.nodes;
+    if (nodes.length === 0) return "Add a comment trigger to start.";
+    const triggers = nodes.filter((node) => node.type === "trigger_comment");
+    if (triggers.length === 0) return "Every flow needs one comment trigger.";
+    if (triggers.length > 1) return "A flow can only have one trigger.";
+    const sources = new Set<string>();
+    for (const edge of draft.graph.edges) {
+      if (sources.has(edge.source)) {
+        return "Flows run in a straight line — a step can only lead to one next step.";
       }
-    },
-    [saveFlow]
-  );
+      sources.add(edge.source);
+    }
+    return null;
+  }, [draft]);
 
-  /* ── fit view ── */
+  const isNew = Boolean(draft && !flows.data.some((flow) => flow.id === draft.id));
 
-  const fitView = useCallback(() => {
-    const f = flowRef.current;
-    const r = vpRef.current?.getBoundingClientRect();
-    if (!r || !f.nodes.length) return;
-    const minX = Math.min(...f.nodes.map((n) => n.x));
-    const minY = Math.min(...f.nodes.map((n) => n.y));
-    const maxX = Math.max(...f.nodes.map((n) => n.x + NODE_W));
-    const maxY = Math.max(...f.nodes.map((n) => n.y + NODE_H));
-    const pad = 64;
-    const z = clamp(
-      Math.min((r.width - pad * 2) / Math.max(1, maxX - minX), (r.height - pad * 2) / Math.max(1, maxY - minY), 1.1),
-      Z_MIN,
-      1.1
-    );
-    setView({
-      z,
-      x: (r.width - (maxX - minX) * z) / 2 - minX * z,
-      y: (r.height - (maxY - minY) * z) / 2 - minY * z,
+  const save = async () => {
+    const flow = draftRef.current;
+    if (!flow || !account) return;
+    if (problem) {
+      setFormError(problem);
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const saved = await saveFlow({
+        id: isNew ? undefined : flow.id,
+        accountId: account.id,
+        name: flow.name.trim(),
+        graph: flow.graph,
+        isActive: flow.isActive,
+        isPublished: flow.isPublished,
+      });
+      setDraft(saved);
+      setDirty(false);
+      toast.success(isNew ? "Flow saved to your account" : "Flow updated");
+    } catch (caught) {
+      setFormError(api.errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startNew = () => {
+    if (!account) return;
+    setDraft({
+      id: uid("flow"),
+      accountId: account.id,
+      name: "Untitled flow",
+      graph: graphFrom([
+        {
+          id: uid("n"),
+          type: "trigger_comment",
+          position: { x: 96, y: 96 },
+          config: defaultConfig("trigger_comment"),
+        },
+      ]),
+      isActive: false,
+      isPublished: false,
+      createdAt: 0,
+      updatedAt: 0,
     });
-  }, []);
-
-  const didFit = useRef(false);
-  useEffect(() => {
-    if (didFit.current) return;
-    didFit.current = true;
-    if (flowRef.current.nodes.length) window.setTimeout(fitView, 60);
-  }, [fitView]);
-
-  /* ── paths ── */
-
-  const edgePath = (a: FlowNode, b: FlowNode) => {
-    const x1 = a.x + NODE_W;
-    const y1 = a.y + PORT_Y;
-    const x2 = b.x;
-    const y2 = b.y + PORT_Y;
-    const dx = Math.max(46, Math.abs(x2 - x1) * 0.5);
-    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+    setDirty(true);
+    setSelected(null);
+    setPalette(false);
+    setFormError(null);
+    setConfirmFlowDelete(false);
   };
 
-  const edgePathToPoint = (a: FlowNode, x2: number, y2: number) => {
-    const x1 = a.x + NODE_W;
-    const y1 = a.y + PORT_Y;
-    const dx = Math.max(46, Math.abs(x2 - x1) * 0.5);
-    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  const openFlow = (id: string) => {
+    if (id === draft?.id) return;
+    if (dirty) {
+      setPendingFlow(id);
+      return;
+    }
+    const next = flows.data.find((flow) => flow.id === id) ?? null;
+    setDraft(next);
+    setSelected(null);
+    setFormError(null);
   };
 
-  const connectFrom = connect ? flow.nodes.find((n) => n.id === connect.from) ?? null : null;
-  const pendingFromNode = pendingFrom ? flow.nodes.find((n) => n.id === pendingFrom) ?? null : null;
+  const discardAndOpen = () => {
+    if (!pendingFlow) return;
+    const next = flows.data.find((flow) => flow.id === pendingFlow) ?? null;
+    setDraft(next);
+    setDirty(false);
+    setSelected(null);
+    setPalette(false);
+    setFormError(null);
+    setPendingFlow(null);
+  };
 
-  const filteredTypes = (Object.keys(NODE_META) as FlowNodeType[]).filter((t) => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return NODE_META[t].label.toLowerCase().includes(q) || NODE_META[t].sub.toLowerCase().includes(q);
+  const removeFlow = async () => {
+    const flow = draftRef.current;
+    if (!flow || isNew) return;
+    try {
+      await deleteFlow(flow.id);
+      setConfirmFlowDelete(false);
+      setDirty(false);
+      setDraft(null);
+      toast.success("Flow deleted");
+    } catch (caught) {
+      setFormError(api.errorMessage(caught));
+    }
+  };
+
+  /* ── derived ── */
+
+  const selectedNode = selected
+    ? draft?.graph.nodes.find((node) => node.id === selected) ?? null
+    : null;
+  const triggerPresent = chain.some((node) => node.type === "trigger_comment");
+
+  const filteredTypes = NODE_TYPES.filter((type) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    const meta = NODE_META[type];
+    return (
+      meta.label.toLowerCase().includes(query) || meta.sub.toLowerCase().includes(query)
+    );
   });
 
-  /* ═══════════════ render ═══════════════ */
+  const edgePath = (from: FlowNode, to: FlowNode) => {
+    const x1 = from.position.x + NODE_W;
+    const y1 = from.position.y + PORT_Y;
+    const x2 = to.position.x;
+    const y2 = to.position.y + PORT_Y;
+    const bend = Math.max(44, Math.abs(x2 - x1) * 0.5);
+    return `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+  };
+
+  /* ── gated + async states ── */
+
+  if (!limits.canvas) {
+    return (
+      <LockedNotice
+        feature="Canvas"
+        plan={plan}
+        message="Map a whole comment-to-DM sequence on one board. Canvas is part of the Studio plan."
+        onUpgrade={() => {
+          window.location.hash = "#/studio/settings";
+        }}
+      />
+    );
+  }
+
+  if (flows.loading && flows.data.length === 0 && !draft) {
+    return <LoadingBlock label="Loading your flows" />;
+  }
+
+  if (flows.error && flows.data.length === 0) {
+    return (
+      <ErrorNotice
+        message={flows.error.message}
+        detail={flows.error.code}
+        onRetry={() => void flows.refresh()}
+      />
+    );
+  }
 
   return (
-    <>
-      <div className="mb-6">
-        <ViewHead
-          title="Canvas"
-          sub="Build the automation as a graph: the trigger that starts it, the messages that follow, and the waits between them."
-        />
-      </div>
-
-      <div className="glass-panel overflow-hidden rounded-2xl">
-      {/* ── toolbar ── */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <div className="min-w-0">
-          <input
-            value={flow.name}
-            onChange={(e) => {
-              setFlow((f) => ({ ...f, name: e.target.value }));
-              setDirty(true);
-            }}
-            className="w-44 truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[15px] font-bold text-ink outline-none transition-colors duration-150 hover:border-line focus:border-line-strong focus:bg-surface-2 sm:w-56"
-            aria-label="Workflow name"
-          />
-          <p className="caption px-1.5 pt-0.5">
-            <span className="tnum">{flow.nodes.length}</span> steps ·{" "}
-            <span className="tnum">{flow.edges.length}</span> connections
-          </p>
-        </div>
-        <span
-          className={cn(
-            "caption hidden items-center gap-1.5 rounded-full border px-2.5 py-1 sm:inline-flex",
-            dirty ? "border-warn/35 bg-warn-wash text-warn" : "border-ok/30 bg-ok-wash text-ok"
-          )}
-        >
-          {dirty ? (
-            <>
-              <span className="size-1.5 rounded-full bg-warn" /> unsaved
-            </>
-          ) : (
-            <>
-              <Check className="size-3" /> saved
-            </>
-          )}
-        </span>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={runTest}>
-            <Play className="size-3.5" /> Test workflow
-          </Button>
-          <Button variant="outline" size="sm" onClick={save}>
-            <Save className="size-3.5" /> Save
-          </Button>
-          <div className="flex items-center gap-2 rounded-full border border-line-strong px-3 py-1.5">
-            <span className={cn("size-1.5 rounded-full", flow.isActive ? "bg-ok" : "bg-surface-3")} />
-            <span className="caption">{flow.isActive ? "Active" : "Inactive"}</span>
-            <Switch checked={flow.isActive} onCheckedChange={activate} aria-label="Toggle workflow active" />
-          </div>
-        </div>
-      </div>
-
-      {/* ── viewport ── */}
-      <div
-        ref={vpRef}
-        onPointerDown={startPan}
-        className="relative h-[calc(100vh-270px)] min-h-[540px] overflow-hidden border-t border-line/60 bg-surface-2/80 select-none"
-        style={{ touchAction: "none" }}
+    <div className="space-y-5">
+      <ViewHead
+        title="Canvas"
+        sub="Lay out a comment-to-DM sequence as one straight chain. This board is the blueprint you save to your account."
       >
-        {/* dotted grid, tied to the view transform */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage: "radial-gradient(var(--line-strong) 1px, transparent 1px)",
-            backgroundSize: `${22 * view.z}px ${22 * view.z}px`,
-            backgroundPosition: `${view.x}px ${view.y}px`,
-            opacity: 0.5,
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,var(--glow-1),transparent_58%),radial-gradient(ellipse_at_82%_100%,var(--glow-3),transparent_62%)] opacity-70"
-        />
-
-        {/* the world: everything that pans and zooms */}
-        <div
-          className="absolute left-0 top-0"
-          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`, transformOrigin: "0 0" }}
+        <Button variant="outline" onClick={startNew} disabled={!account}>
+          <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+          New flow
+        </Button>
+        <Button
+          variant="signal"
+          onClick={() => void save()}
+          disabled={!draft || saving || Boolean(problem && !dirty)}
         >
-          {/* edges */}
-          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1" aria-hidden>
-            <defs>
-              {/* One arrow per wire state so the tip always matches its line. */}
-              {[
-                { id: "fc-arrow-idle", color: "var(--ink-3)" },
-                { id: "fc-arrow-live", color: "var(--signal)" },
-                { id: "fc-arrow-done", color: "var(--ok)" },
-                { id: "fc-arrow-sel", color: "var(--brand-line)" },
-              ].map((m) => (
-                <marker
-                  key={m.id}
-                  id={m.id}
-                  viewBox="0 0 10 10"
-                  refX="8.5"
-                  refY="5"
-                  markerWidth="6.5"
-                  markerHeight="6.5"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M 0 1 L 9 5 L 0 9 z" fill={m.color} />
-                </marker>
-              ))}
-            </defs>
-            {flow.edges.map((e) => {
-              const a = flow.nodes.find((n) => n.id === e.from);
-              const b = flow.nodes.find((n) => n.id === e.to);
-              if (!a || !b) return null;
-              const d = edgePath(a, b);
-              const isSel = sel?.kind === "edge" && sel.id === e.id;
-              const flowed = tested.includes(e.from) && tested.includes(e.to);
-              return (
-                <g key={e.id}>
-                  <path
-                    d={d}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={20}
-                    style={{ pointerEvents: "stroke", cursor: "pointer" }}
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      setSel({ kind: "edge", id: e.id });
-                    }}
-                  />
-                  <path
-                    d={d}
-                    fill="none"
-                    stroke={isSel ? "var(--brand-line)" : flowed ? "var(--ok)" : "var(--line-strong)"}
-                    strokeOpacity={isSel || flowed ? 1 : 0.9}
-                    strokeWidth={isSel ? 2.4 : 1.8}
-                    markerEnd={
-                      isSel
-                        ? "url(#fc-arrow-sel)"
-                        : flowed
-                          ? "url(#fc-arrow-done)"
-                          : "url(#fc-arrow-idle)"
-                    }
-                  />
-                  {/* animated 2D signal pulse stream */}
-                  {flow.isActive && (
-                    <path
-                      d={d}
-                      fill="none"
-                      stroke={flowed ? "var(--ok)" : isSel ? "var(--brand-line)" : "var(--signal)"}
-                      strokeWidth={flowed ? 2.6 : 2}
-                      strokeDasharray="5 9"
-                      strokeLinecap="round"
-                      className={flowed ? "flow-wire-stream-fast" : "flow-wire-stream"}
-                      strokeOpacity={0.85}
-                    />
-                  )}
-                </g>
-              );
-            })}
-            {connectFrom && connect && (
-              <path
-                d={edgePathToPoint(connectFrom, connect.x, connect.y)}
-                fill="none"
-                stroke="var(--signal)"
-                strokeWidth={2}
-                strokeDasharray="6 6"
+          {saving ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Save className="size-4" strokeWidth={1.75} aria-hidden />
+          )}
+          {isNew ? "Save flow" : "Save changes"}
+        </Button>
+      </ViewHead>
+
+      <div className="flex gap-3 rounded-xl border border-info/25 bg-info-wash px-4 py-3 text-[12.5px] leading-relaxed text-info">
+        <Info className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+        <p>
+          Flows do not run on their own yet. The messages that actually send are
+          the ones armed on a Reel in <strong>Automations</strong>; a flow records
+          the longer sequence you are working towards.
+        </p>
+      </div>
+
+      {flows.data.length === 0 && !draft ? (
+        <EmptyState
+          title="No flows yet"
+          sub="A flow starts with one comment trigger and then the steps that follow it. You can map it here before you build the Reel automation."
+        >
+          <Button variant="signal" onClick={startNew}>
+            <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+            Start a flow
+          </Button>
+        </EmptyState>
+      ) : !draft ? (
+        <LoadingBlock label="Opening the board" />
+      ) : (
+        <div className="glass-panel overflow-hidden rounded-2xl">
+          {/* toolbar */}
+          <div
+            data-canvas-panel
+            className="flex flex-wrap items-center gap-3 border-b border-line/60 px-4 py-3"
+          >
+            <div className="relative min-w-0">
+              <select
+                value={draft.id}
+                onChange={(event) => openFlow(event.target.value)}
+                aria-label="Open flow"
+                className="max-w-[240px] appearance-none truncate rounded-md border border-line-strong bg-surface py-1.5 pl-2.5 pr-8 text-[13px] font-semibold text-ink outline-none transition-colors hover:border-ink-3 focus:border-signal"
+              >
+                {isNew && <option value={draft.id}>{draft.name} · unsaved</option>}
+                {flows.data.map((flow) => (
+                  <option key={flow.id} value={flow.id}>
+                    {flow.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-ink-3"
+                aria-hidden
               />
-            )}
-          </svg>
+            </div>
 
-          {/* nodes */}
-          {flow.nodes.map((n) => {
-            const meta = NODE_META[n.type];
-            const isSel = sel?.kind === "node" && sel.id === n.id;
-            const didRun = tested.includes(n.id);
+            <input
+              value={draft.name}
+              onChange={(event) => mutate((flow) => ({ ...flow, name: event.target.value }))}
+              aria-label="Flow name"
+              className="w-44 truncate rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[14px] font-semibold text-ink outline-none transition-colors hover:border-line focus:border-line-strong focus:bg-surface-2 sm:w-56"
+            />
 
-            if (n.type === "note") {
-              return (
-                <div
-                  key={n.id}
-                  style={{ left: n.x, top: n.y, width: 224 }}
-                  className={cn(
-                    "absolute rotate-[-1.2deg] rounded-xl border border-warn/35 bg-warn-wash p-3 shadow-[var(--sh-1)]",
-                    isSel && "ring-2 ring-brand-line/35"
-                  )}
-                >
-                  <div
-                    className="flex cursor-grab items-center gap-2 pb-1.5 active:cursor-grabbing"
-                    onPointerDown={(e) => startNodeDrag(e, n)}
-                  >
-                    <StickyNote className="size-3.5 text-warn" strokeWidth={1.75} aria-hidden />
-                    <span className="caption text-warn">Note</span>
-                    <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => {
-                        mutate((f) => ({ ...f, nodes: f.nodes.filter((x) => x.id !== n.id) }));
-                        toast("Note removed");
-                      }}
-                      className="ml-auto grid size-6 place-items-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-bad"
-                      aria-label="Remove note"
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
-                  </div>
-                  <textarea
-                    value={n.params?.text ?? ""}
-                    onChange={(e) => setParam(n.id, "text", e.target.value)}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    rows={3}
-                    placeholder="A note to your future self…"
-                    className="w-full resize-none bg-transparent text-[12px] leading-relaxed text-ink-2 outline-none placeholder:text-ink-3/70"
-                  />
-                </div>
-              );
-            }
+            <span className="caption tnum hidden sm:inline">
+              {chain.length} {chain.length === 1 ? "step" : "steps"}
+            </span>
 
-            return (
-              <div
-                key={n.id}
-                style={{ left: n.x, top: n.y, width: NODE_W }}
-                className={cn(
-                  "absolute cursor-grab rounded-xl border shadow-[var(--sh-1)] active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--sh-2)] hover:border-signal/60",
-                  isSel
-                    ? "border-brand-line bg-gradient-to-br from-surface-3 to-surface-2 ring-2 ring-brand-line/25"
-                    : didRun
-                      ? "border-ok/60 bg-gradient-to-br from-surface to-surface-2 ring-1 ring-ok/30"
-                      : "border-line bg-gradient-to-br from-surface/95 to-surface-2/95"
-                )}
-                onPointerDown={(e) => startNodeDrag(e, n)}
-              >
-                <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
-                    <meta.icon className={cn("size-4", meta.tone)} strokeWidth={1.75} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12.5px] font-bold leading-tight text-ink">{n.label}</p>
-                    <p className="truncate font-mono text-[9.5px] leading-relaxed text-ink-3">{nodeSummary(n)}</p>
-                  </div>
-                  {didRun ? (
-                    <CircleCheck className="size-4 shrink-0 text-ok " />
-                  ) : meta.hasOut ? (
-                    <span className="size-1.5 shrink-0 rounded-full bg-surface-3/50" />
-                  ) : null}
-                </div>
+            <span
+              className={cn(
+                "caption inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1",
+                dirty
+                  ? "border-warn/35 bg-warn-wash text-warn"
+                  : "border-ok/30 bg-ok-wash text-ok"
+              )}
+            >
+              {dirty ? (
+                <>
+                  <span className="size-1.5 rounded-full bg-warn" aria-hidden />
+                  unsaved
+                </>
+              ) : (
+                <>
+                  <Check className="size-3" aria-hidden />
+                  saved
+                </>
+              )}
+            </span>
 
-                {/* ports */}
-                {meta.hasIn && (
-                  <span
-                    aria-hidden
-                    className="absolute -left-[7px] top-[19px] size-3.5 rounded-full border-2 border-line-strong bg-surface transition-transform duration-150 hover:scale-125"
-                  />
-                )}
-                {meta.hasOut && (
-                  <span
-                    role="button"
-                    aria-label="Drag to connect from this step"
-                    onPointerDown={(e) => startConnect(e, n)}
-                    className="absolute -right-[7px] top-[19px] size-3.5 cursor-crosshair rounded-full border-2 border-signal bg-signal transition-transform duration-150 hover:scale-125"
-                  />
-                )}
-                {/* quick add, sitting under the output port */}
-                {meta.hasOut && (
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => {
-                      setPendingFrom(n.id);
-                      setPalette(true);
-                    }}
-                    className="absolute -right-3 top-[42px] grid size-6 place-items-center rounded-full bg-signal text-signal-ink shadow-[var(--sh-1)]"
-                    aria-label="Add next step"
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
-                )}
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-full border border-line-strong px-3 py-1.5">
+                <span className="caption hidden sm:inline">Published</span>
+                <Switch
+                  checked={draft.isPublished}
+                  onCheckedChange={(next) =>
+                    mutate((flow) => ({
+                      ...flow,
+                      isPublished: next,
+                      isActive: next ? true : flow.isActive,
+                    }))
+                  }
+                  aria-label="Mark this flow as published"
+                />
               </div>
-            );
-          })}
-        </div>
-
-        {/* empty state */}
-        {flow.nodes.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <div className="pointer-events-auto text-center">
-              <p className="h4 text-ink">An empty canvas</p>
-              <p className="mt-1 text-[13px] text-ink-3">Every automation starts with a comment.</p>
-              <Button
-                variant="signal"
-                className="mt-5"
-                onClick={() => {
-                  setPendingFrom(null);
-                  setPalette(true);
-                }}
-              >
-                <Plus className="size-4" /> Add first step
-              </Button>
+              {!isNew && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmFlowDelete(true)}
+                  className="text-bad hover:bg-bad-wash hover:text-bad"
+                >
+                  <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />
+                  Delete
+                </Button>
+              )}
             </div>
           </div>
-        )}
 
-        {/* zoom controls */}
-        <div className="glass-chip absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-full p-1">
-          <button
-            onClick={() => setView((v) => ({ ...v, z: clamp(v.z * 0.85, Z_MIN, Z_MAX) }))}
-            className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
-            aria-label="Zoom out"
-          >
-            <Minus className="size-3.5" />
-          </button>
-          <button
-            onClick={() => setView((v) => ({ ...v, z: 1 }))}
-            className="w-12 rounded-md py-1 text-center font-mono text-[11px] text-ink-3 tnum transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
-            title="Reset zoom to 100%"
-          >
-            {Math.round(view.z * 100)}%
-          </button>
-          <button
-            onClick={() => setView((v) => ({ ...v, z: clamp(v.z * 1.15, Z_MIN, Z_MAX) }))}
-            className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
-            aria-label="Zoom in"
-          >
-            <Plus className="size-3.5" />
-          </button>
-          <span className="mx-0.5 h-4 w-px bg-line" />
-          <button onClick={fitView} className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink" aria-label="Zoom to fit">
-            <Maximize className="size-3.5" />
-          </button>
-        </div>
-
-        {/* add node */}
-        <div className="absolute bottom-3 right-3 z-10">
-          <button
-            onClick={() => {
-              setPendingFrom(null);
-              setPalette(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-signal px-4 py-2 text-[12.5px] font-semibold text-signal-ink shadow-[var(--sh-2)] transition-colors duration-150 hover:bg-signal-hover active:translate-y-px"
-          >
-            <Plus className="size-4" /> Add node
-          </button>
-        </div>
-
-        <p className="caption pointer-events-none absolute bottom-4 left-1/2 z-10 hidden -translate-x-1/2 xl:block">
-          drag to pan · scroll to zoom · drag a step&apos;s right port to connect
-        </p>
-
-        {/* ── edge selected ── */}
-        <AnimatePresence>
-          {selEdge && (
-            <motion.div
-              initial={{ y: 24, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 24, opacity: 0 }}
-              className="glass-chip absolute bottom-16 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-full px-4 py-2 shadow-[var(--sh-3)]"
-            >
-              <span className="caption">Connection selected</span>
-              <button
-                onClick={deleteSel}
-                className="text-[12px] font-semibold text-bad transition-colors hover:text-bad/80"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setSel(null)}
-                className="text-[12px] text-ink-3 transition-colors hover:text-ink"
-              >
-                Esc
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── step library (left) ── */}
-        <AnimatePresence>
-          {palette && (
-            <motion.aside
-              initial={{ x: -22, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -22, opacity: 0 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.28, 1] }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-3 left-3 top-3 z-20 flex w-[280px] max-w-[calc(100%-24px)] flex-col rounded-2xl border border-line/60 bg-surface/85 shadow-[var(--sh-2)] backdrop-blur-2xl"
-            >
-              <div className="flex items-center justify-between border-b border-line px-4 py-3">
-                <div>
-                  <p className="text-[14px] font-semibold text-ink">What happens next?</p>
-                  <p className="caption">Step library</p>
-                </div>
+          {confirmFlowDelete && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-line/60 bg-bad-wash px-4 py-2.5 text-[12.5px] text-bad">
+              <span>Delete “{draft.name}”? This cannot be undone.</span>
+              <div className="ml-auto flex gap-2">
                 <button
-                  onClick={() => {
-                    setPalette(false);
-                    setPendingFrom(null);
-                  }}
-                  className="grid size-7 place-items-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
-                  aria-label="Close palette"
+                  type="button"
+                  onClick={() => setConfirmFlowDelete(false)}
+                  className="rounded-md border border-line bg-surface px-2.5 py-1 font-semibold text-ink-2"
                 >
-                  <X className="size-4" />
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void removeFlow()}
+                  className="rounded-md bg-bad px-2.5 py-1 font-semibold text-bad-ink"
+                >
+                  Delete flow
                 </button>
               </div>
-              <div className="border-b border-line px-3 py-2.5">
-                <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-2 px-3 py-2 transition-colors duration-150 focus-within:border-signal">
-                  <Search className="size-3.5 text-ink-3" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search steps…"
-                    className="w-full bg-transparent text-[13px] outline-none placeholder:text-ink-3"
-                  />
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2">
-                {GROUPS.map((g) => {
-                  const items = filteredTypes.filter((t) => NODE_META[t].group === g);
-                  if (!items.length) return null;
-                  return (
-                    <div key={g} className="mb-1.5">
-                      <p className="caption px-2 py-1.5">{g}</p>
-                      {items.map((t) => {
-                        const m = NODE_META[t];
-                        return (
-                          <button
-                            key={t}
-                            onClick={() => addNode(t)}
-                            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors duration-150 hover:bg-surface-2"
-                          >
-                            <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
-                              <m.icon className={cn("size-4", m.tone)} strokeWidth={1.75} />
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-[13px] font-semibold">{m.label}</span>
-                              <span className="block truncate text-[11px] text-ink-3">{m.sub}</span>
-                            </span>
-                            <Plus className="ml-auto size-3.5 shrink-0 text-ink-3" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-                {!filteredTypes.length && (
-                  <p className="px-3 py-6 text-center text-[12.5px] text-ink-3">Nothing matches “{search}”.</p>
-                )}
-              </div>
-              {pendingFromNode && (
-                <div className="border-t border-line px-4 py-2.5">
-                  <p className="text-[12px] leading-relaxed text-signal">
-                    Wiring from “{pendingFromNode.label}”. The new step connects itself.
-                  </p>
-                </div>
-              )}
-            </motion.aside>
+            </div>
           )}
-        </AnimatePresence>
 
-        {/* ── inspector (right) ── */}
-        <AnimatePresence>
-          {selNode && (
-            <motion.aside
-              key={selNode.id}
-              initial={{ x: 22, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 22, opacity: 0 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.28, 1] }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="absolute bottom-3 right-3 top-3 z-20 w-[300px] max-w-[calc(100%-24px)] overflow-y-auto rounded-2xl border border-line/60 bg-surface/85 shadow-[var(--sh-2)] backdrop-blur-2xl"
+          {pendingFlow && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-line/60 bg-warn-wash px-4 py-2.5 text-[12.5px] text-warn">
+              <span>You have unsaved changes on this flow.</span>
+              <div className="ml-auto flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingFlow(null)}
+                  className="rounded-md border border-line bg-surface px-2.5 py-1 font-semibold text-ink-2"
+                >
+                  Keep editing
+                </button>
+                <button
+                  type="button"
+                  onClick={discardAndOpen}
+                  className="rounded-md bg-warn px-2.5 py-1 font-semibold text-ink-invert"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(formError || problem) && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 border-b border-line/60 bg-surface-2/60 px-4 py-2.5 text-[12.5px] leading-relaxed text-ink-2"
             >
-              {(() => {
-                const meta = NODE_META[selNode.type];
-                const p = (k: string) => selNode.params?.[k] ?? defaultParams(selNode.type)[k] ?? "";
-                const param = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-                  setParam(selNode.id, k, e.target.value);
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-warn" aria-hidden />
+              <span>{formError ?? problem}</span>
+            </div>
+          )}
+
+          {/* viewport */}
+          <div
+            ref={viewportRef}
+            onPointerDown={startPan}
+            className="relative h-[calc(100vh-300px)] min-h-[520px] select-none overflow-hidden bg-surface-2/70"
+            style={{ touchAction: "none" }}
+          >
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                backgroundImage: "radial-gradient(var(--line-strong) 1px, transparent 1px)",
+                backgroundSize: `${22 * view.z}px ${22 * view.z}px`,
+                backgroundPosition: `${view.x}px ${view.y}px`,
+                opacity: 0.5,
+              }}
+            />
+
+            {/* the board */}
+            <div
+              className="absolute left-0 top-0"
+              style={{
+                transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
+                transformOrigin: "0 0",
+              }}
+            >
+              <svg
+                className="pointer-events-none absolute left-0 top-0 overflow-visible"
+                width="1"
+                height="1"
+                aria-hidden
+              >
+                <defs>
+                  <marker
+                    id="flow-arrow"
+                    viewBox="0 0 10 10"
+                    refX="8.5"
+                    refY="5"
+                    markerWidth="6.5"
+                    markerHeight="6.5"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ink-3)" />
+                  </marker>
+                </defs>
+                {chain.slice(1).map((node, index) => (
+                  <path
+                    key={node.id}
+                    d={edgePath(chain[index], node)}
+                    fill="none"
+                    stroke="var(--line-strong)"
+                    strokeWidth={1.8}
+                    markerEnd="url(#flow-arrow)"
+                  />
+                ))}
+              </svg>
+
+              {chain.map((node, index) => {
+                const meta = NODE_META[node.type];
+                const isSelected = selected === node.id;
                 return (
-                  <>
-                    <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
-                        <meta.icon className={cn("size-4", meta.tone)} strokeWidth={1.75} />
+                  <div
+                    key={node.id}
+                    style={{
+                      left: node.position.x,
+                      top: node.position.y,
+                      width: NODE_W,
+                    }}
+                    onPointerDown={(event) => startDrag(event, node)}
+                    className={cn(
+                      "absolute cursor-grab rounded-xl border bg-surface shadow-[var(--sh-1)] transition-[border-color,box-shadow] duration-150 active:cursor-grabbing",
+                      isSelected
+                        ? "border-signal ring-2 ring-signal/25"
+                        : "border-line hover:border-ink-3"
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5 px-3 py-2.5">
+                      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-surface-2">
+                        <meta.icon
+                          className={cn("size-3.5", meta.tone)}
+                          strokeWidth={1.75}
+                          aria-hidden
+                        />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-semibold text-ink">{selNode.label || meta.label}</p>
-                        <p className="caption">{meta.label}</p>
+                        <p className="truncate text-[12.5px] font-semibold leading-tight text-ink">
+                          {meta.label}
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] leading-relaxed text-ink-3">
+                          {summaryOf(node)}
+                        </p>
                       </div>
+                      <span className="mt-0.5 shrink-0 font-mono text-[10px] text-ink-3 tnum">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-line/70 px-3 py-1.5">
+                      <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-3">
+                        {meta.group}
+                      </span>
+                      {index === chain.length - 1 ? (
+                        <button
+                          type="button"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={() => {
+                            setSelected(node.id);
+                            setPalette(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded text-[10.5px] font-semibold text-signal hover:text-signal-hover"
+                        >
+                          <Plus className="size-3" aria-hidden />
+                          next
+                        </button>
+                      ) : (
+                        <span className="font-mono text-[9.5px] text-ink-3">
+                          step {index + 1} of {chain.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* ports: decorative, the chain owns the wiring */}
+                    {index > 0 && (
+                      <span
+                        aria-hidden
+                        className="absolute -left-[6px] top-[24px] size-3 rounded-full border-2 border-line-strong bg-surface"
+                      />
+                    )}
+                    {index < chain.length - 1 && (
+                      <span
+                        aria-hidden
+                        className="absolute -right-[6px] top-[24px] size-3 rounded-full border-2 border-signal bg-surface"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {chain.length === 0 && (
+              <div className="absolute inset-0 grid place-items-center px-6 text-center">
+                <div>
+                  <p className="h4 text-ink">Every flow starts with a comment</p>
+                  <p className="mt-1.5 text-[13px] text-ink-3">
+                    Add the trigger that listens for a keyword.
+                  </p>
+                  <Button
+                    variant="signal"
+                    className="mt-5"
+                    onClick={() => {
+                      setSelected(null);
+                      setPalette(true);
+                    }}
+                  >
+                    <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+                    Add trigger
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* zoom controls */}
+            <div
+              data-canvas-panel
+              className="glass-chip absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-full p-1"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setView((current) => ({
+                    ...current,
+                    z: clamp(current.z * 0.85, Z_MIN, Z_MAX),
+                  }))
+                }
+                className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                aria-label="Zoom out"
+              >
+                <Minus className="size-3.5" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => setView((current) => ({ ...current, z: 1 }))}
+                title="Reset zoom to 100%"
+                className="w-12 rounded-md py-1 text-center font-mono text-[11px] text-ink-3 tnum transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                {Math.round(view.z * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setView((current) => ({
+                    ...current,
+                    z: clamp(current.z * 1.15, Z_MIN, Z_MAX),
+                  }))
+                }
+                className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                aria-label="Zoom in"
+              >
+                <Plus className="size-3.5" aria-hidden />
+              </button>
+              <span className="mx-0.5 h-4 w-px bg-line" aria-hidden />
+              <button
+                type="button"
+                onClick={fitView}
+                className="grid size-7 place-items-center rounded-full text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                aria-label="Fit the chain in view"
+              >
+                <Maximize className="size-3.5" aria-hidden />
+              </button>
+            </div>
+
+            {/* add step */}
+            <div data-canvas-panel className="absolute bottom-3 right-3 z-10">
+              <Button variant="signal" onClick={() => setPalette(true)}>
+                <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+                Add step
+              </Button>
+            </div>
+
+            <p className="caption pointer-events-none absolute bottom-4 left-1/2 z-10 hidden -translate-x-1/2 xl:block">
+              drag the board to pan · scroll to zoom · drag a card to move it
+            </p>
+
+            {/* step library */}
+            {palette && (
+              <aside
+                data-canvas-panel
+                className="absolute bottom-3 left-3 top-3 z-20 flex w-[300px] max-w-[calc(100%-24px)] touch-auto flex-col overflow-hidden rounded-2xl border border-line/60 bg-surface/95 shadow-[var(--sh-2)] backdrop-blur-2xl"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                  <div>
+                    <p className="text-[14px] font-semibold text-ink">What happens next?</p>
+                    <p className="caption">Step library</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPalette(false)}
+                    className="grid size-7 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                    aria-label="Close step library"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                </div>
+
+                <div className="border-b border-line px-3 py-2.5">
+                  <div className="flex items-center gap-2 rounded-md border border-line-strong bg-surface-2 px-3 py-2 focus-within:border-signal">
+                    <Search className="size-3.5 shrink-0 text-ink-3" aria-hidden />
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search steps…"
+                      className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-3"
+                    />
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+                  {GROUPS.map((group) => {
+                    const items = filteredTypes.filter(
+                      (type) => NODE_META[type].group === group
+                    );
+                    if (!items.length) return null;
+                    return (
+                      <div key={group} className="mb-1.5">
+                        <p className="caption px-2 py-1.5">{group}</p>
+                        {items.map((type) => {
+                          const meta = NODE_META[type];
+                          const blocked = type === "trigger_comment" && triggerPresent;
+                          return (
+                            <button
+                              key={type}
+                              type="button"
+                              disabled={blocked}
+                              onClick={() => addNode(type)}
+                              className={cn(
+                                "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors",
+                                blocked
+                                  ? "cursor-not-allowed opacity-45"
+                                  : "hover:bg-surface-2"
+                              )}
+                            >
+                              <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
+                                <meta.icon
+                                  className={cn("size-4", meta.tone)}
+                                  strokeWidth={1.75}
+                                  aria-hidden
+                                />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold text-ink">
+                                  {meta.label}
+                                </span>
+                                <span className="block truncate text-[11px] text-ink-3">
+                                  {blocked ? "Already in this flow" : meta.sub}
+                                </span>
+                              </span>
+                              {!blocked && (
+                                <Plus className="size-3.5 shrink-0 text-ink-3" aria-hidden />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  {!filteredTypes.length && (
+                    <p className="px-3 py-6 text-center text-[12.5px] text-ink-3">
+                      Nothing matches “{search}”.
+                    </p>
+                  )}
+                </div>
+
+                <p className="border-t border-line px-4 py-2.5 text-[11.5px] leading-relaxed text-ink-3">
+                  Steps are appended to the end of the chain. Use the arrows in the
+                  inspector to reorder them.
+                </p>
+              </aside>
+            )}
+
+            {/* inspector */}
+            {selectedNode && (
+              <aside
+                data-canvas-panel
+                className="absolute bottom-3 right-3 top-3 z-20 flex w-[320px] max-w-[calc(100%-24px)] touch-auto flex-col overflow-hidden rounded-2xl border border-line/60 bg-surface/95 shadow-[var(--sh-2)] backdrop-blur-2xl"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-2">
+                    {React.createElement(NODE_META[selectedNode.type].icon, {
+                      className: cn("size-4", NODE_META[selectedNode.type].tone),
+                      strokeWidth: 1.75,
+                    })}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold text-ink">
+                      {NODE_META[selectedNode.type].label}
+                    </p>
+                    <p className="caption">
+                      Step {chain.findIndex((node) => node.id === selectedNode.id) + 1} of{" "}
+                      {chain.length}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    className="grid size-7 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                    aria-label="Close inspector"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+                  <NodeFields
+                    node={selectedNode}
+                    reels={reels.data}
+                    onChange={(patch) => setConfig(selectedNode.id, patch)}
+                  />
+
+                  <div className="mt-5 space-y-2 border-t border-line pt-4">
+                    <div className="flex gap-2">
                       <button
-                        onClick={() => setSel(null)}
-                        className="grid size-7 place-items-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-surface-2 hover:text-ink"
-                        aria-label="Close inspector"
+                        type="button"
+                        disabled={
+                          chain.findIndex((node) => node.id === selectedNode.id) <= 1
+                        }
+                        onClick={() => moveNode(selectedNode.id, -1)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line-strong py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <X className="size-4" />
+                        <ArrowUp className="size-3.5" aria-hidden />
+                        Earlier
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          chain.findIndex((node) => node.id === selectedNode.id) ===
+                          chain.length - 1
+                        }
+                        onClick={() => moveNode(selectedNode.id, 1)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line-strong py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <ArrowDown className="size-3.5" aria-hidden />
+                        Later
                       </button>
                     </div>
-                    <div className="space-y-4 px-4 py-4">
-                      <Field label="Step name">
-                        <input
-                          value={selNode.label}
-                          onChange={(e) => setLabel(selNode.id, e.target.value)}
-                          className={inputCls}
-                        />
-                      </Field>
+                    <button
+                      type="button"
+                      onClick={() => removeNode(selectedNode.id)}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-[12px] font-medium text-bad transition-colors hover:bg-bad-wash"
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                      Remove step
+                    </button>
+                  </div>
+                </div>
+              </aside>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-                      {selNode.type === "trigger_comment" && (
-                        <>
-                          <Field label="Trigger keywords" hint="comma separated">
-                            <input
-                              value={p("keywords")}
-                              onChange={param("keywords")}
-                              placeholder="notion, template"
-                              className={cn(inputCls, "font-mono text-[13px]")}
-                            />
-                          </Field>
-                          <Field label="Match">
-                            <select value={p("match")} onChange={param("match")} className={inputCls}>
-                              <option value="whole word">whole word</option>
-                              <option value="contains">contains</option>
-                            </select>
-                          </Field>
-                        </>
-                      )}
+/* ==========================================================================
+   Inspector fields, one branch per node type
+   ========================================================================== */
 
-                      {selNode.type === "action_reply" && (
-                        <Field label="Reply text" hint="public comment reply">
-                          <textarea rows={3} value={p("text")} onChange={param("text")} className={cn(inputCls, "resize-none")} />
-                        </Field>
-                      )}
+function NodeFields({
+  node,
+  reels,
+  onChange,
+}: {
+  node: FlowNode;
+  reels: Array<{ id: string; caption?: string; permalink: string }>;
+  onChange: (patch: Record<string, unknown>) => void;
+}) {
+  const config = node.config;
 
-                      {selNode.type === "action_dm_card" && (
-                        <>
-                          <Field label="Card title">
-                            <input value={p("title")} onChange={param("title")} className={inputCls} />
-                          </Field>
-                          <Field label="Subtitle">
-                            <input value={p("subtitle")} onChange={param("subtitle")} className={inputCls} />
-                          </Field>
-                          <Field label="Button 1">
-                            <input value={p("button")} onChange={param("button")} className={inputCls} />
-                          </Field>
-                          <Field label="Button link">
-                            <input
-                              value={p("url")}
-                              onChange={param("url")}
-                              className={cn(inputCls, "font-mono text-[13px]")}
-                            />
-                          </Field>
-                        </>
-                      )}
+  if (node.type === "trigger_comment") {
+    const keywords = asTextList(config.keywords);
+    return (
+      <div className="space-y-4">
+        <Field label="Keywords" hint="Comma separated">
+          <input
+            value={keywords.join(", ")}
+            onChange={(event) =>
+              onChange({
+                keywords: Array.from(
+                  new Set(
+                    event.target.value
+                      .split(",")
+                      .map((word) => word.trim().toLowerCase().replace(/\s+/g, ""))
+                      .filter(Boolean)
+                      .slice(0, 12)
+                  )
+                ),
+              })
+            }
+            placeholder="price, link, guide"
+            className={cn(inputCls, "font-mono text-[12.5px]")}
+          />
+        </Field>
 
-                      {selNode.type === "action_dm_text" && (
-                        <Field label="Message">
-                          <textarea rows={3} value={p("text")} onChange={param("text")} className={cn(inputCls, "resize-none")} />
-                        </Field>
-                      )}
+        <Field label="Reel" hint="Which Reel this listens to">
+          <select
+            value={asText(config.mediaId)}
+            onChange={(event) => onChange({ mediaId: event.target.value })}
+            className={inputCls}
+          >
+            <option value="">Any Reel</option>
+            {reels.map((reel) => (
+              <option key={reel.id} value={reel.id}>
+                {reel.caption?.slice(0, 48) || reel.permalink}
+              </option>
+            ))}
+          </select>
+        </Field>
 
-                      {selNode.type === "action_wait" && (
-                        <Field label="Wait" hint="minutes, plus human jitter">
-                          <input
-                            type="number"
-                            min={5}
-                            max={1440}
-                            value={p("minutes")}
-                            onChange={param("minutes")}
-                            className={inputCls}
-                          />
-                        </Field>
-                      )}
-
-                      {selNode.type === "action_condition" && (
-                        <Field label="Continue when comment contains" hint="case-insensitive">
-                          <input
-                            value={p("contains")}
-                            onChange={param("contains")}
-                            className={cn(inputCls, "font-mono text-[13px]")}
-                          />
-                        </Field>
-                      )}
-
-                      {selNode.type === "action_ai_text" && (
-                        <Field label="AI instructions" hint="1 AI credit per reply">
-                          <textarea rows={4} value={p("prompt")} onChange={param("prompt")} className={cn(inputCls, "resize-none")} />
-                        </Field>
-                      )}
-
-                      {selNode.type === "note" && (
-                        <Field label="Note text">
-                          <textarea rows={3} value={p("text")} onChange={param("text")} className={cn(inputCls, "resize-none")} />
-                        </Field>
-                      )}
-
-                      <div className="flex gap-2 border-t border-line pt-4">
-                        <button
-                          onClick={() => duplicateNode(selNode)}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line-strong py-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-150 hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
-                        >
-                          <Copy className="size-3.5" aria-hidden /> Duplicate
-                        </button>
-                        <button
-                          onClick={deleteSel}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-[12.5px] font-medium text-bad transition-colors duration-150 hover:bg-bad-wash"
-                        >
-                          <Trash2 className="size-3.5" aria-hidden /> Delete
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-            </motion.aside>
-          )}
-        </AnimatePresence>
+        <p className="text-[11.5px] leading-relaxed text-ink-3">
+          Keywords are matched against the comment text, case-insensitively.
+        </p>
       </div>
+    );
+  }
+
+  if (node.type === "action_reply") {
+    return (
+      <Field label="Public reply" hint="Up to 2,200 characters">
+        <textarea
+          rows={5}
+          value={asText(config.text)}
+          onChange={(event) => onChange({ text: event.target.value.slice(0, 2200) })}
+          placeholder="Sent it to your DMs — check your inbox."
+          className={cn(inputCls, "resize-none")}
+        />
+      </Field>
+    );
+  }
+
+  if (node.type === "action_dm_text") {
+    return (
+      <Field label="Direct message" hint="Up to 1,000 characters">
+        <textarea
+          rows={5}
+          value={asText(config.text)}
+          onChange={(event) => onChange({ text: event.target.value.slice(0, 1000) })}
+          placeholder="Here is the link I promised."
+          className={cn(inputCls, "resize-none")}
+        />
+      </Field>
+    );
+  }
+
+  if (node.type === "action_wait") {
+    const minutes = asNumber(config.minutes, 30);
+    return (
+      <div className="space-y-3">
+        <Field label="Wait" hint="5 to 1,440 minutes">
+          <input
+            type="number"
+            min={5}
+            max={1440}
+            value={minutes}
+            onChange={(event) =>
+              onChange({
+                minutes: clamp(Number(event.target.value) || 5, 5, 1440),
+              })
+            }
+            className={cn(inputCls, "tnum")}
+          />
+        </Field>
+        <div className="flex flex-wrap gap-1.5">
+          {[5, 15, 60, 240].map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => onChange({ minutes: preset })}
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11.5px] font-semibold transition-colors",
+                minutes === preset
+                  ? "border-signal bg-signal-wash text-signal"
+                  : "border-line text-ink-3 hover:border-ink-3 hover:text-ink"
+              )}
+            >
+              {preset}m
+            </button>
+          ))}
+        </div>
       </div>
-    </>
+    );
+  }
+
+  /* action_dm_card */
+  const buttons = asButtons(config.buttons);
+  return (
+    <div className="space-y-4">
+      <Field label="Card title" hint="Max 80 characters">
+        <input
+          value={asText(config.title)}
+          onChange={(event) => onChange({ title: event.target.value.slice(0, 80) })}
+          placeholder="The Creator OS pack"
+          className={inputCls}
+        />
+      </Field>
+
+      <Field label="Subtitle" hint="Optional">
+        <input
+          value={asText(config.subtitle)}
+          onChange={(event) => onChange({ subtitle: event.target.value.slice(0, 80) })}
+          placeholder="Three templates, no email needed"
+          className={inputCls}
+        />
+      </Field>
+
+      <div>
+        <p className="caption mb-2">Buttons</p>
+        <div className="space-y-2">
+          {buttons.map((button, index) => (
+            <div key={index} className="space-y-1.5 rounded-lg border border-line p-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={button.title}
+                  maxLength={20}
+                  onChange={(event) =>
+                    onChange({
+                      buttons: buttons.map((item, position) =>
+                        position === index
+                          ? { ...item, title: event.target.value }
+                          : item
+                      ),
+                    })
+                  }
+                  placeholder="Button label"
+                  className={cn(inputCls, "flex-1 py-1.5 text-[12.5px]")}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      buttons: buttons.filter((_, position) => position !== index),
+                    })
+                  }
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-ink-3 hover:bg-bad-wash hover:text-bad"
+                  aria-label="Remove button"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </div>
+              <input
+                value={button.url ?? ""}
+                onChange={(event) =>
+                  onChange({
+                    buttons: buttons.map((item, position) =>
+                      position === index
+                        ? { ...item, url: event.target.value }
+                        : item
+                    ),
+                  })
+                }
+                placeholder="https://…"
+                className={cn(inputCls, "py-1.5 font-mono text-[11.5px]")}
+              />
+            </div>
+          ))}
+        </div>
+        {buttons.length < 3 && (
+          <button
+            type="button"
+            onClick={() => onChange({ buttons: [...buttons, { title: "Open link", url: "" }] })}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line-strong py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:text-ink"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            Add button
+          </button>
+        )}
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+          Meta allows up to three buttons, and each label is limited to 20
+          characters.
+        </p>
+      </div>
+    </div>
   );
 }

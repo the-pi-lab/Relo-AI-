@@ -5,22 +5,19 @@ import { Button } from "./chrome";
 import { cn } from "@/lib/utils";
 
 /* ==========================================================================
-   Cookie notice.
+   Local storage notice.
 
-   RELO sets no cookies. It keeps three local-storage entries, so the banner
-   says exactly that rather than borrowing the usual vague wording. Both
-   buttons do the same thing; the choice is recorded only so the banner does
-   not come back.
+   RELO sets no cookies, no trackers and no advertising identifiers, so there
+   is nothing to "accept". What actually lives in this browser is the theme
+   choice and the signed-in session; the notice says that once and gets out of
+   the way.
    ========================================================================== */
 
-export const CONSENT_KEY = "relo-cookie-consent";
+export const CONSENT_KEY = "relo-storage-notice";
 export const CONSENT_EVENT = "relo:consent-open";
 
-export type ConsentChoice = "all" | "necessary";
-
 interface StoredConsent {
-  v: 1;
-  choice: ConsentChoice;
+  v: 2;
   at: string;
 }
 
@@ -30,18 +27,18 @@ export function readConsent(): StoredConsent | null {
     const raw = window.localStorage.getItem(CONSENT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredConsent;
-    return parsed?.v === 1 && (parsed.choice === "all" || parsed.choice === "necessary")
-      ? parsed
-      : null;
+    return parsed?.v === 2 ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function storeConsent(choice: ConsentChoice) {
-  const record: StoredConsent = { v: 1, choice, at: new Date().toISOString() };
+function storeConsent() {
   try {
-    window.localStorage.setItem(CONSENT_KEY, JSON.stringify(record));
+    window.localStorage.setItem(
+      CONSENT_KEY,
+      JSON.stringify({ v: 2, at: new Date().toISOString() } satisfies StoredConsent)
+    );
   } catch {
     /* private mode: the choice simply does not persist */
   }
@@ -56,11 +53,11 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
   useEffect(() => {
     const id = window.setTimeout(() => {
       if (!readConsent()) setOpen(true);
-    }, 1200);
+    }, 1600);
     return () => window.clearTimeout(id);
   }, []);
 
-  /* the footer link in every legal page re-opens it */
+  /* "Privacy" in the footer re-opens it */
   useEffect(() => {
     const reopen = (e: Event) => {
       const resolved = (e as CustomEvent<{ resolved?: boolean }>).detail?.resolved;
@@ -70,15 +67,14 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
     return () => window.removeEventListener(CONSENT_EVENT, reopen);
   }, []);
 
-  /* move focus into the notice when it appears */
   useEffect(() => {
     if (!open) return;
-    const id = window.setTimeout(() => acceptRef.current?.focus(), 300);
+    const id = window.setTimeout(() => acceptRef.current?.focus(), 250);
     return () => window.clearTimeout(id);
   }, [open]);
 
-  const choose = useCallback((choice: ConsentChoice) => {
-    storeConsent(choice);
+  const dismiss = useCallback(() => {
+    storeConsent();
     setOpen(false);
   }, []);
 
@@ -86,47 +82,34 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cookie-title"
-      aria-describedby="cookie-desc"
-      className="fixed inset-x-3 bottom-4 z-[80] sm:inset-x-auto sm:bottom-6 sm:left-6 sm:w-[420px]"
+      role="region"
+      aria-labelledby="storage-title"
+      aria-describedby="storage-desc"
+      className="fixed inset-x-3 bottom-3 z-[80] sm:inset-x-auto sm:bottom-5 sm:left-5 sm:w-[380px]"
     >
-      <div className="rounded-2xl border border-white/15 bg-black/80 p-5 shadow-2xl shadow-black/80 backdrop-blur-2xl text-white">
-        <h2 id="cookie-title" className="text-sm font-bold text-white tracking-tight">
-          Privacy & Local Storage
+      <div className="glass-panel p-4 shadow-[var(--sh-3)]">
+        <h2 id="storage-title" className="text-[13px] font-semibold tracking-tight text-ink">
+          What RELO stores in your browser
         </h2>
 
-        <p id="cookie-desc" className="mt-2 text-xs leading-relaxed text-white/70">
-          RELO sets zero trackers or advertising cookies. It only stores your theme preference, demo workspace state, and gradient shader selection locally in your browser.{" "}
+        <p id="storage-desc" className="mt-1.5 text-[12px] leading-relaxed text-ink-2">
+          No cookies, no trackers, no ad pixels. Only your theme choice and the
+          session that keeps you signed in.{" "}
           <button
             type="button"
             onClick={() => {
-              navigate("/cookies");
+              navigate("/privacy");
               setOpen(false);
             }}
-            className="font-semibold text-cyan-400 underline underline-offset-2 transition-colors hover:text-cyan-300"
+            className="font-semibold text-ink underline decoration-line-strong underline-offset-2 transition-colors hover:decoration-ink"
           >
-            Read details
+            Privacy policy
           </button>
-          .
         </p>
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button
-            ref={acceptRef}
-            variant="signal"
-            className="flex-1 text-xs"
-            onClick={() => choose("all")}
-          >
-            Accept
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 text-xs border-white/10 text-white/80 hover:bg-white/10"
-            onClick={() => choose("necessary")}
-          >
-            Essential only
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <Button ref={acceptRef} variant="outline" size="sm" onClick={dismiss}>
+            Got it
           </Button>
         </div>
       </div>
@@ -141,7 +124,7 @@ export function CookieSettingsLink({ className }: { className?: string }) {
       onClick={() => window.dispatchEvent(new CustomEvent(CONSENT_EVENT))}
       className={cn("transition-colors hover:text-ink", className)}
     >
-      Cookie settings
+      Browser storage
     </button>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { useHashRoute, ReloProvider, useRelo } from "@/lib/relo/store";
+
+import { ReloProvider, useHashRoute, useRelo } from "@/lib/relo/store";
 import { ThemeProvider } from "@/lib/relo/theme";
-import { GradientProvider } from "@/lib/relo/gradients";
 import { LandingPage } from "./landing";
 import { LoginPage } from "./login";
 import { PrivacyPage, TermsPage, CookiesPage, NotFoundPage } from "./pages";
@@ -15,26 +15,32 @@ import { CampaignsView, ProductsView } from "./studio/views-ops";
 import { CanvasView, BioView } from "./studio/views-create";
 import { ContentView, SettingsView } from "./studio/views-settings";
 
+function StudioFallback() {
+  return (
+    <div className="grid min-h-screen place-items-center bg-canvas">
+      <div className="flex items-center gap-3 text-[13.5px] text-ink-3">
+        <span className="size-2 animate-pulse rounded-full bg-signal" aria-hidden />
+        Opening your studio
+      </div>
+    </div>
+  );
+}
+
 function Router() {
   const [route, navigate] = useHashRoute();
-  const { user, signIn } = useRelo();
+  const { status, refreshAll } = useRelo();
 
-  /* One effect guards the studio, including the demo shortcut. Splitting these
-     in two used to race: the guard fired on the route change before the demo
-     sign-in had landed, so deep links bounced to /login. */
+  /* The studio is only rendered for a session the Worker will accept. While
+     the stored token is being checked we show a holding screen rather than
+     flashing the login form at a returning user. */
   useEffect(() => {
-    if (route.name !== "studio" || user) return;
-    if (window.location.hash.includes("demo=1")) {
-      signIn("demo@relo.app", true);
-      return;
-    }
-    navigate("/login");
-  }, [route.name, user, signIn, navigate]);
+    if (route.name !== "studio") return;
+    if (status === "signed-out") navigate("/login");
+  }, [route.name, status, navigate]);
 
-  /* every route change starts at the top of the page */
   useEffect(() => {
-    const id = window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
-    return () => window.clearTimeout(id);
+    const timer = window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
+    return () => window.clearTimeout(timer);
   }, [route]);
 
   const studioView = route.name === "studio" ? route.view : "home";
@@ -60,11 +66,12 @@ function Router() {
       case "settings":
         return <SettingsView />;
       default:
-        return <HomeView go={(v) => navigate(`/studio/${v}`)} />;
+        return <HomeView go={(view) => navigate(`/studio/${view}`)} />;
     }
   };
 
   const key = route.name === "studio" ? `studio-${studioView}` : route.name;
+  const studioReady = status === "signed-in";
 
   return (
     <>
@@ -79,18 +86,26 @@ function Router() {
 
       <main id="main-content" tabIndex={-1} key={key}>
         {route.name === "landing" && <LandingPage navigate={navigate} />}
-        {route.name === "login" && (
-          <LoginPage navigate={navigate} onAuth={(email, demo) => signIn(email, demo)} />
-        )}
+        {route.name === "login" && <LoginPage navigate={navigate} />}
         {route.name === "privacy" && <PrivacyPage navigate={navigate} />}
         {route.name === "terms" && <TermsPage navigate={navigate} />}
         {route.name === "cookies" && <CookiesPage navigate={navigate} />}
         {route.name === "notfound" && <NotFoundPage navigate={navigate} />}
-        {route.name === "studio" && user && (
-          <StudioShell view={studioView} go={(v) => navigate(`/studio/${v}`)}>
-            {renderStudioView()}
-          </StudioShell>
-        )}
+
+        {route.name === "studio" &&
+          (status === "loading" ? (
+            <StudioFallback />
+          ) : studioReady ? (
+            <StudioShell
+              view={studioView}
+              go={(view) => navigate(`/studio/${view}`)}
+              onRefresh={() => void refreshAll()}
+            >
+              {renderStudioView()}
+            </StudioShell>
+          ) : (
+            <StudioFallback />
+          ))}
       </main>
     </>
   );
@@ -99,11 +114,9 @@ function Router() {
 export function ReloApp() {
   return (
     <ThemeProvider>
-      <GradientProvider>
-        <ReloProvider>
-          <Router />
-        </ReloProvider>
-      </GradientProvider>
+      <ReloProvider>
+        <Router />
+      </ReloProvider>
     </ThemeProvider>
   );
 }

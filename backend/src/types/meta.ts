@@ -117,17 +117,3 @@ export interface PlainTextPayload {
 }
 
 export type OutgoingMessagePayload = GenericTemplatePayload | PlainTextPayload;
-
-/**
- * Biometric Follow-Gate Decision States
- */
-export type FollowGateDecision =
-  | "ALLOW_VERIFIED_FOLLOWER"
-  | "ALLOW_FAIL_OPEN"
-  | "PROMPT_FOLLOW";
-
-export interface FollowStatusResult {
-  isFollowing: boolean | null;
-  latencyMs: number;
-  decision: FollowGateDecision;
-}

@@ -184,7 +184,6 @@ async function runE2ETests() {
       "Dispatched the growth blueprint to your DMs @username! 🚀",
       "@username your requested guide has been sent to messages! 🙌",
     ],
-    followGateEnabled: true,
     templateCard: {
       title: "The 2026 Growth Blueprint",
       subtitle: "Viral hooks, retention formulas, and DM templates",
@@ -294,12 +293,6 @@ async function runE2ETests() {
   let dmDispatched = false;
   let commentReplyDispatched = false;
 
-  metaGraphClient.getUserFollowStatus = async () => ({
-    isFollowing: true,
-    latencyMs: 80,
-    decision: "ALLOW_VERIFIED_FOLLOWER",
-  });
-
   metaGraphClient.sendCommentReply = async (_token, _commentId, replyText) => {
     commentReplyDispatched = true;
     assert.ok(replyText.includes("@sarah_growth"));
@@ -332,9 +325,10 @@ async function runE2ETests() {
   const leadRow = sqlite.prepare("SELECT * FROM captured_leads WHERE instagram_scoped_id = ?").get(commenterId) as any;
   assert.ok(leadRow);
   assert.strictEqual(leadRow.username, "sarah_growth");
-  assert.strictEqual(leadRow.follower_status_at_trigger, 1);
+  // Follower status is unknown by design: Meta exposes no follower lookup.
+  assert.strictEqual(leadRow.follower_status_at_trigger, null);
   assert.strictEqual(leadRow.total_dms_sent, 1);
-  console.log(`✓ Lead captured: @${leadRow.username} (Follower: ${Boolean(leadRow.follower_status_at_trigger)}).`);
+  console.log(`✓ Lead captured: @${leadRow.username} (follower status: unknown).`);
 
   // CSV Export
   const csvReq = new Request(`http://localhost/api/leads/export?accountId=${testAccountId}`, {
@@ -359,8 +353,8 @@ async function runE2ETests() {
   assert.strictEqual(teleRes.status, 200);
   assert.strictEqual(teleData.data.telemetry.status, "healthy");
   assert.strictEqual(teleData.data.telemetry.totalLeads, 1);
-  assert.strictEqual(teleData.data.telemetry.followerConversionRate, 100);
-  console.log("✓ Telemetry verified: 100% operational, 100% follower conversion rate.");
+  assert.strictEqual(teleData.data.telemetry.totalComments, 1);
+  console.log("✓ Telemetry verified: 1 comment handled, 1 lead captured.");
 
   console.log("\n🎉 ALL PHASE 7 END-TO-END INTEGRATION TESTS PASSED WITH 100% SUCCESS!");
 }

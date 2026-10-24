@@ -127,23 +127,8 @@ export async function processDueJobsBatch(
         continue;
       }
 
-      // 6. Biometric Follow-Gate Verification (if enabled)
-      let isFollowerVerified = false;
-      let followDecision = "ALLOW_VERIFIED_FOLLOWER";
-
-      if (automation.followGateEnabled) {
-        const followStatus = await metaGraphClient.getUserFollowStatus(
-          decryptedToken,
-          account.instagramUserId,
-          job.commenterUserId
-        );
-        followDecision = followStatus.decision;
-        isFollowerVerified = followStatus.decision === "ALLOW_VERIFIED_FOLLOWER";
-      } else {
-        isFollowerVerified = true;
-      }
-
-      // 7. Dispatch Public Comment Reply (if configured)
+      // 6. Dispatch Public Comment Reply (if configured) — step numbering kept
+      // stable for the comments below.
       // Skip when a previous attempt already posted it — re-dispatching would
       // create visible duplicate comments and spam-flag the account.
       let publicReplyId: string | undefined = job.publicReplyId;
@@ -179,15 +164,7 @@ export async function processDueJobsBatch(
       // 8. Construct & Dispatch Private Reply (Direct Message)
       let dmPayload: OutgoingMessagePayload;
 
-      if (followDecision === "PROMPT_FOLLOW") {
-        // Follow-Gate Gatekeeper Message
-        dmPayload = {
-          recipient: { comment_id: job.commentId },
-          message: {
-            text: `Hey @${job.commenterUsername}! 👋 Please follow our account first so we can send you the exclusive link! Once you've followed, reply here to unlock it.`,
-          },
-        };
-      } else if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
+      if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
         // High-converting 3-Button Generic Template Card.
         // Buttons route through RELO short links for Sent → Clicked tracking.
         const links = await getShortLinksForAutomation(env.DB, automation.id);
@@ -245,12 +222,14 @@ export async function processDueJobsBatch(
 
       const dmResponse = await metaGraphClient.sendPrivateReply(decryptedToken, dmPayload);
 
-      // 9. Upsert Lead into Captured Leads Database
+      // 9. Upsert Lead into Captured Leads Database.
+      // Follower status is deliberately unknown: Meta exposes no follower
+      // lookup for a commenter, so RELO records NULL rather than guessing.
       await upsertCapturedLead(env.DB, {
         accountId: job.accountId,
         instagramScopedId: job.commenterUserId,
         username: job.commenterUsername,
-        isFollower: isFollowerVerified,
+        isFollower: null,
       });
 
       // 10. Mark Job as Successfully Completed

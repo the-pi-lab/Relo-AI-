@@ -1,1065 +1,839 @@
 "use client";
 
+/**
+ * The marketing page.
+ *
+ * Every claim here is backed by something in `backend/`: the Graph API client,
+ * the 30–90 second enqueue jitter in `index.ts`, the spintax reply picker, the
+ * short-link click counter, the 24-hour broadcast window. Nothing is seeded and
+ * no number is decorative, which is why the page has no metric strip.
+ *
+ * Colour comes from the design tokens only. There is no `isDark` branch, so the
+ * theme switch repaints this page the same way it repaints the studio.
+ */
+
 import React, { useState } from "react";
 import {
   ArrowRight,
-  ShieldCheck,
-  Zap,
-  Sparkles,
-  ChevronDown,
-  ChevronRight,
+  BarChart3,
+  CalendarDays,
   Check,
-  Flame,
-  Star,
-  Users,
-  MessageCircle,
-  ExternalLink,
+  Clock,
+  Download,
+  Fingerprint,
   Layers,
-  Heart,
-  DollarSign,
-  TrendingUp,
-  Sliders,
-  CheckCircle,
+  Link2,
   Menu,
+  MessageCircle,
+  MousePointerClick,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Users,
   X,
 } from "lucide-react";
+
+import { Button, Container, Logo, SectionHead } from "./chrome";
+import { BrandAurora, LiquidBackdrop } from "./ambient";
+import { Reveal, Tilt } from "./motion";
+import { ThemeToggle } from "@/lib/relo/theme";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/lib/relo/theme";
-import { FlowingGradientsCanvas } from "./FlowingGradientsCanvas";
-import { LightDarkToggle } from "./LightDarkToggle";
-import { ReelDMSimulator3D } from "./ReelDMSimulator3D";
-import { ScrollableReelGallery } from "./ScrollableReelGallery";
-import { Card3D } from "./Card3D";
 
 interface LandingProps {
   navigate: (to: string) => void;
 }
 
-const NAV_ITEMS = [
-  { id: "simulator", label: "Interactive Demo" },
-  { id: "how-it-works", label: "How It Works" },
-  { id: "campaigns", label: "Active Campaigns" },
-  { id: "calculator", label: "Savings Calculator" },
-  { id: "pricing", label: "Pricing" },
-  { id: "faq", label: "FAQ" },
+const NAV = [
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#features", label: "Features" },
+  { href: "#pricing", label: "Pricing" },
+  { href: "#faq", label: "FAQ" },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Connect the account that owns the Reel",
+    body: "Facebook Login asks for the Page your Reels are published from. RELO stores an encrypted Page token — never your Instagram password — and warns you a week before it expires.",
+  },
+  {
+    n: "02",
+    title: "Pick a Reel and its keyword",
+    body: "RELO lists the Reels it can see. Choose one, then set the words that should open the DM: “price”, “link”, “guide”. Matching is whole-word and case-insensitive.",
+  },
+  {
+    n: "03",
+    title: "Write the reply and the card",
+    body: "A public reply under the comment, a DM card with up to three buttons, and an optional follow-up. Every button becomes a short link with its own click count.",
+  },
+];
+
+const FEATURES = [
+  {
+    icon: MessageCircle,
+    title: "Keyword triggers, per Reel",
+    body: "Up to 12 keywords on each Reel. The comment id is deduplicated, so one comment never sends two DMs.",
+  },
+  {
+    icon: Send,
+    title: "Public reply, then a DM",
+    body: "Reply variations are picked at send time, so two commenters do not receive identical text.",
+  },
+  {
+    icon: Layers,
+    title: "DM cards with three buttons",
+    body: "Title, subtitle and up to three buttons — the shape Instagram actually renders in a private reply.",
+  },
+  {
+    icon: Link2,
+    title: "Tracked short links",
+    body: "Each button points at a RELO short link, so clicks land in the same funnel as your leads.",
+  },
+  {
+    icon: Clock,
+    title: "Human-paced sending",
+    body: "Jobs wait 30–90 seconds before they send. If you reply in the thread yourself, that conversation pauses for 30 minutes.",
+  },
+  {
+    icon: Users,
+    title: "Leads you can export",
+    body: "Every commenter becomes a lead row with their DM count and timestamps. Download the whole list as CSV.",
+  },
+  {
+    icon: CalendarDays,
+    title: "Broadcasts inside the window",
+    body: "Message the people who commented recently, for as long as Meta's 24-hour window allows. The skip count is shown.",
+  },
+  {
+    icon: Sparkles,
+    title: "AI answers from your catalog",
+    body: "When enabled, product questions are answered from your own offers, and anything uncertain is handed to you.",
+  },
+  {
+    icon: BarChart3,
+    title: "Numbers from your account",
+    body: "Queue depth, replies, DMs, leads and clicks — all read from the Worker. No benchmarks, no invented trends.",
+  },
+];
+
+const FUNNEL = [
+  {
+    icon: MessageCircle,
+    label: "Comment matched",
+    detail: "Keyword hit on a Reel you armed.",
+  },
+  {
+    icon: Send,
+    label: "Public reply",
+    detail: "Answer posted under the comment.",
+  },
+  {
+    icon: Layers,
+    label: "DM delivered",
+    detail: "Card or text sent privately.",
+  },
+  {
+    icon: MousePointerClick,
+    label: "Link clicked",
+    detail: "Tracked through a RELO short link.",
+  },
+];
+
+const PLANS = [
+  {
+    name: "Free",
+    price: "₹0",
+    cadence: "forever",
+    blurb: "Test one Reel end to end.",
+    cta: "Start free",
+    highlighted: false,
+    features: [
+      "1 Instagram account",
+      "1 Reel, lifetime",
+      "2 public reply variations",
+      "DM cards with 2 buttons",
+      "3 AI credits",
+      "Lead list and CSV export",
+    ],
+    missing: ["Broadcasts", "Offers and link in bio", "Content planner", "Canvas"],
+  },
+  {
+    name: "Pro",
+    price: "₹199",
+    cadence: "per month",
+    blurb: "For a creator running Reels every week.",
+    cta: "Choose Pro",
+    highlighted: true,
+    features: [
+      "1 Instagram account",
+      "Unlimited Reels",
+      "3–8 reply variations",
+      "DM cards with 3 buttons",
+      "Broadcasts inside the 24h window",
+      "Offers, link-in-bio page, content planner",
+      "500 AI credits a month",
+    ],
+    missing: [],
+  },
+  {
+    name: "Studio",
+    price: "₹499",
+    cadence: "per month",
+    blurb: "For a small team or a manager with several accounts.",
+    cta: "Choose Studio",
+    highlighted: false,
+    features: [
+      "3 Instagram accounts",
+      "Everything in Pro",
+      "Canvas flow blueprints",
+      "5,000 AI credits a month",
+      "Priority support by email",
+    ],
+    missing: [],
+  },
 ];
 
 const FAQS = [
   {
-    q: "How does RELO protect my Instagram account from bans?",
-    a: "Unlike tools that blast identical bot messages with 0ms delay, RELO uses natural 30–90 second randomized human pauses and automatic sentence rotation. Every commenter receives a unique response, making your account look 100% human to Instagram.",
+    q: "Do I have to give RELO my Instagram password?",
+    a: "No. You sign in through Facebook Login, choose the Page your Instagram account is linked to, and Meta issues a Page access token. RELO never sees your password, and disconnecting deletes the stored token.",
   },
   {
-    q: "Why is RELO's subscription so much cheaper than ManyChat?",
-    a: "ManyChat charges escalating monthly fees ($45, $95, up to $235/mo) as your audience grows. RELO gives you unlimited contacts and automated DMs for a flat ₹199/month on the Pro plan, with zero per-contact penalties.",
+    q: "Will this get my account restricted?",
+    a: "RELO uses the official Graph API, waits a random 30–90 seconds before replying, varies the reply text, deduplicates comments and stops when you take over a conversation. Those choices lower the risk that a burst of identical messages gets flagged. No automation tool can promise immunity, and we will not claim to.",
   },
   {
-    q: "How does the Follower Gate work?",
-    a: "When someone comments on your Reel, RELO checks if they follow your account before unlocking the link. If they don't follow you yet, it politely prompts them with a 1-tap follow request, rapidly converting viewers into loyal followers.",
+    q: "Does RELO check whether someone follows me?",
+    a: "No, and neither can any other app: Meta does not expose a follower lookup. RELO will not pretend to gate a link on something it cannot verify. Everyone who comments your keyword gets the reply.",
   },
   {
-    q: "How long does setup take?",
-    a: "Under 60 seconds. Connect your Instagram, pick the Reel, type your trigger keyword (like 'LINK' or 'PRICE'), paste your link, and hit activate. That's it.",
+    q: "Can RELO post my Reels for me?",
+    a: "No. Meta has no content-publishing API for third parties. The content planner holds the idea, hook and date; you publish in Instagram, then link the live Reel back so its automation is attached.",
+  },
+  {
+    q: "What if I answer a DM myself?",
+    a: "Your reply pauses that thread for 30 minutes. RELO will not talk over you.",
+  },
+  {
+    q: "What happens when the access token expires?",
+    a: "A long-lived Page token lasts about 60 days. The studio shows the days remaining and turns amber a week out; reconnecting is the same two-click flow you used the first time.",
+  },
+  {
+    q: "Can I cancel whenever I want?",
+    a: "Yes. Plans are monthly and there is no lock-in. If you cancel, your automations stop at the end of the period and your data stays available to export.",
   },
 ];
 
-export function LandingPage({ navigate }: LandingProps) {
-  const { isDark } = useTheme();
-  const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [contacts, setContacts] = useState(15000);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+/* ── the exchange: a comment turning into a DM ────────────────────────── */
 
-  // Smooth scroll handler that accounts for floating navbar
-  const scrollTo = (id: string) => {
-    setMobileMenuOpen(false);
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-
-  // Savings math
-  const getManyChatMonthly = (count: number) => {
-    if (count <= 500) return 15;
-    if (count <= 2500) return 25;
-    if (count <= 5000) return 45;
-    if (count <= 10000) return 65;
-    if (count <= 15000) return 95;
-    if (count <= 25000) return 145;
-    return 235;
-  };
-
-  const monthly = getManyChatMonthly(contacts);
-  const twoYearsManyChat = monthly * 24;
-  const reloMonthlyUSD = 2.4; // approx ₹199/month in USD
-  const twoYearsRelo = reloMonthlyUSD * 24;
-  const twoYearsSavings = twoYearsManyChat - twoYearsRelo;
-
+function ExchangeCard() {
   return (
-    <div
-      className={cn(
-        "relative min-h-screen transition-colors duration-500 selection:bg-cyan-500/30",
-        isDark ? "text-white" : "text-zinc-900"
-      )}
-    >
-      {/* 60fps Live Tide Swirl Blue Flowing Gradient Background */}
-      <FlowingGradientsCanvas variant="hero" />
-
-      {/* Floating Pill Navigation Header */}
-      <header className="sticky top-4 z-50 px-4 sm:px-6">
-        <div className="mx-auto max-w-6xl">
-          <div
-            className={cn(
-              "flex h-14 items-center justify-between rounded-full border px-4 pl-5 shadow-2xl backdrop-blur-2xl transition-all",
-              isDark
-                ? "border-white/12 bg-black/60 shadow-black/80"
-                : "border-black/10 bg-white/75 shadow-zinc-200/80"
-            )}
-          >
-            {/* Logo */}
-            <div
-              onClick={() => scrollTo("hero")}
-              className="flex items-center gap-2.5 cursor-pointer group"
-            >
-              <div className="size-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-sm text-white shadow-lg shadow-cyan-500/30 transition-transform group-hover:scale-105">
-                R
-              </div>
-              <span className="font-extrabold tracking-tight text-lg">
-                RELO<span className="text-cyan-400">.AI</span>
-              </span>
+    <Tilt strength={5}>
+      <div className="glass-panel overflow-hidden rounded-[22px]">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="grid size-7 place-items-center rounded-full bg-brand text-[11px] font-bold text-brand-ink">
+              R
+            </span>
+            <div>
+              <p className="text-[12.5px] font-semibold leading-tight text-ink">Your Reel</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
+                automation armed
+              </p>
             </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/30 bg-ok-wash px-2 py-0.5 text-[10.5px] font-semibold text-ok">
+            <span className="size-1.5 rounded-full bg-ok" aria-hidden />
+            live
+          </span>
+        </div>
 
-            {/* In-Page Navigation Buttons (Desktop) */}
-            <nav className="hidden md:flex items-center gap-5 text-xs font-mono font-medium">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => scrollTo(item.id)}
-                  className={cn(
-                    "transition-colors hover:text-cyan-400 cursor-pointer",
-                    isDark ? "text-white/70" : "text-zinc-700 hover:text-cyan-600"
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-
-            {/* Right Controls: Dark/Light Mode Toggle & Studio CTA & Mobile Toggle */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <LightDarkToggle />
-
-              <button
-                type="button"
-                onClick={() => navigate("/studio?demo=1")}
-                className="relative group overflow-hidden rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-3.5 sm:px-4 py-1.5 text-xs font-semibold text-white shadow-lg shadow-cyan-500/25 transition-all duration-300 hover:scale-105 hover:shadow-cyan-500/40 cursor-pointer"
-              >
-                <span className="relative z-10 flex items-center gap-1">
-                  <span className="hidden sm:inline">Launch Demo</span>
-                  <span className="sm:hidden">Studio</span>
-                  <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
-                </span>
-              </button>
-
-              {/* Mobile Hamburger Button */}
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className={cn(
-                  "flex size-9 items-center justify-center rounded-full border md:hidden transition-colors cursor-pointer",
-                  isDark
-                    ? "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
-                    : "border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10"
-                )}
-                aria-label="Toggle navigation menu"
-              >
-                {mobileMenuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
-              </button>
+        <div className="space-y-3 p-4">
+          {/* the comment */}
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-3 text-[10px] font-bold text-ink">
+              P
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11.5px] font-semibold text-ink">
+                priya.shoots{" "}
+                <span className="font-normal text-ink-3">commented</span>
+              </p>
+              <p className="mt-1 w-fit rounded-xl rounded-tl-sm border border-line bg-surface px-3 py-2 text-[12.5px] text-ink">
+                price?
+              </p>
             </div>
           </div>
 
-          {/* Mobile Dropdown Menu Drawer */}
-          {mobileMenuOpen && (
-            <div
-              className={cn(
-                "mt-2 rounded-2xl border p-4 shadow-2xl backdrop-blur-2xl md:hidden transition-all animate-in fade-in slide-in-from-top-2 duration-200",
-                isDark
-                  ? "border-white/12 bg-black/80 text-white"
-                  : "border-black/10 bg-white/95 text-zinc-900 shadow-xl"
-              )}
-            >
-              <div className="flex flex-col gap-2">
-                {NAV_ITEMS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => scrollTo(item.id)}
+          {/* the wire */}
+          <div className="flex items-center gap-2.5 pl-9">
+            <svg width="14" height="26" viewBox="0 0 14 26" aria-hidden className="shrink-0">
+              <path
+                d="M7 0v18"
+                stroke="var(--signal)"
+                strokeWidth="1.6"
+                strokeDasharray="4 5"
+                className="flow-wire-stream"
+              />
+              <path d="M2.5 15.5 7 21l4.5-5.5" fill="none" stroke="var(--signal)" strokeWidth="1.6" />
+            </svg>
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+              42s later · public reply + DM
+            </p>
+          </div>
+
+          {/* public reply */}
+          <div className="ml-9 w-fit rounded-xl rounded-tl-sm border border-line bg-surface-2/70 px-3 py-2 text-[12px] text-ink-2">
+            Sent it to your DMs — check your inbox.
+          </div>
+
+          {/* the DM */}
+          <div className="ml-9 overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--sh-1)]">
+            <div className="flex items-center gap-2 border-b border-line/70 px-3 py-2">
+              <span className="size-1.5 rounded-full bg-signal" aria-hidden />
+              <p className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-ink-3">
+                direct message
+              </p>
+            </div>
+            <div className="p-3">
+              <p className="text-[12.5px] font-bold text-ink">The Creator OS pack</p>
+              <p className="mt-0.5 text-[11.5px] text-ink-3">Three templates, one link.</p>
+              <div className="mt-2.5 space-y-1.5">
+                {["Get the pack", "See pricing", "Ask a question"].map((label, index) => (
+                  <div
+                    key={label}
                     className={cn(
-                      "flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-mono font-medium transition-colors text-left",
-                      isDark
-                        ? "hover:bg-white/10 text-white/80 hover:text-white"
-                        : "hover:bg-black/5 text-zinc-700 hover:text-black"
+                      "rounded-md border px-2.5 py-1.5 text-center text-[11.5px] font-semibold",
+                      index === 0
+                        ? "border-signal/40 bg-signal-wash text-signal"
+                        : "border-line bg-surface-2/60 text-ink-2"
                     )}
                   >
-                    <span>{item.label}</span>
-                    <ChevronRight className="size-3.5 opacity-40" />
-                  </button>
+                    {label}
+                  </div>
                 ))}
               </div>
             </div>
-          )}
+          </div>
+
+          <div className="ml-9 flex items-center gap-1.5 pt-0.5">
+            <MousePointerClick className="size-3 text-ink-3" aria-hidden />
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-3">
+              button 1 clicked · short link counted
+            </p>
+          </div>
         </div>
+      </div>
+    </Tilt>
+  );
+}
+
+/* ── page ─────────────────────────────────────────────────────────────── */
+
+export function LandingPage({ navigate }: LandingProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const go = (to: string) => {
+    setMenuOpen(false);
+    navigate(to);
+  };
+
+  return (
+    <div className="relative min-h-svh overflow-x-clip text-ink">
+      <LiquidBackdrop variant="hero" grid />
+
+      <header className="sticky top-0 z-50 border-b border-line/70 bg-canvas/80 backdrop-blur-xl">
+        <Container className="flex h-16 items-center gap-3">
+          <Logo onClick={() => go("/")} />
+
+          <nav aria-label="Sections" className="ml-6 hidden items-center gap-1 lg:flex">
+            {NAV.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle className="hidden sm:inline-flex" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => go("/login")}
+              className="hidden sm:inline-flex"
+            >
+              Sign in
+            </Button>
+            <Button variant="signal" size="sm" onClick={() => go("/login")}>
+              Start free
+              <ArrowRight className="size-3.5" strokeWidth={2} aria-hidden />
+            </Button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-expanded={menuOpen}
+              aria-label="Menu"
+              className="grid size-8 place-items-center rounded-md text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink lg:hidden"
+            >
+              {menuOpen ? <X className="size-4" aria-hidden /> : <Menu className="size-4" aria-hidden />}
+            </button>
+          </div>
+        </Container>
+
+        {menuOpen && (
+          <div className="border-t border-line bg-canvas/95 backdrop-blur-xl lg:hidden">
+            <Container className="flex flex-col gap-1 py-3">
+              {NAV.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMenuOpen(false)}
+                  className="rounded-md px-2 py-2 text-[13.5px] font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
+                >
+                  {item.label}
+                </a>
+              ))}
+              <button
+                type="button"
+                onClick={() => go("/login")}
+                className="rounded-md px-2 py-2 text-left text-[13.5px] font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
+              >
+                Sign in
+              </button>
+              <div className="mt-2 px-2">
+                <ThemeToggle />
+              </div>
+            </Container>
+          </div>
+        )}
       </header>
 
-      {/* Main Container */}
-      <main className="relative z-10 px-4 sm:px-6 pt-12 pb-24 space-y-28 max-w-7xl mx-auto">
-        {/* ── 1. Hero Section ────────────────────────────────────────────── */}
-        <section id="hero" className="scroll-mt-28 text-center pt-8 sm:pt-16 max-w-4xl mx-auto space-y-7">
-          {/* Badge */}
-          <div
-            className={cn(
-              "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-mono shadow-lg backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-500",
-              isDark
-                ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300"
-                : "border-cyan-600/25 bg-cyan-50/80 text-cyan-800 shadow-sm"
-            )}
-          >
-            <span className="size-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>100% Instagram Safe</span>
-            <span className="opacity-40">·</span>
-            <span>Flat ₹199/mo · Zero Contact Tax</span>
-          </div>
-
-          {/* Master Headline */}
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08]">
-            Turn Reel comments into customers.{" "}
-            <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent italic font-serif font-normal">
-              Hands-free.
-            </span>
-          </h1>
-
-          <p
-            className={cn(
-              "max-w-2xl mx-auto text-base sm:text-lg leading-relaxed transition-colors",
-              isDark ? "text-white/70" : "text-zinc-600"
-            )}
-          >
-            Instantly send private links, discount codes, and digital guides whenever someone comments on your Instagram Reels. Human-safe delays prevent spam blocks. Flat plans from ₹199/month.
-          </p>
-
-          {/* Action CTAs */}
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-            <button
-              type="button"
-              onClick={() => navigate("/studio?demo=1")}
-              className="group relative flex items-center gap-2.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-7 py-3.5 text-sm font-semibold text-white shadow-2xl shadow-cyan-500/30 transition-all duration-300 hover:scale-105 hover:shadow-cyan-500/50 cursor-pointer"
-            >
-              <span>Explore Live Dashboard Demo</span>
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => scrollTo("pricing")}
-              className={cn(
-                "rounded-full border px-6 py-3.5 text-sm font-semibold transition-all backdrop-blur-xl cursor-pointer",
-                isDark
-                  ? "border-white/15 bg-black/40 text-white/80 hover:bg-white/10 hover:text-white"
-                  : "border-black/15 bg-white/80 text-zinc-800 hover:bg-white hover:text-black shadow-sm"
-              )}
-            >
-              Pro Plan · ₹199/mo
-            </button>
-          </div>
-        </section>
-
-        {/* ── 2. Interactive 3D Reel Simulator ──────────────────────────── */}
-        <section id="simulator" className="scroll-mt-28 pt-2">
-          <div className="text-center mb-6">
-            <span
-              className={cn(
-                "font-mono text-xs uppercase tracking-wider",
-                isDark ? "text-cyan-400 font-semibold" : "text-sky-700 font-bold"
-              )}
-            >
-              Live Interactive Playground
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-bold mt-1 tracking-tight">
-              Test How a Comment Turns into a Direct Message
-            </h2>
-            <p className={cn("text-xs sm:text-sm mt-1 transition-colors", isDark ? "text-white/60" : "text-zinc-600")}>
-              Click any keyword below to see the automated reply and follower verification in real-time.
-            </p>
-          </div>
-          <ReelDMSimulator3D />
-        </section>
-
-        {/* ── 3. 4 Headline Metric Cards ────────────────────────────────── */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card3D
-            intensity={10}
-            className={cn(
-              "p-5 backdrop-blur-xl transition-all duration-300",
-              isDark
-                ? "bg-black/60 border-white/12 text-white"
-                : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-            )}
-          >
-            <div
-              className={cn(
-                "text-[11px] font-mono uppercase tracking-wider",
-                isDark ? "text-white/50" : "text-zinc-500 font-medium"
-              )}
-            >
-              Delivery Speed
-            </div>
-            <div
-              className={cn(
-                "text-2xl sm:text-3xl font-extrabold font-mono mt-1",
-                isDark ? "text-cyan-400" : "text-sky-600"
-              )}
-            >
-              Under 15ms
-            </div>
-            <div
-              className={cn(
-                "text-xs mt-1 flex items-center gap-1 font-medium",
-                isDark ? "text-emerald-400" : "text-emerald-600"
-              )}
-            >
-              <Zap className="size-3" /> Instant edge response
-            </div>
-          </Card3D>
-
-          <Card3D
-            intensity={10}
-            className={cn(
-              "p-5 backdrop-blur-xl transition-all duration-300",
-              isDark
-                ? "bg-black/60 border-white/12 text-white"
-                : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-            )}
-          >
-            <div
-              className={cn(
-                "text-[11px] font-mono uppercase tracking-wider",
-                isDark ? "text-white/50" : "text-zinc-500 font-medium"
-              )}
-            >
-              Pro Plan
-            </div>
-            <div
-              className={cn(
-                "text-2xl sm:text-3xl font-extrabold font-mono mt-1",
-                isDark ? "text-emerald-400" : "text-emerald-600"
-              )}
-            >
-              ₹199 / mo
-            </div>
-            <div className={cn("text-xs mt-1", isDark ? "text-white/70" : "text-zinc-600")}>
-              Flat fee · Unlimited contacts
-            </div>
-          </Card3D>
-
-          <Card3D
-            intensity={10}
-            className={cn(
-              "p-5 backdrop-blur-xl transition-all duration-300",
-              isDark
-                ? "bg-black/60 border-white/12 text-white"
-                : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-            )}
-          >
-            <div
-              className={cn(
-                "text-[11px] font-mono uppercase tracking-wider",
-                isDark ? "text-white/50" : "text-zinc-500 font-medium"
-              )}
-            >
-              Anti-Ban Delay
-            </div>
-            <div
-              className={cn(
-                "text-2xl sm:text-3xl font-extrabold font-mono mt-1",
-                isDark ? "text-white" : "text-zinc-900"
-              )}
-            >
-              30–90s
-            </div>
-            <div
-              className={cn(
-                "text-xs mt-1 flex items-center gap-1 font-medium",
-                isDark ? "text-emerald-400" : "text-emerald-600"
-              )}
-            >
-              <ShieldCheck className="size-3" /> Natural human jitter
-            </div>
-          </Card3D>
-
-          <Card3D
-            intensity={10}
-            className={cn(
-              "p-5 backdrop-blur-xl transition-all duration-300",
-              isDark
-                ? "bg-black/60 border-white/12 text-white"
-                : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-            )}
-          >
-            <div
-              className={cn(
-                "text-[11px] font-mono uppercase tracking-wider",
-                isDark ? "text-white/50" : "text-zinc-500 font-medium"
-              )}
-            >
-              Audience Limit
-            </div>
-            <div
-              className={cn(
-                "text-2xl sm:text-3xl font-extrabold font-mono mt-1",
-                isDark ? "text-white" : "text-zinc-900"
-              )}
-            >
-              Unlimited
-            </div>
-            <div className={cn("text-xs mt-1", isDark ? "text-white/70" : "text-zinc-600")}>
-              Zero contact list caps
-            </div>
-          </Card3D>
-        </section>
-
-        {/* ── 4. How It Works: 3 Steps ──────────────────────────────────── */}
-        <section id="how-it-works" className="scroll-mt-28 space-y-8">
-          <div className="text-center max-w-2xl mx-auto">
-            <span
-              className={cn(
-                "font-mono text-xs uppercase tracking-wider",
-                isDark ? "text-cyan-400 font-semibold" : "text-sky-700 font-bold"
-              )}
-            >
-              Simple 3-Step Setup
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-1">
-              Ready in Under 60 Seconds
-            </h2>
-            <p className={cn("text-sm mt-2 transition-colors", isDark ? "text-white/70" : "text-zinc-600")}>
-              No complicated flow charts or engineering degrees required.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            <Card3D
-              intensity={8}
-              className={cn(
-                "p-7 backdrop-blur-xl transition-all duration-300",
-                isDark
-                  ? "bg-black/60 border-white/12 text-white"
-                  : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-              )}
-            >
-              <div
-                className={cn(
-                  "size-10 rounded-xl flex items-center justify-center font-bold text-lg mb-5 border",
-                  isDark
-                    ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/30"
-                    : "bg-cyan-50 text-sky-700 border-cyan-200 shadow-sm"
-                )}
-              >
-                1
-              </div>
-              <h3 className={cn("text-lg font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                Pick Your Reel & Keyword
-              </h3>
-              <p className={cn("mt-2 text-xs leading-relaxed", isDark ? "text-white/70" : "text-zinc-600")}>
-                Select your video and set the trigger word your audience will comment—like &quot;LINK&quot;, &quot;PRICE&quot;, or &quot;VIP&quot;.
+      <div className="relative z-10">
+        {/* ── hero ── */}
+        <section className="section pb-16 pt-14 md:pb-24 md:pt-20">
+          <Container className="grid items-center gap-14 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <Reveal>
+              <p className="caption">Instagram comment automation</p>
+              <h1 className="display mt-4 max-w-[13ch] text-ink">
+                Comments in.
+                <br />
+                Customers out.
+              </h1>
+              <p className="lead mt-6 max-w-xl">
+                RELO watches the Reels you choose. When someone comments your
+                keyword, it answers in public and sends a DM card with your link —
+                through Instagram&rsquo;s official API, not a browser bot.
               </p>
-            </Card3D>
 
-            <Card3D
-              intensity={8}
-              className={cn(
-                "p-7 backdrop-blur-xl transition-all duration-300",
-                isDark
-                  ? "bg-black/60 border-white/12 text-white"
-                  : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-              )}
-            >
-              <div
-                className={cn(
-                  "size-10 rounded-xl flex items-center justify-center font-bold text-lg mb-5 border",
-                  isDark
-                    ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                    : "bg-blue-50 text-blue-700 border-blue-200 shadow-sm"
-                )}
-              >
-                2
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <Button variant="signal" size="lg" onClick={() => go("/login")}>
+                  Start free
+                  <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
+                </Button>
+                <a
+                  href="#how-it-works"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-line-strong bg-surface px-5 text-[14.5px] font-semibold text-ink transition-colors hover:border-ink-3 hover:bg-surface-2"
+                >
+                  See how it works
+                </a>
               </div>
-              <h3 className={cn("text-lg font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                Attach Your Link & Offer
-              </h3>
-              <p className={cn("mt-2 text-xs leading-relaxed", isDark ? "text-white/70" : "text-zinc-600")}>
-                Provide your destination URL, digital product, or calendar. Add up to 3 interactive action buttons in Direct Message.
+
+              <p className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-ink-3">
+                <span className="inline-flex items-center gap-1.5">
+                  <Check className="size-3.5 text-ok" strokeWidth={2.4} aria-hidden />
+                  Free plan: one Reel
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Check className="size-3.5 text-ok" strokeWidth={2.4} aria-hidden />
+                  No card to start
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Check className="size-3.5 text-ok" strokeWidth={2.4} aria-hidden />
+                  Cancel any month
+                </span>
               </p>
-            </Card3D>
+            </Reveal>
 
-            <Card3D
-              intensity={8}
-              className={cn(
-                "p-7 backdrop-blur-xl transition-all duration-300",
-                isDark
-                  ? "bg-black/60 border-white/12 text-white"
-                  : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-              )}
-            >
-              <div
-                className={cn(
-                  "size-10 rounded-xl flex items-center justify-center font-bold text-lg mb-5 border",
-                  isDark
-                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                    : "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm"
-                )}
-              >
-                3
-              </div>
-              <h3 className={cn("text-lg font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                Watch Conversions Roll In
-              </h3>
-              <p className={cn("mt-2 text-xs leading-relaxed", isDark ? "text-white/70" : "text-zinc-600")}>
-                RELO replies to comments with natural sentence variations and delivers the DM automatically 24/7 while you sleep.
-              </p>
-            </Card3D>
-          </div>
+            <Reveal delay={0.12} y={34}>
+              <ExchangeCard />
+            </Reveal>
+          </Container>
         </section>
 
-        {/* ── 5. Side-by-Side Scrollable Reel Gallery (Fixed from 3-stack) ─ */}
-        <section id="campaigns" className="scroll-mt-28 space-y-4">
-          <div className="text-center max-w-xl mx-auto mb-2">
-            <span
-              className={cn(
-                "font-mono text-xs uppercase tracking-wider",
-                isDark ? "text-cyan-400 font-semibold" : "text-sky-700 font-bold"
-              )}
-            >
-              Live Showcase
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-1">
-              Active Reel Automation Gallery
-            </h2>
-            <p className={cn("text-xs sm:text-sm mt-1 transition-colors", isDark ? "text-white/70" : "text-zinc-600")}>
-              Slide horizontally to inspect different campaign setups and conversion rates.
-            </p>
-          </div>
+        {/* ── how it works ── */}
+        <section id="how-it-works" className="section scroll-mt-20 border-t border-line/70">
+          <Container>
+            <SectionHead
+              title="Three steps, then it runs quietly"
+              sub="Connection, keywords and copy. There is no flow builder to learn before your first Reel is armed."
+            />
 
-          <ScrollableReelGallery />
-        </section>
-
-        {/* ── 6. Savings Calculator ──────────────────────────────────────── */}
-        <section id="calculator" className="scroll-mt-28 space-y-4">
-          <div className="text-center max-w-xl mx-auto mb-4">
-            <span
-              className={cn(
-                "font-mono text-xs uppercase tracking-wider",
-                isDark ? "text-cyan-400 font-semibold" : "text-sky-700 font-bold"
-              )}
-            >
-              The ManyChat Tax vs RELO
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-1">
-              Calculate Your 24-Month Savings
-            </h2>
-          </div>
-
-          <Card3D
-            intensity={8}
-            className={cn(
-              "p-6 sm:p-8 backdrop-blur-2xl transition-all duration-300",
-              isDark
-                ? "bg-black/60 border-white/12 text-white"
-                : "bg-white/85 border-black/10 text-zinc-900 shadow-2xl shadow-cyan-950/10"
-            )}
-          >
-            <div
-              className={cn(
-                "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b",
-                isDark ? "border-white/8" : "border-black/8"
-              )}
-            >
-              <div>
-                <h3 className={cn("text-xl sm:text-2xl font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                  Stop Paying Monthly Rent for Your Own Leads
-                </h3>
-                <p className={cn("text-xs mt-1 max-w-xl", isDark ? "text-white/70" : "text-zinc-600")}>
-                  Slide to select your active contact list size and see how much you save by switching to RELO.
-                </p>
-              </div>
-
-              <div className="text-right">
-                <div
-                  className={cn(
-                    "text-[11px] font-mono uppercase",
-                    isDark ? "text-white/40" : "text-zinc-500 font-medium"
-                  )}
-                >
-                  2-Year Savings
-                </div>
-                <div
-                  className={cn(
-                    "text-3xl sm:text-4xl font-extrabold font-mono mt-0.5",
-                    isDark ? "text-cyan-400" : "text-sky-600"
-                  )}
-                >
-                  +${twoYearsSavings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                </div>
-              </div>
-            </div>
-
-            {/* Contact Slider */}
-            <div className="mt-6 space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className={cn("font-medium", isDark ? "text-white/80" : "text-zinc-700")}>
-                  Your Instagram Contact Size:
-                </span>
-                <span
-                  className={cn(
-                    "font-mono font-bold text-base px-3 py-1 rounded-xl border shadow-sm",
-                    isDark
-                      ? "text-cyan-300 bg-white/10 border-white/15"
-                      : "text-sky-800 bg-sky-50 border-sky-200"
-                  )}
-                >
-                  {contacts.toLocaleString()} contacts
-                </span>
-              </div>
-
-              <input
-                type="range"
-                min={1000}
-                max={50000}
-                step={1000}
-                value={contacts}
-                onChange={(e) => setContacts(Number(e.target.value))}
-                className={cn(
-                  "w-full h-2 rounded-lg appearance-none cursor-pointer accent-cyan-500",
-                  isDark ? "bg-white/15" : "bg-zinc-200"
-                )}
-              />
-
-              <div
-                className={cn(
-                  "flex justify-between text-[11px] font-mono",
-                  isDark ? "text-white/40" : "text-zinc-500 font-medium"
-                )}
-              >
-                <span>1,000</span>
-                <span>15,000</span>
-                <span>50,000+</span>
-              </div>
-            </div>
-
-            {/* Comparison Cards */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div
-                className={cn(
-                  "rounded-2xl border p-5 transition-colors",
-                  isDark
-                    ? "border-rose-500/20 bg-rose-500/[0.04]"
-                    : "border-rose-200 bg-rose-50/70 shadow-sm"
-                )}
-              >
-                <div
-                  className={cn(
-                    "text-xs font-mono font-semibold mb-2",
-                    isDark ? "text-rose-400" : "text-rose-700"
-                  )}
-                >
-                  ManyChat Recurring Model
-                </div>
-                <div className={cn("text-2xl font-bold font-mono", isDark ? "text-white" : "text-zinc-900")}>
-                  ${monthly}/mo
-                </div>
-                <div className={cn("text-xs mt-1", isDark ? "text-rose-300" : "text-rose-800")}>
-                  Costs <strong>${twoYearsManyChat.toLocaleString()}</strong> over 24 months
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  "rounded-2xl border p-5 shadow-lg transition-colors",
-                  isDark
-                    ? "border-emerald-500/30 bg-emerald-500/[0.08] shadow-emerald-500/10"
-                    : "border-emerald-200 bg-emerald-50/80 shadow-emerald-500/10"
-                )}
-              >
-                <div
-                  className={cn(
-                    "text-xs font-mono font-semibold mb-2",
-                    isDark ? "text-emerald-400" : "text-emerald-700"
-                  )}
-                >
-                  RELO Pro Plan
-                </div>
-                <div
-                  className={cn(
-                    "text-2xl font-bold font-mono",
-                    isDark ? "text-emerald-400" : "text-emerald-600"
-                  )}
-                >
-                  ₹199 / month
-                </div>
-                <div className={cn("text-xs mt-1", isDark ? "text-emerald-300" : "text-emerald-800")}>
-                  <strong>Only ~₹4,776 over 24 months</strong> · Unlimited contacts
-                </div>
-              </div>
-            </div>
-          </Card3D>
-        </section>
-
-        {/* ── 7. Transparent Pricing ─────────────────────────────────────── */}
-        <section id="pricing" className="scroll-mt-28 pt-4">
-          <div className="text-center max-w-xl mx-auto mb-10">
-            <span
-              className={cn(
-                "font-mono text-xs uppercase tracking-wider",
-                isDark ? "text-cyan-400 font-semibold" : "text-sky-700 font-bold"
-              )}
-            >
-              Simple Monthly Plans
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-1">
-              Flat Monthly Pricing. No Contact Tax.
-            </h2>
-            <p className={cn("text-xs sm:text-sm mt-1 transition-colors", isDark ? "text-white/70" : "text-zinc-600")}>
-              No per-contact fees. Cancel anytime. Full automation power.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
-            {/* Free Starter */}
-            <Card3D
-              intensity={10}
-              className={cn(
-                "p-7 flex flex-col justify-between backdrop-blur-xl transition-all duration-300",
-                isDark
-                  ? "bg-black/60 border-white/10 text-white"
-                  : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-              )}
-            >
-              <div>
-                <div
-                  className={cn(
-                    "text-xs font-mono uppercase mb-1",
-                    isDark ? "text-white/50" : "text-zinc-500 font-medium"
-                  )}
-                >
-                  Testing
-                </div>
-                <h3 className={cn("text-xl font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                  Free Starter
-                </h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className={cn("text-4xl font-extrabold font-mono", isDark ? "text-white" : "text-zinc-900")}>
-                    ₹0
-                  </span>
-                  <span className={cn("text-xs font-mono", isDark ? "text-white/50" : "text-zinc-500")}>
-                    / forever
-                  </span>
-                </div>
-                <p className={cn("mt-2 text-xs", isDark ? "text-white/70" : "text-zinc-600")}>
-                  Ideal for testing your first Instagram Reel DM automation.
-                </p>
-
-                <div className={cn("mt-6 space-y-2.5 text-xs", isDark ? "text-white/80" : "text-zinc-700")}>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 1 Connected Account
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 1 Active Reel Automation
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Up to 100 Contacts/mo
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 30–90s Human Anti-Spam Jitter
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 3-Button Template Cards
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => navigate("/studio?demo=1")}
-                className={cn(
-                  "mt-8 w-full rounded-xl border py-2.5 text-xs font-semibold transition-colors cursor-pointer",
-                  isDark
-                    ? "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                    : "border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10 shadow-sm"
-                )}
-              >
-                Start Free
-              </button>
-            </Card3D>
-
-            {/* Pro Plan (Featured) */}
-            <Card3D
-              intensity={12}
-              className={cn(
-                "p-7 flex flex-col justify-between relative shadow-2xl transition-all duration-300",
-                isDark
-                  ? "bg-gradient-to-b from-cyan-950/40 via-black/80 to-black/90 border-cyan-400/40 text-white shadow-cyan-500/10"
-                  : "bg-gradient-to-b from-cyan-50/80 via-white to-sky-50/50 border-cyan-500/40 text-zinc-900 shadow-2xl shadow-cyan-500/15"
-              )}
-            >
-              <div className="absolute top-4 right-4">
-                <span className="rounded-full bg-cyan-400 px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-black shadow-md">
-                  Most Popular
-                </span>
-              </div>
-
-              <div>
-                <div
-                  className={cn(
-                    "text-xs font-mono uppercase mb-1",
-                    isDark ? "text-cyan-300" : "text-sky-700 font-bold"
-                  )}
-                >
-                  For Creators & Growth
-                </div>
-                <h3 className={cn("text-xl font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                  Pro Plan
-                </h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span
-                    className={cn(
-                      "text-4xl font-extrabold font-mono",
-                      isDark ? "text-cyan-400" : "text-sky-600"
-                    )}
-                  >
-                    ₹199
-                  </span>
-                  <span className={cn("text-xs font-mono", isDark ? "text-white/50" : "text-zinc-500")}>
-                    / month
-                  </span>
-                </div>
-                <p className={cn("mt-2 text-xs", isDark ? "text-white/70" : "text-zinc-600")}>
-                  Full power automation for your personal brand or business.
-                </p>
-
-                <div className={cn("mt-6 space-y-2.5 text-xs", isDark ? "text-white/90" : "text-zinc-800")}>
-                  <div className="flex items-center gap-2 font-semibold">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 1 Connected Account
-                  </div>
-                  <div className="flex items-center gap-2 font-semibold">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Unlimited Active Reels
-                  </div>
-                  <div className="flex items-center gap-2 font-semibold">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Unlimited Contacts & Leads
-                  </div>
-                  <div className="flex items-center gap-2 font-semibold">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Follower Gate Verification
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Smart Comment Variation Spinner
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Instant CSV Lead Vault Export
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => navigate("/studio?demo=1")}
-                className="mt-8 w-full group relative overflow-hidden rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-xs font-bold text-white shadow-xl shadow-cyan-500/30 transition-all hover:scale-[1.02] cursor-pointer"
-              >
-                <span>Get Pro Plan · ₹199/mo</span>
-              </button>
-            </Card3D>
-
-            {/* Max Plan (replacing Agency Studio) */}
-            <Card3D
-              intensity={10}
-              className={cn(
-                "p-7 flex flex-col justify-between backdrop-blur-xl transition-all duration-300",
-                isDark
-                  ? "bg-black/60 border-white/10 text-white"
-                  : "bg-white/85 border-black/10 text-zinc-900 shadow-xl shadow-cyan-950/5"
-              )}
-            >
-              <div>
-                <div
-                  className={cn(
-                    "text-xs font-mono uppercase mb-1",
-                    isDark ? "text-white/50" : "text-zinc-500 font-medium"
-                  )}
-                >
-                  High Volume & Brands
-                </div>
-                <h3 className={cn("text-xl font-bold", isDark ? "text-white" : "text-zinc-900")}>
-                  Max Plan
-                </h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className={cn("text-4xl font-extrabold font-mono", isDark ? "text-white" : "text-zinc-900")}>
-                    ₹499
-                  </span>
-                  <span className={cn("text-xs font-mono", isDark ? "text-white/50" : "text-zinc-500")}>
-                    / month
-                  </span>
-                </div>
-                <p className={cn("mt-2 text-xs", isDark ? "text-white/70" : "text-zinc-600")}>
-                  For high-traffic creators and businesses requiring priority throughput and AI.
-                </p>
-
-                <div className={cn("mt-6 space-y-2.5 text-xs", isDark ? "text-white/80" : "text-zinc-700")}>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 1 High-Volume Account
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Everything in Pro Included
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Priority Edge DM Delivery (&lt;15ms)
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> AI Dynamic Reply Variations
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> Webhook & CRM Export
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Check className="size-4 text-emerald-500 shrink-0" /> 24/7 Priority Support
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => navigate("/studio?demo=1")}
-                className={cn(
-                  "mt-8 w-full rounded-xl border py-2.5 text-xs font-semibold transition-colors cursor-pointer",
-                  isDark
-                    ? "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                    : "border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10 shadow-sm"
-                )}
-              >
-                Get Max Plan · ₹499/mo
-              </button>
-            </Card3D>
-          </div>
-        </section>
-
-        {/* ── 8. FAQ Accordion ───────────────────────────────────────────── */}
-        <section id="faq" className="scroll-mt-28 max-w-3xl mx-auto space-y-4 pt-4">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Frequently Asked Questions
-            </h2>
-          </div>
-
-          <div className="space-y-3">
-            {FAQS.map((item, idx) => {
-              const isOpen = openFaq === idx;
-              return (
-                <div
-                  key={idx}
-                  className={cn(
-                    "rounded-2xl border overflow-hidden backdrop-blur-xl transition-all duration-200",
-                    isDark
-                      ? "border-white/10 bg-black/40 text-white"
-                      : "border-black/10 bg-white/80 text-zinc-900 shadow-md shadow-zinc-200/50"
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setOpenFaq(isOpen ? null : idx)}
-                    className={cn(
-                      "w-full flex items-center justify-between p-5 text-left text-sm font-semibold transition-colors cursor-pointer",
-                      isDark
-                        ? "text-white hover:bg-white/5"
-                        : "text-zinc-900 hover:bg-zinc-50"
-                    )}
-                  >
-                    <span>{item.q}</span>
-                    <ChevronDown
-                      className={cn(
-                        "size-4 transition-transform duration-200 shrink-0 ml-4",
-                        isDark ? "text-white/50" : "text-zinc-400",
-                        isOpen && (isDark ? "rotate-180 text-white" : "rotate-180 text-zinc-900")
-                      )}
-                    />
-                  </button>
-                  {isOpen && (
-                    <div
-                      className={cn(
-                        "px-5 pb-5 pt-1 text-xs sm:text-sm leading-relaxed border-t",
-                        isDark
-                          ? "text-white/70 border-white/6"
-                          : "text-zinc-600 border-black/6"
-                      )}
-                    >
-                      {item.a}
+            <div className="mt-12 grid gap-8 md:grid-cols-3 md:gap-6">
+              {STEPS.map((step, index) => (
+                <Reveal key={step.n} delay={index * 0.06}>
+                  <article className="relative h-full">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[12px] font-semibold text-signal tnum">
+                        {step.n}
+                      </span>
+                      <span className="h-px flex-1 bg-line" aria-hidden />
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </main>
-
-      {/* Modern Adaptive Footer */}
-      <footer
-        className={cn(
-          "border-t backdrop-blur-2xl px-6 py-10 text-xs font-mono transition-colors",
-          isDark
-            ? "border-white/8 bg-black/80 text-white/50"
-            : "border-black/10 bg-white/85 text-zinc-600 shadow-lg"
-        )}
-      >
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-2">
-            <div className="size-6 rounded-lg bg-cyan-500/20 text-cyan-500 flex items-center justify-center font-bold text-xs">
-              R
+                    <h3 className="h4 mt-4 text-ink">{step.title}</h3>
+                    <p className="mt-2 text-[13.5px] leading-relaxed text-ink-2">{step.body}</p>
+                  </article>
+                </Reveal>
+              ))}
             </div>
-            <span className={cn("font-bold tracking-tight", isDark ? "text-white" : "text-zinc-900")}>
-              RELO AI
-            </span>
-            <span>· Instagram Comment Automation Studio</span>
-          </div>
 
-          <div className="flex items-center gap-6">
-            <button
-              onClick={() => navigate("/privacy")}
-              className={cn("transition-colors cursor-pointer", isDark ? "hover:text-white" : "hover:text-zinc-900")}
-            >
-              Privacy
-            </button>
-            <button
-              onClick={() => navigate("/terms")}
-              className={cn("transition-colors cursor-pointer", isDark ? "hover:text-white" : "hover:text-zinc-900")}
-            >
-              Terms
-            </button>
-            <button
-              onClick={() => navigate("/cookies")}
-              className={cn("transition-colors cursor-pointer", isDark ? "hover:text-white" : "hover:text-zinc-900")}
-            >
-              Cookies
-            </button>
-            <button
-              onClick={() => navigate("/studio?demo=1")}
-              className="text-cyan-500 hover:underline font-semibold cursor-pointer"
-            >
-              Launch Studio
-            </button>
-          </div>
+            <Reveal delay={0.1}>
+              <div className="mt-12 grid gap-4 rounded-2xl border border-line bg-surface/50 p-5 sm:grid-cols-3">
+                {[
+                  ["30–90s", "Random pause before a job sends"],
+                  ["12", "Keywords allowed per Reel"],
+                  ["3", "Buttons on a DM card"],
+                ].map(([value, label]) => (
+                  <div key={label}>
+                    <p className="font-mono text-[24px] font-bold leading-none text-ink tnum">
+                      {value}
+                    </p>
+                    <p className="mt-1.5 text-[12.5px] text-ink-3">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          </Container>
+        </section>
 
-          <div>
-            <span>© {new Date().getFullYear()} RELO AI. All rights reserved.</span>
-          </div>
-        </div>
-      </footer>
+        {/* ── features ── */}
+        <section id="features" className="section scroll-mt-20 border-t border-line/70">
+          <Container>
+            <SectionHead
+              title="Everything the DM needs, and nothing it does not"
+              sub="A small surface, built around what the official API actually allows."
+            />
+
+            <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map((feature, index) => (
+                <Reveal key={feature.title} delay={(index % 3) * 0.05}>
+                  <article className="glass-card h-full p-5">
+                    <span className="grid size-9 place-items-center rounded-lg border border-line bg-surface-2/70 text-signal">
+                      <feature.icon className="size-[17px]" strokeWidth={1.8} aria-hidden />
+                    </span>
+                    <h3 className="mt-4 text-[13.5px] font-semibold text-ink">{feature.title}</h3>
+                    <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-2">
+                      {feature.body}
+                    </p>
+                  </article>
+                </Reveal>
+              ))}
+            </div>
+          </Container>
+        </section>
+
+        {/* ── funnel ── */}
+        <section className="section border-t border-line/70">
+          <Container>
+            <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+              <Reveal>
+                <SectionHead
+                  title="One funnel, four honest steps"
+                  sub="Every figure on the dashboard is a row from your own account. RELO never shows a benchmark it cannot measure."
+                />
+                <p className="mt-5 text-[13px] leading-relaxed text-ink-2">
+                  Clicks are counted through RELO short links so a DM button and a
+                  bio-page block land in the same number. If a step has no data yet,
+                  the studio says so instead of drawing a trend.
+                </p>
+                <Button variant="outline" className="mt-6" onClick={() => go("/login")}>
+                  Open the studio
+                  <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
+                </Button>
+              </Reveal>
+
+              <Reveal delay={0.1}>
+                <div className="glass-panel p-5">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {FUNNEL.map((step, index) => (
+                      <div
+                        key={step.label}
+                        className="rounded-xl border border-line bg-surface/60 p-4"
+                      >
+                        <div className="flex items-center justify-between">
+                          <step.icon className="size-4 text-signal" strokeWidth={1.8} aria-hidden />
+                          <span className="font-mono text-[10px] text-ink-3 tnum">
+                            0{index + 1}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-[13px] font-semibold text-ink">{step.label}</p>
+                        <p className="mt-1 text-[12px] leading-relaxed text-ink-3">
+                          {step.detail}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-surface-2/50 px-3 py-2">
+                    <Download className="size-3.5 text-ink-3" aria-hidden />
+                    <p className="text-[11.5px] text-ink-3">
+                      The lead list exports as CSV, including DM count and timestamps.
+                    </p>
+                  </div>
+                </div>
+              </Reveal>
+            </div>
+          </Container>
+        </section>
+
+        {/* ── limits / trust ── */}
+        <section id="security" className="section scroll-mt-20 border-t border-line/70">
+          <Container>
+            <SectionHead
+              title="What RELO refuses to fake"
+              sub="A few things other tools imply, and this one states plainly. It is a shorter list than a feature grid, and a more useful one."
+            />
+
+            <div className="mt-10 grid gap-4 md:grid-cols-2">
+              {[
+                {
+                  icon: Fingerprint,
+                  title: "No follower gate",
+                  body: "Meta does not let apps look up followers. RELO does not pretend to check, and does not withhold your link on a guess.",
+                },
+                {
+                  icon: CalendarDays,
+                  title: "No auto-posting",
+                  body: "Meta has no publishing API for third parties. The planner holds the idea and the date; publishing stays in your hands.",
+                },
+                {
+                  icon: ShieldCheck,
+                  title: "No browser bots",
+                  body: "Everything runs on the Graph API with a Page token that is encrypted at rest. Meta errors surface in the studio; they are not hidden.",
+                },
+                {
+                  icon: Users,
+                  title: "No per-contact pricing",
+                  body: "Your audience can grow without the bill following it. The plan is monthly and the limits are the ones printed below.",
+                },
+              ].map((item, index) => (
+                <Reveal key={item.title} delay={(index % 2) * 0.05}>
+                  <article className="flex h-full gap-3 rounded-xl border border-line bg-surface/45 p-5">
+                    <item.icon
+                      className="mt-0.5 size-4 shrink-0 text-ink-2"
+                      strokeWidth={1.8}
+                      aria-hidden
+                    />
+                    <div>
+                      <h3 className="text-[13.5px] font-semibold text-ink">{item.title}</h3>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{item.body}</p>
+                    </div>
+                  </article>
+                </Reveal>
+              ))}
+            </div>
+          </Container>
+        </section>
+
+        {/* ── pricing ── */}
+        <section id="pricing" className="section scroll-mt-20 border-t border-line/70">
+          <Container>
+            <SectionHead
+              title="Priced for one creator, not one contact"
+              sub="Every plan includes the public reply, DM card, tracked links and CSV export. Upgrade when you need more Reels or more accounts."
+              align="center"
+            />
+
+            <div className="mt-12 grid gap-4 lg:grid-cols-3">
+              {PLANS.map((plan, index) => (
+                <Reveal key={plan.name} delay={index * 0.06}>
+                  <article
+                    className={cn(
+                      "relative flex h-full flex-col rounded-2xl border p-6",
+                      plan.highlighted
+                        ? "border-signal/45 bg-surface shadow-[var(--sh-2)]"
+                        : "border-line bg-surface/50"
+                    )}
+                  >
+                    {plan.highlighted && (
+                      <span className="absolute -top-2.5 left-6 rounded-full bg-signal px-2.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.12em] text-signal-ink">
+                        Most chosen
+                      </span>
+                    )}
+
+                    <p className="text-[13px] font-semibold text-ink">{plan.name}</p>
+                    <p className="mt-3 flex items-baseline gap-1.5">
+                      <span className="font-mono text-[32px] font-bold leading-none text-ink tnum">
+                        {plan.price}
+                      </span>
+                      <span className="text-[12px] text-ink-3">{plan.cadence}</span>
+                    </p>
+                    <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">
+                      {plan.blurb}
+                    </p>
+
+                    <ul className="mt-5 flex-1 space-y-2">
+                      {plan.features.map((feature) => (
+                        <li key={feature} className="flex gap-2 text-[12.5px] text-ink-2">
+                          <Check
+                            className="mt-0.5 size-3.5 shrink-0 text-ok"
+                            strokeWidth={2.4}
+                            aria-hidden
+                          />
+                          {feature}
+                        </li>
+                      ))}
+                      {plan.missing.map((feature) => (
+                        <li key={feature} className="flex gap-2 text-[12.5px] text-ink-3">
+                          <X className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+
+                    <Button
+                      variant={plan.highlighted ? "signal" : "outline"}
+                      className="mt-6 w-full"
+                      onClick={() => go("/login")}
+                    >
+                      {plan.cta}
+                    </Button>
+                  </article>
+                </Reveal>
+              ))}
+            </div>
+
+            <p className="mt-6 text-center text-[12px] text-ink-3">
+              Pro and Studio can be paid by UPI in India. Prices are in INR and
+              include GST where it applies.
+            </p>
+          </Container>
+        </section>
+
+        {/* ── faq ── */}
+        <section id="faq" className="section scroll-mt-20 border-t border-line/70">
+          <Container className="max-w-3xl">
+            <SectionHead title="Questions worth answering" align="center" />
+
+            <div className="mt-10 divide-y divide-line rounded-2xl border border-line bg-surface/40">
+              {FAQS.map((item) => (
+                <details key={item.q} className="group px-5 py-4">
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-4 text-[13.5px] font-semibold text-ink marker:hidden">
+                    {item.q}
+                    <span
+                      aria-hidden
+                      className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-line text-ink-3 transition-transform duration-200 group-open:rotate-45"
+                    >
+                      <span className="relative block size-2.5">
+                        <span className="absolute left-1/2 top-0 h-2.5 w-px -translate-x-1/2 bg-current" />
+                        <span className="absolute left-0 top-1/2 h-px w-2.5 -translate-y-1/2 bg-current" />
+                      </span>
+                    </span>
+                  </summary>
+                  <p className="mt-2.5 max-w-2xl text-[13px] leading-relaxed text-ink-2">
+                    {item.a}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </Container>
+        </section>
+
+        {/* ── closing band ── */}
+        <section className="relative overflow-hidden">
+          <BrandAurora />
+          <Container className="relative z-10 py-16 md:py-20">
+            <Reveal>
+              <div className="max-w-2xl">
+                <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-white/65">
+                  Ready when your next Reel is
+                </p>
+                <h2 className="h1 mt-3 text-white">
+                  Connect one account. Arm one Reel. Watch the first DM land.
+                </h2>
+                <p className="mt-4 max-w-xl text-[14px] leading-relaxed text-white/75">
+                  The free plan is enough to see the whole exchange work on a real
+                  comment. No card, no trial timer, no lock-in.
+                </p>
+                <div className="mt-7 flex flex-wrap items-center gap-3">
+                  <a
+                    href="#/login"
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-white px-5 text-[14.5px] font-semibold text-brand transition-[background-color,transform] duration-150 hover:bg-white/90 active:translate-y-px"
+                  >
+                    Start free
+                    <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
+                  </a>
+                  <a
+                    href="mailto:hello@thepilab.in"
+                    className="inline-flex h-11 items-center justify-center rounded-md border border-white/25 px-5 text-[14.5px] font-semibold text-white transition-colors hover:bg-white/10"
+                  >
+                    Ask a question
+                  </a>
+                </div>
+              </div>
+            </Reveal>
+          </Container>
+        </section>
+
+        {/* ── footer ── */}
+        <footer className="border-t border-line bg-canvas/70 backdrop-blur-xl">
+          <Container className="flex flex-col gap-6 py-10 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-xs">
+              <Logo onClick={() => go("/")} />
+              <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">
+                Comment automation for Instagram creators, built on the official
+                Graph API by The Pi Lab.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-12 gap-y-2 text-[12.5px] sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <p className="caption mb-1">Product</p>
+                {NAV.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className="block text-ink-2 transition-colors hover:text-ink"
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <p className="caption mb-1">Legal</p>
+                <a href="#/privacy" className="block text-ink-2 hover:text-ink">
+                  Privacy
+                </a>
+                <a href="#/terms" className="block text-ink-2 hover:text-ink">
+                  Terms
+                </a>
+                <a href="#/cookies" className="block text-ink-2 hover:text-ink">
+                  Cookies
+                </a>
+              </div>
+              <div className="space-y-1.5">
+                <p className="caption mb-1">Contact</p>
+                <a href="mailto:hello@thepilab.in" className="block text-ink-2 hover:text-ink">
+                  hello@thepilab.in
+                </a>
+                <a href="#/login" className="block text-ink-2 hover:text-ink">
+                  Sign in
+                </a>
+              </div>
+            </div>
+          </Container>
+
+          <Container className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-5">
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
+              © {new Date().getFullYear()} The Pi Lab
+            </p>
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
+              Instagram is a trademark of Meta Platforms, Inc.
+            </p>
+          </Container>
+        </footer>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,4 @@
 import type {
-  FollowGateDecision,
-  FollowStatusResult,
   GenericTemplatePayload,
   OutgoingMessagePayload,
   PlainTextPayload,
@@ -183,58 +181,7 @@ export class MetaGraphClient {
   }
 
   /**
-   * 4. Biometric Follow-Gate Verification:
-   * Checks if an Instagram user follows the business account.
-   * Implements strict 1500ms timeout with automatic fail-open to ensure
-   * high-intent leads are NEVER lost due to Instagram API latency.
-   */
-  async getUserFollowStatus(
-    accessToken: string,
-    igAccountId: string,
-    targetUserId: string
-  ): Promise<FollowStatusResult> {
-    const startTime = Date.now();
-    const timeoutMs = 1500;
-
-    try {
-      // Query Graph API for user relationship / follower connection
-      const result = await this.request<{ is_following?: boolean; data?: unknown }>(
-        `/${igAccountId}/followers`,
-        {
-          method: "GET",
-          token: accessToken,
-          queryParams: {
-            user_id: targetUserId,
-          },
-          timeoutMs,
-        }
-      );
-
-      const latencyMs = Date.now() - startTime;
-      const isFollowing = typeof result.is_following === "boolean" ? result.is_following : true;
-
-      const decision: FollowGateDecision = isFollowing
-        ? "ALLOW_VERIFIED_FOLLOWER"
-        : "PROMPT_FOLLOW";
-
-      return {
-        isFollowing,
-        latencyMs,
-        decision,
-      };
-    } catch {
-      // Automatic Fail-Open: allow user through rather than blocking their DM delivery
-      const latencyMs = Date.now() - startTime;
-      return {
-        isFollowing: null,
-        latencyMs,
-        decision: "ALLOW_FAIL_OPEN",
-      };
-    }
-  }
-
-  /**
-   * 5. List Recent Instagram Reels:
+   * 4. List Recent Instagram Reels:
    * Fetches the latest 25 video/reel posts for the Creator Studio dashboard.
    */
   async getRecentReels(

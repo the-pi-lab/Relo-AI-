@@ -39,7 +39,6 @@ export interface ReelAutomation {
   reelThumbnailUrl?: string;
   triggerKeywords: string[]; // Normalized keywords (e.g. ["GUIDE", "VIP"])
   commentReplies: string[]; // Min 3, Max 8 variations with {spintax}
-  followGateEnabled: boolean;
   templateCard: TemplateCardConfig;
   isActive: boolean;
   createdAt: number;

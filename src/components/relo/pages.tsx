@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { Button, Container, Logo } from "./chrome";
 import { ThemeToggle } from "@/lib/relo/theme";
 import { CookieSettingsLink } from "./cookie-consent";
+import { LiquidBackdrop } from "./ambient";
 import { cn } from "@/lib/utils";
 
 /* ==========================================================================
@@ -17,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 function DocNav({ navigate }: { navigate: (to: string) => void }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-canvas">
+    <header className="sticky top-0 z-40 border-b border-line bg-canvas/80 backdrop-blur-xl">
       <Container className="flex h-16 items-center gap-3">
         <Logo onClick={() => navigate("/")} />
         <span className="caption ml-1 hidden sm:block">Legal</span>
@@ -34,7 +35,7 @@ function DocNav({ navigate }: { navigate: (to: string) => void }) {
 
 function DocFooter({ navigate }: { navigate: (to: string) => void }) {
   return (
-    <footer className="border-t border-line bg-canvas">
+    <footer className="border-t border-line bg-canvas/70 backdrop-blur-xl">
       <Container className="flex flex-col gap-5 py-10 sm:flex-row sm:items-center sm:justify-between">
         <Logo onClick={() => navigate("/")} />
         <nav
@@ -106,7 +107,8 @@ function DocPage({
   };
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className="relative min-h-screen">
+      <LiquidBackdrop variant="page" />
       <DocNav navigate={navigate} />
 
       <div className="border-b border-line">
@@ -210,7 +212,7 @@ export function PrivacyPage({ navigate }: { navigate: (to: string) => void }) {
     <DocPage
       navigate={navigate}
       title="Your data stays yours"
-      updated="October 11, 2025"
+      updated="October 24, 2026"
       intro="RELO automates conversations you already have permission to have, through Instagram's official API. This page explains in plain language what touches our servers, what never does, and how to take everything back in one move. It follows India's Digital Personal Data Protection Act, 2023, and we hold ourselves to that standard for everyone, everywhere."
       sections={[
         {
@@ -223,12 +225,12 @@ export function PrivacyPage({ navigate }: { navigate: (to: string) => void }) {
         {
           title: "What we collect",
           body: [
-            "We collect the minimum the product needs to function. When you connect an account, Meta shares your Instagram Professional account ID, display name, and the follower status of people who interact with your automations. When someone triggers a flow, we store their username, whether they follow you, which keyword they used, and which DM button they tapped.",
+            "We collect the minimum the product needs to function. When you connect an account, Meta shares your Instagram Professional account ID and display name. When someone triggers a flow, we store their username, which keyword they used, and which DM button they tapped.",
             "We also keep operational records: the automation settings you write, delivery logs, aggregate counters such as DMs sent, clicks and replies, and basic device or browser metadata for security and debugging.",
           ],
           list: [
             "Account: email, plan, connected Instagram account ID",
-            "Leads: username, follower status, keyword matched, button tapped",
+            "Leads: username, keyword matched, button tapped",
             "Content you write: replies, DM cards, follow-up texts, AI prompts",
             "Usage: delivery outcomes, timestamps, error logs",
           ],
@@ -282,18 +284,19 @@ export function CookiesPage({ navigate }: { navigate: (to: string) => void }) {
     <DocPage
       navigate={navigate}
       title="What this site stores on your device"
-      updated="October 11, 2025"
+      updated="October 24, 2026"
       intro="This is the complete inventory, taken straight from the code, with nothing hidden behind the phrase and partners. RELO sets no cookies at all. What it does keep lives in your own browser's local storage, is readable only by this site, and can be erased in one move."
       sections={[
         {
           title: "The complete list",
           body: [
-            "There are exactly three entries and they are all local storage, not cookies. This is the whole list. If your browser ever shows anything else on this domain, it came from your own typing or from an extension, not from us.",
+            "There are exactly four entries and they are all local storage, not cookies. This is the whole list. If your browser ever shows anything else on this domain, it came from your own typing or from an extension, not from us.",
           ],
           list: [
             "relo-theme: remembers whether you chose light, dark or system. Contains one word.",
-            "relo-cookie-consent: remembers your answer to the banner so it stops appearing.",
-            "relo-studio-v2: saves the demo workspace so the studio survives a page refresh.",
+            "relo-storage-notice: remembers that you read the notice so it stops appearing.",
+            "relo.token.v1: your signed-in session, so a refresh does not sign you out. Removed when you sign out.",
+            "relo.user.v1: the email and plan shown in the studio header. Removed when you sign out.",
           ],
         },
         {
@@ -304,10 +307,10 @@ export function CookiesPage({ navigate }: { navigate: (to: string) => void }) {
           ],
         },
         {
-          title: "Your consent, and withdrawing it",
+          title: "Dismissing the notice, and withdrawing consent",
           body: [
-            "The banner offers two buttons and no tricks: Accept all cookies, and Only what is necessary. Both behave identically here, because we set nothing beyond what is necessary anyway. Accepting simply records that you read it, so the banner does not return.",
-            "To change your mind, open Cookie settings in the footer of any legal page and choose again, or clear this site's data in your browser. That erases all three entries above and signs you out.",
+            "The notice has one button because there is only one kind of storage here. Dismissing it simply records that you read it, so it does not return.",
+            "To change your mind, open Browser storage in the footer of any legal page, sign out from Settings, or clear this site's data in your browser. That erases all four entries above and signs you out.",
           ],
         },
       ]}
@@ -324,7 +327,7 @@ export function TermsPage({ navigate }: { navigate: (to: string) => void }) {
     <DocPage
       navigate={navigate}
       title="The rules of the house"
-      updated="October 11, 2025"
+      updated="October 24, 2026"
       intro="These terms are the agreement between you and The Pi Lab for using RELO. They are kept short and readable on purpose. They set out what the service does, what you promise in return, and what happens when something goes wrong."
       sections={[
         {
@@ -390,7 +393,8 @@ export function NotFoundPage({ navigate }: { navigate: (to: string) => void }) {
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas">
+    <div className="relative flex min-h-screen flex-col">
+      <LiquidBackdrop variant="page" />
       <DocNav navigate={navigate} />
 
       <div className="flex flex-1 items-center">
@@ -413,9 +417,9 @@ export function NotFoundPage({ navigate }: { navigate: (to: string) => void }) {
             <Button
               variant="outline"
               size="lg"
-              onClick={() => navigate("/studio?demo=1")}
+              onClick={() => navigate("/login")}
             >
-              Open the demo studio
+              Sign in
             </Button>
           </div>
         </Container>

@@ -36,6 +36,37 @@ export type ButtonVariant =
 
 export type ButtonSize = "sm" | "md" | "lg";
 
+/* Shared so an anchor can look like a button without duplicating the recipe. */
+export function buttonClass({
+  variant = "ink",
+  size = "md",
+  className,
+}: {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  className?: string;
+} = {}): string {
+  return cn(
+    "relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-semibold",
+    "transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out",
+    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
+    "active:translate-y-px",
+    "disabled:pointer-events-none disabled:opacity-45",
+    size === "sm" && "h-8 px-3 text-[12.5px]",
+    size === "md" && "h-9 px-3.5 text-[13.5px]",
+    size === "lg" && "h-11 px-5 text-[14.5px]",
+    variant === "signal" &&
+      "bg-signal text-signal-ink shadow-[var(--sh-1)] hover:bg-signal-hover",
+    variant === "ink" && "bg-ink text-ink-invert shadow-[var(--sh-1)] hover:bg-ink/88",
+    variant === "outline" &&
+      "border border-line-strong bg-surface text-ink hover:border-ink-3 hover:bg-surface-2 dark:bg-surface-3 dark:hover:bg-surface-3/80",
+    variant === "ghost" &&
+      "text-ink-2 hover:bg-surface-2 hover:text-ink dark:hover:bg-surface-3/70",
+    variant === "destructive" && "bg-bad text-bad-ink hover:bg-bad/88",
+    className
+  );
+}
+
 export const Button = React.forwardRef<
   HTMLButtonElement,
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -51,26 +82,7 @@ export const Button = React.forwardRef<
       ref={ref}
       type="button"
       disabled={disabled}
-      className={cn(
-        "relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-semibold",
-        "transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
-        "active:translate-y-px",
-        "disabled:pointer-events-none disabled:opacity-45",
-        size === "sm" && "h-8 px-3 text-[12.5px]",
-        size === "md" && "h-9 px-3.5 text-[13.5px]",
-        size === "lg" && "h-11 px-5 text-[14.5px]",
-        variant === "signal" &&
-          "bg-signal text-signal-ink shadow-[var(--sh-1)] hover:bg-signal-hover",
-        variant === "ink" &&
-          "bg-ink text-ink-invert shadow-[var(--sh-1)] hover:bg-ink/88",
-        variant === "outline" &&
-          "border border-line-strong bg-surface text-ink hover:border-ink-3 hover:bg-surface-2 dark:bg-surface-3 dark:hover:bg-surface-3/80",
-        variant === "ghost" &&
-          "text-ink-2 hover:bg-surface-2 hover:text-ink dark:hover:bg-surface-3/70",
-        variant === "destructive" && "bg-bad text-bad-ink hover:bg-bad/88",
-        className
-      )}
+      className={buttonClass({ variant, size, className })}
       {...props}
     >
       {children}
