@@ -6,7 +6,7 @@ import { ArrowRight, ArrowUpRight, Menu, X } from "lucide-react";
 
 import { Logo } from "./chrome";
 import { cn } from "@/lib/utils";
-import footerCollageImg from "@/assets/footer-relo-collage.jpg";
+import footerCollageImg from "@/assets/footer-relo-collage.png";
 
 const getSrc = (img: any): string => (typeof img === "string" ? img : img?.src ?? "");
 
@@ -178,57 +178,78 @@ const FOOTER_COLS: { title: string; links: { label: string; to: string }[] }[] =
 
 export function SiteFooter({ navigate }: { navigate: Nav }) {
   return (
-    <footer className="relative overflow-hidden border-t border-line bg-surface-2/60">
-      <div className="wrap pb-10 pt-16">
-        <div className="grid gap-12 lg:grid-cols-[1.1fr_2fr]">
-          <div>
-            <Logo onClick={() => navigate("/")} size="lg" />
-            <p className="mt-4 max-w-xs text-[14px] leading-relaxed text-ink-2">
-              Comment-to-DM automation for Instagram creators. Built in India by The Pi Lab, on
-              Instagram's official API.
-            </p>
-            <a
-              href="mailto:hello@thepilab.in"
-              className="mt-6 inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink hover:text-signal"
-            >
-              hello@thepilab.in <ArrowUpRight className="size-4" />
-            </a>
-          </div>
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
-            {FOOTER_COLS.map((col) => (
-              <div key={col.title}>
-                <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-ink-3">{col.title}</p>
-                <ul className="mt-4 space-y-2.5">
-                  {col.links.map((l) => (
-                    <li key={l.label}>
-                      <button
-                        type="button"
-                        onClick={() => navigate(l.to)}
-                        className="text-left text-[13.5px] text-ink-2 transition-colors hover:text-signal"
-                      >
-                        {l.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+    <footer className="relative overflow-hidden border-t border-line/50 bg-canvas pt-20 sm:pt-28 pb-12">
+      <div className="wrap">
+        {/* Zorcha-style Pre-Footer Top Callout */}
+        <div className="flex flex-col items-center text-center">
+          <p className="text-[13.5px] font-medium text-ink-2">
+            Join thousands of creators & brands using
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/login")}
+            className="mt-3.5 inline-flex h-11 items-center gap-2.5 rounded-full bg-ink px-6 text-[13.5px] font-semibold text-ink-invert shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-ink/90 hover:shadow-md"
+          >
+            Start for free <ArrowRight className="size-4" />
+          </button>
+          <p className="mt-3 text-[12px] font-medium text-ink-3">
+            Made with <span className="text-red-500">❤️</span> in India
+          </p>
         </div>
 
-        {/* RELO Creator Collective Artwork Banner */}
-        <div className="relative mt-16 overflow-hidden rounded-[28px] border border-line bg-surface shadow-[var(--sh-2)] transition-all duration-500 hover:shadow-[var(--sh-3)]">
+        {/* Seamless Feathered RELO Creator Artwork (Zero Hard Edges, Zero Box Borders) */}
+        <div className="relative mx-auto mt-4 max-w-[1040px] select-none pointer-events-none">
           <img
             src={getSrc(footerCollageImg)}
             alt="RELO Creators community and workspace"
             loading="lazy"
             width={1024}
             height={576}
-            className="w-full object-cover transition-transform duration-700 hover:scale-[1.01]"
+            className="w-full object-contain [mask-image:radial-gradient(ellipse_95%_88%_at_50%_50%,black_65%,transparent_100%)] [-webkit-mask-image:radial-gradient(ellipse_95%_88%_at_50%_50%,black_65%,transparent_100%)]"
           />
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6 text-[12.5px] text-ink-3">
+        {/* Frosted Directory Card (Gently overlaps below the artwork) */}
+        <div className="frost relative -mt-8 sm:-mt-16 z-10 rounded-[28px] p-7 sm:p-10 shadow-[var(--sh-2)]">
+          <div className="grid gap-10 lg:grid-cols-[1.1fr_2fr]">
+            <div>
+              <Logo onClick={() => navigate("/")} size="lg" />
+              <p className="mt-4 max-w-xs text-[14px] leading-relaxed text-ink-2">
+                Comment-to-DM automation for Instagram creators. Built in India by The Pi Lab, on
+                Instagram's official API.
+              </p>
+              <a
+                href="mailto:hello@thepilab.in"
+                className="mt-6 inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink hover:text-signal"
+              >
+                hello@thepilab.in <ArrowUpRight className="size-4" />
+              </a>
+            </div>
+            <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+              {FOOTER_COLS.map((col) => (
+                <div key={col.title}>
+                  <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-ink-3">{col.title}</p>
+                  <ul className="mt-4 space-y-2.5">
+                    {col.links.map((l) => (
+                      <li key={l.label}>
+                        <button
+                          type="button"
+                          onClick={() => navigate(l.to)}
+                          className="text-left text-[13.5px] text-ink-2 transition-colors hover:text-signal"
+                        >
+                          {l.label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Copyright Bar */}
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-line/60 pt-6 text-[12.5px] text-ink-3">
           <p>© {new Date().getFullYear()} The Pi Lab. All rights reserved.</p>
           <div className="flex gap-5">
             {[
