@@ -6,6 +6,9 @@ import { ArrowRight, ArrowUpRight, Menu, X } from "lucide-react";
 
 import { Logo } from "./chrome";
 import { cn } from "@/lib/utils";
+import footerCollageImg from "@/assets/footer-relo-collage.jpg";
+
+const getSrc = (img: any): string => (typeof img === "string" ? img : img?.src ?? "");
 
 /* ==========================================================================
    Shared marketing chrome: a floating frosted pill nav and a directory
@@ -213,12 +216,17 @@ export function SiteFooter({ navigate }: { navigate: Nav }) {
           </div>
         </div>
 
-        <p
-          aria-hidden
-          className="font-heading pointer-events-none mt-16 select-none text-center text-[clamp(5rem,22vw,19rem)] font-bold leading-[0.8] tracking-[-0.06em] text-ink/[0.06]"
-        >
-          relo
-        </p>
+        {/* RELO Creator Collective Artwork Banner */}
+        <div className="relative mt-16 overflow-hidden rounded-[28px] border border-line bg-surface shadow-[var(--sh-2)] transition-all duration-500 hover:shadow-[var(--sh-3)]">
+          <img
+            src={getSrc(footerCollageImg)}
+            alt="RELO Creators community and workspace"
+            loading="lazy"
+            width={1024}
+            height={576}
+            className="w-full object-cover transition-transform duration-700 hover:scale-[1.01]"
+          />
+        </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6 text-[12.5px] text-ink-3">
           <p>© {new Date().getFullYear()} The Pi Lab. All rights reserved.</p>
