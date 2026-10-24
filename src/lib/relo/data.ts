@@ -130,10 +130,36 @@ export interface Telemetry {
   totalLeads: number;
   totalComments: number;
   totalDmsSent: number;
+  /** Every comment the webhook accepted, including ones still queued. */
+  totalCommentsHeard?: number;
+  /** Comment-triggered DMs actually delivered (completed jobs). */
+  totalDmsDelivered?: number;
   totalClicks: number;
   storageRows: number;
   plan: Tier;
   aiCreditsRemaining: number;
+  /** Last 14 UTC days, zero-filled. Feeds the funnel sparklines. */
+  daily?: DailyPoint[];
+  /** The most recent comments the Worker heard, newest first. */
+  activity?: ActivityEvent[];
+}
+
+export interface DailyPoint {
+  day: string;
+  comments: number;
+  dms: number;
+  leads: number;
+}
+
+export interface ActivityEvent {
+  id: string;
+  username: string;
+  comment: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  /** unix seconds */
+  at: number;
+  triggerKeywords: string[];
+  isFollowUp: boolean;
 }
 
 /* ── Campaigns ────────────────────────────────────────────────────────── */

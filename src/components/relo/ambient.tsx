@@ -29,6 +29,11 @@ export function LiquidBackdrop({
         variant={variant === "hero" ? "hero" : variant === "studio" ? "subtle" : "full"}
       />
 
+      {/* The studio draws the veil, not the marketing pages. Inside the app the
+          swirl is identity, not content: it may tint the matte canvas but it
+          must never sit under 11px text. Any heavier and the ribbons vanish. */}
+      {variant === "studio" && <div className="absolute inset-0 bg-canvas/40" />}
+
       {grid && (
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.16]"

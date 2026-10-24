@@ -1,18 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Schibsted_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
 /* One grotesque for the whole product, from 11px instrument labels to the
-   64px hero. Weight and tracking do the hierarchy work, not extra families. */
-const display = Schibsted_Grotesk({
+   64px hero. Weight and tracking do the hierarchy work, not extra families.
+   Its stylistic sets (ss01/ss03) are switched on in `body` in globals.css —
+   that is what gives the numerals and the 'a' their drawn character. */
+const display = Plus_Jakarta_Sans({
   variable: "--font-display",
   subsets: ["latin"],
   display: "swap",
 });
 
-/* Reserved for data: counters, tabular figures, field labels, keys. */
+/* Reserved for data: hashes, API keys, field labels, tabular figures. */
 const code = JetBrains_Mono({
   variable: "--font-code",
   subsets: ["latin"],
@@ -59,8 +61,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f3ef" },
-    { media: "(prefers-color-scheme: dark)", color: "#050505" },
+    { media: "(prefers-color-scheme: light)", color: "#e8eef6" },
+    { media: "(prefers-color-scheme: dark)", color: "#050b18" },
   ],
 };
 

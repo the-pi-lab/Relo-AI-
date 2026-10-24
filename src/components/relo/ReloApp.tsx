@@ -9,7 +9,8 @@ import { LoginPage } from "./login";
 import { PrivacyPage, TermsPage, CookiesPage, NotFoundPage } from "./pages";
 import { CookieConsent } from "./cookie-consent";
 import { StudioShell } from "./studio/StudioShell";
-import { HomeView, InsightsView } from "./studio/views-charts";
+import { InsightsView } from "./studio/views-charts";
+import { DashboardView } from "./studio/views-dashboard";
 import { AutomationsView, LeadsView } from "./studio/views-automations";
 import { CampaignsView, ProductsView } from "./studio/views-ops";
 import { CanvasView, BioView } from "./studio/views-create";
@@ -66,7 +67,7 @@ function Router() {
       case "settings":
         return <SettingsView />;
       default:
-        return <HomeView go={(view) => navigate(`/studio/${view}`)} />;
+        return <DashboardView go={(view) => navigate(`/studio/${view}`)} />;
     }
   };
 
@@ -82,7 +83,10 @@ function Router() {
         Skip to content
       </a>
 
-      <CookieConsent navigate={navigate} />
+      <CookieConsent
+        navigate={navigate}
+        hidden={route.name === "studio"}
+      />
 
       <main id="main-content" tabIndex={-1} key={key}>
         {route.name === "landing" && <LandingPage navigate={navigate} />}

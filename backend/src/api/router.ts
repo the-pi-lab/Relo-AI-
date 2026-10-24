@@ -15,6 +15,8 @@ import {
   getCapturedLeads,
   getAllCapturedLeadsForExport,
   getAnalyticsSummary,
+  getDailyActivity,
+  getRecentActivity,
   countActiveAutomations,
   markFreeReelConsumed,
   replaceShortLinks,
@@ -1068,10 +1070,12 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     const owned = await requireOwnedAccount(env.DB, accountId, user);
     if (!owned.account) return owned.error;
 
-    const [telemetry, clicks, storageRows] = await Promise.all([
+    const [telemetry, clicks, storageRows, daily, activity] = await Promise.all([
       getAnalyticsSummary(env.DB, owned.account.id),
       getAccountClickStats(env.DB, owned.account.id),
       getAccountStorageRows(env.DB, owned.account.id),
+      getDailyActivity(env.DB, owned.account.id, 14),
+      getRecentActivity(env.DB, owned.account.id, 12),
     ]);
     return jsonSuccess({
       telemetry: {
@@ -1080,6 +1084,8 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         storageRows,
         plan: owned.account.plan,
         aiCreditsRemaining: owned.account.aiCreditsRemaining,
+        daily,
+        activity,
       },
     });
   }

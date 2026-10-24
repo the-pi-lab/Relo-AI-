@@ -93,7 +93,7 @@ export const Button = React.forwardRef<
 /* ── Logo ───────────────────────────────────────────────────────────────── */
 
 /* The mark says what the product does: a comment, and an arrow leaving it. */
-function ReloMark({ className }: { className?: string }) {
+export function ReloMark({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -126,7 +126,7 @@ export function Logo({
       onClick={onClick}
       aria-label="RELO, home"
       className={cn(
-        "group inline-flex select-none items-center gap-2.5 rounded-md",
+        "group inline-flex w-fit select-none items-center gap-2.5 rounded-md",
         "transition-colors duration-150 ease-out",
         className
       )}

@@ -1037,11 +1037,15 @@ export async function getAnalyticsSummary(
   totalLeads: number;
   totalComments: number;
   totalDmsSent: number;
+  /** Every comment the webhook accepted, including ones still queued. */
+  totalCommentsHeard: number;
+  /** Comment-triggered DMs the Worker actually delivered. */
+  totalDmsDelivered: number;
 }> {
   const now = Math.floor(Date.now() / 1000);
   const oneDayAgo = now - 86400;
 
-  const [pendingRow, completed24hRow, failed24hRow, leadsRow, commentsRow] = (await Promise.all([
+  const [pendingRow, completed24hRow, failed24hRow, leadsRow, commentsRow, heardRow] = (await Promise.all([
     db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND status = 'pending'`).bind(accountId).first(),
     db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND status = 'completed' AND updated_at >= ?`).bind(accountId, oneDayAgo).first(),
     db.prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND status = 'failed' AND updated_at >= ?`).bind(accountId, oneDayAgo).first(),
@@ -1055,6 +1059,12 @@ export async function getAnalyticsSummary(
       )
       .bind(accountId)
       .first(),
+    // The funnel's top stage is every comment the webhook accepted, queued or
+    // not — "heard" and "answered" are different numbers and must stay so.
+    db
+      .prepare(`SELECT COUNT(*) as c FROM jobs WHERE account_id = ? AND is_follow_up = 0`)
+      .bind(accountId)
+      .first(),
   ])) as any[];
 
   const pendingJobs = Number(pendingRow?.c || 0);
@@ -1063,6 +1073,7 @@ export async function getAnalyticsSummary(
   const totalLeads = Number(leadsRow?.c || 0);
   const totalDmsSent = Number(leadsRow?.totalDms || 0);
   const totalComments = Number(commentsRow?.c || 0);
+  const totalCommentsHeard = Number(heardRow?.c || 0);
 
   const status = failed24h > 20 ? "degraded" : "healthy";
 
@@ -1075,7 +1086,147 @@ export async function getAnalyticsSummary(
     totalLeads,
     totalComments,
     totalDmsSent,
+    totalCommentsHeard,
+    // A comment job that completed is a DM that went out: one dispatch per
+    // comment, which is exactly what the funnel's middle stage means.
+    totalDmsDelivered: totalComments,
   };
+}
+
+/**
+ * 25a. Daily activity for the last N days.
+ *
+ * The dashboard needs a sparkline per funnel stage, and a sparkline drawn from
+ * invented numbers is worse than no sparkline at all. These three grouped
+ * counts are cheap (each hits an existing index) and always return exactly
+ * `days` buckets, zero-filled, so the chart has no holes.
+ */
+export interface DailyPoint {
+  /** UTC day, YYYY-MM-DD. */
+  day: string;
+  comments: number;
+  dms: number;
+  leads: number;
+}
+
+export async function getDailyActivity(
+  db: D1Database,
+  accountId: AccountId,
+  days = 14
+): Promise<DailyPoint[]> {
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+
+  const [commentsRes, dmsRes, leadsRes] = await Promise.all([
+    db
+      .prepare(
+        `SELECT date(created_at, 'unixepoch') AS day, COUNT(*) AS c
+         FROM jobs
+         WHERE account_id = ? AND created_at >= ? AND is_follow_up = 0
+         GROUP BY day`
+      )
+      .bind(accountId, since)
+      .all(),
+    db
+      .prepare(
+        `SELECT date(updated_at, 'unixepoch') AS day, COUNT(*) AS c
+         FROM jobs
+         WHERE account_id = ? AND status = 'completed' AND updated_at >= ?
+         GROUP BY day`
+      )
+      .bind(accountId, since)
+      .all(),
+    db
+      .prepare(
+        `SELECT date(first_interaction_at, 'unixepoch') AS day, COUNT(*) AS c
+         FROM captured_leads
+         WHERE account_id = ? AND first_interaction_at >= ?
+         GROUP BY day`
+      )
+      .bind(accountId, since)
+      .all(),
+  ]);
+
+  /* SQLite groups in UTC and the JS below walks UTC days too, so the two
+     agree on what "a day" is regardless of the viewer's timezone. */
+  const bucket = (rows: unknown[]) => {
+    const map = new Map<string, number>();
+    for (const row of rows as Array<{ day: string; c: number }>) {
+      if (row?.day) map.set(row.day, Number(row.c || 0));
+    }
+    return map;
+  };
+
+  const comments = bucket(commentsRes.results ?? []);
+  const dms = bucket(dmsRes.results ?? []);
+  const leads = bucket(leadsRes.results ?? []);
+
+  const out: DailyPoint[] = [];
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const day = new Date(Date.now() - offset * 86400_000).toISOString().slice(0, 10);
+    out.push({
+      day,
+      comments: comments.get(day) ?? 0,
+      dms: dms.get(day) ?? 0,
+      leads: leads.get(day) ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * 25b. The live activity stream.
+ *
+ * One row per comment the Worker has heard, joined to the automation that
+ * claimed it. This is the audit trail the dashboard's feed renders — status is
+ * the real job status, never a decoration.
+ */
+export interface ActivityEvent {
+  id: string;
+  username: string;
+  comment: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  /** unix seconds */
+  at: number;
+  triggerKeywords: string[];
+  isFollowUp: boolean;
+}
+
+export async function getRecentActivity(
+  db: D1Database,
+  accountId: AccountId,
+  limit = 12
+): Promise<ActivityEvent[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT j.id, j.commenter_username, j.comment_text, j.status,
+              j.created_at, j.is_follow_up, a.trigger_keywords
+       FROM jobs j
+       LEFT JOIN reel_automations a ON a.id = j.matched_automation_id
+       WHERE j.account_id = ?
+       ORDER BY j.created_at DESC
+       LIMIT ?`
+    )
+    .bind(accountId, Math.min(Math.max(limit, 1), 50))
+    .all();
+
+  return (results ?? []).map((row: any) => {
+    let keywords: string[] = [];
+    try {
+      const parsed = JSON.parse(String(row.trigger_keywords ?? "[]"));
+      if (Array.isArray(parsed)) keywords = parsed.map((k) => String(k)).slice(0, 3);
+    } catch {
+      keywords = [];
+    }
+    return {
+      id: String(row.id),
+      username: String(row.commenter_username ?? "unknown"),
+      comment: String(row.comment_text ?? ""),
+      status: String(row.status ?? "pending") as ActivityEvent["status"],
+      at: Number(row.created_at ?? 0),
+      triggerKeywords: keywords,
+      isFollowUp: Number(row.is_follow_up ?? 0) === 1,
+    };
+  });
 }
 
 /**

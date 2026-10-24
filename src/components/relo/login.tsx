@@ -141,7 +141,9 @@ export function LoginPage({ navigate }: { navigate: (to: string) => void }) {
           <Logo
             size="lg"
             onClick={() => navigate("/")}
-            className="[&_span:first-child]:bg-brand-ink [&_span:first-child]:text-brand [&_span:last-child]:text-brand-ink"
+            /* Direct-child selectors only: `span:first-child` also matched the
+               period inside the wordmark and painted a white box over it. */
+            className="[&>span:first-child]:bg-brand-ink [&>span:first-child]:text-brand [&>span:last-child]:text-brand-ink [&>span:last-child>span]:text-signal-bright"
           />
 
           <div className="max-w-md">

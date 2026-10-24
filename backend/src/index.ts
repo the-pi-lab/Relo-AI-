@@ -108,7 +108,25 @@ export default {
       return preflightResponse(request, env);
     }
 
-    const response = await this.route(request, env, ctx, url);
+    let response: Response;
+    try {
+      response = await this.route(request, env, ctx, url);
+    } catch (err) {
+      /* Anything a handler throws lands here. Without this catch the runtime
+         returns a bare 500 with no CORS headers, so the dashboard can only say
+         "network error" and never shows the real code. */
+      console.error("[Unhandled route error]", request.method, url.pathname, err);
+      response = new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "The Worker could not handle this request. Try again.",
+          },
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
     return withCors(applySecurityHeaders(response), request, env);
   },
 

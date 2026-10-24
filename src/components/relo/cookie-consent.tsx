@@ -45,7 +45,15 @@ function storeConsent() {
   window.dispatchEvent(new CustomEvent(CONSENT_EVENT, { detail: { resolved: true } }));
 }
 
-export function CookieConsent({ navigate }: { navigate: (to: string) => void }) {
+export function CookieConsent({
+  navigate,
+  hidden = false,
+}: {
+  navigate: (to: string) => void;
+  /** The studio has its own rail and dialogs; a floating notice there only
+      collides with them. Signed-in users can reopen it from Help → Cookies. */
+  hidden?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const acceptRef = useRef<HTMLButtonElement>(null);
 
@@ -78,7 +86,7 @@ export function CookieConsent({ navigate }: { navigate: (to: string) => void }) 
     setOpen(false);
   }, []);
 
-  if (!open) return null;
+  if (!open || hidden) return null;
 
   return (
     <div

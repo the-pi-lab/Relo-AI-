@@ -26,23 +26,27 @@
 :root {
   color-scheme: light;
 
-  --canvas: #eaf2fb;
+  /* Matte canvas, never paper-white: the whole dashboard's depth comes from
+     this one decision. Cards are the only pure #fff surfaces in the app. */
+  --canvas: #e8eef6;
   --surface: #ffffff;
-  --surface-2: #e1ecf8;
-  --surface-3: #d1e1f2;
+  --surface-2: #f4f8fd;
+  --surface-3: #e2eaf4;
 
-  --ink: #0a1424;
-  --ink-2: #3d4f68;
+  --ink: #0b1220;
+  --ink-2: #46566c;
   /* Dark enough to clear 4.5:1 on surface-3, the darkest surface we put
      muted text on. Do not lighten this to taste: `.caption`, `.small`,
      `.meta` and shadcn's muted-foreground all read from it. */
-  --ink-3: #4f6076;
+  --ink-3: #55657c;
   --ink-invert: #ffffff;
 
-  --signal: #0369a1;
-  --signal-hover: #075985;
+  --signal: #0a63c9;
+  --signal-hover: #084d9c;
   --signal-ink: #ffffff;
-  --signal-wash: rgb(3 105 161 / 0.1);
+  --signal-wash: rgb(10 99 201 / 0.09);
+  /* Decorative only — never used for text. The vivid end of the blue ramp. */
+  --signal-bright: #0ea5e9;
 
   /* Brand constants. Surfaces that must stay navy regardless of theme (login
      panel, closing band) read these. */
@@ -50,6 +54,13 @@
   --brand-hover: #0b2a4d;
   --brand-line: #1d4ed8;
   --brand-ink: #ffffff;
+
+  /* The tactile obsidian anchor. High-value CTAs only: one per screen, so the
+     eye always knows where the primary action is. */
+  --obsidian: #071329;
+  --obsidian-hover: #0d1f3d;
+  --obsidian-edge: rgb(0 0 0 / 0.22);
+  --obsidian-glow: inset 0 11px 16px rgb(186 230 253 / 0.28);
 
   --ok: #15803d;
   --ok-wash: rgb(21 128 61 / 0.1);
@@ -61,21 +72,22 @@
   --info: #0e7490;
   --info-wash: rgb(14 116 144 / 0.1);
 
-  --line: rgb(10 20 36 / 0.12);
-  --line-strong: rgb(10 20 36 / 0.22);
-  --line-faint: rgb(10 20 36 / 0.06);
+  --line: rgb(11 24 43 / 0.09);
+  --line-strong: rgb(11 24 43 / 0.18);
+  --line-faint: rgb(11 24 43 / 0.05);
 
-  --sh-1: 0 1px 1px rgb(8 20 38 / 0.04), 0 1px 3px rgb(8 20 38 / 0.06);
-  --sh-2: 0 2px 4px -1px rgb(8 20 38 / 0.07), 0 8px 20px -6px rgb(8 20 38 / 0.12);
-  --sh-3: 0 10px 28px -8px rgb(8 20 38 / 0.16), 0 32px 64px -24px rgb(8 20 38 / 0.26);
-  --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.8);
+  /* Elevation reads as light, not as a grey box: wide, low-opacity, blue-black. */
+  --sh-1: 0 1px 2px rgb(9 30 66 / 0.05), 0 1px 1px rgb(9 30 66 / 0.03);
+  --sh-2: 0 4px 10px -2px rgb(9 30 66 / 0.06), 0 10px 30px -15px rgb(9 30 66 / 0.1);
+  --sh-3: 0 15px 35px -10px rgb(9 30 66 / 0.12), 0 40px 80px -32px rgb(9 30 66 / 0.18);
+  --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.85);
 
   /* Menus sit on the same white as cards in the daylight theme. */
   --popover: var(--surface);
   --overlay: rgb(6 18 34 / 0.45);
   --hero-glow: transparent;
 
-  --chart-1: #0369a1;
+  --chart-1: #0a63c9;
   --chart-2: #0891b2;
   --chart-3: #15803d;
   --chart-4: #a16207;
@@ -88,13 +100,14 @@
   --glow-3: rgb(34 211 238 / 0.15);
   --glow-4: rgb(6 24 47 / 0.08);
 
-  /* Glass. On paper it is white milk, not grey smoke. */
-  --glass: rgb(255 255 255 / 0.58);
-  --glass-strong: rgb(255 255 255 / 0.82);
-  --glass-edge: rgb(10 20 36 / 0.1);
-  --glass-highlight: rgb(255 255 255 / 0.9);
-  --glass-shadow: 0 30px 80px -44px rgb(6 24 47 / 0.32),
-    inset 0 1px 0 rgb(255 255 255 / 0.85);
+  /* Glass. Over the matte canvas the cards go *more* opaque, not less: the
+     contrast against #e8eef6 is what makes them lift. */
+  --glass: rgb(255 255 255 / 0.76);
+  --glass-strong: rgb(255 255 255 / 0.92);
+  --glass-edge: rgb(11 24 43 / 0.08);
+  --glass-highlight: rgb(255 255 255 / 0.95);
+  --glass-shadow: 0 10px 30px -15px rgb(9 30 66 / 0.14),
+    inset 0 1px 0 rgb(255 255 255 / 0.9);
   --grain-opacity: 0.18;
 
   --radius: 9px;
@@ -120,11 +133,19 @@
   --signal-hover: #67e8f9;
   --signal-ink: #04121f;
   --signal-wash: rgb(34 211 238 / 0.14);
+  --signal-bright: #67e8f9;
 
   --brand: #06182f;
   --brand-hover: #0b2a4d;
   --brand-line: #2563eb;
   --brand-ink: #ffffff;
+
+  /* In the deep theme the anchor lifts one step so it stays a *shape* rather
+     than a hole, and the inner glow goes cyan instead of pale azure. */
+  --obsidian: #0a1a33;
+  --obsidian-hover: #12274a;
+  --obsidian-edge: rgb(255 255 255 / 0.1);
+  --obsidian-glow: inset 0 11px 16px rgb(34 211 238 / 0.22);
 
   --ok: #34d399;
   --ok-wash: rgb(52 211 153 / 0.14);
@@ -163,13 +184,14 @@
   --glow-3: rgb(14 165 233 / 0.18);
   --glow-4: rgb(125 211 252 / 0.08);
 
-  /* Smoked glass over the swirl. */
-  --glass: rgb(9 20 36 / 0.62);
-  --glass-strong: rgb(9 20 36 / 0.86);
+  /* Smoked glass over the swirl. Cards stay one step lighter than the canvas
+     so the elevation order survives in a dark theme too. */
+  --glass: rgb(13 27 46 / 0.72);
+  --glass-strong: rgb(13 27 46 / 0.9);
   --glass-edge: rgb(170 200 235 / 0.14);
-  --glass-highlight: rgb(255 255 255 / 0.08);
-  --glass-shadow: 0 36px 90px -48px rgb(0 0 0 / 0.95),
-    inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --glass-highlight: rgb(255 255 255 / 0.07);
+  --glass-shadow: 0 18px 44px -24px rgb(0 0 0 / 0.9),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
   --grain-opacity: 0.26;
 }
 
@@ -213,14 +235,18 @@
   --color-line-faint: var(--line-faint);
   --color-overlay: var(--overlay);
 
-  /* Radii: tighter than Tailwind's defaults so surfaces read as machined
-     rather than pillowy. */
-  --radius-xs: 5px;
-  --radius-sm: 7px;
-  --radius-md: 9px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  --color-obsidian: var(--obsidian);
+  --color-obsidian-hover: var(--obsidian-hover);
+  --color-signal-bright: var(--signal-bright);
+
+  /* Radii: generous enough to read as moulded, never as rounded rectangles.
+     24px on the big surfaces, 16-18px on tiles and inputs. */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
 
   /* shadcn/ui bridge — its names, this palette. Its `accent` is a neutral
      hover surface, not a brand colour; conflating the two is what broke the
@@ -263,6 +289,9 @@
     color: var(--ink);
     font-size: 0.96875rem;
     line-height: 1.6;
+    /* Plus Jakarta's stylistic sets round the 'a', 'g', 'l' and the numerals.
+       Without these two flags the family renders like any other grotesque. */
+    font-feature-settings: "ss03" on, "ss01" on;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -511,6 +540,128 @@
 
   .view-enter {
     animation: view-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* ── Dashboard primitives ──────────────────────────────────────────────
+     Three surfaces, no more: the matte canvas, the white card, and the
+     recessed tile inside a card. Everything else is a state on one of them. */
+
+  .card-elev {
+    position: relative;
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--sh-1);
+    transition:
+      box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 240ms ease;
+  }
+  .card-elev:hover {
+    box-shadow: var(--sh-2);
+  }
+
+  /* The recessed well inside a card: quota bars, funnel tiles, empty states. */
+  .tile {
+    background-color: var(--surface-2);
+    border: 1px solid var(--line-faint);
+    border-radius: var(--radius-xl);
+  }
+
+  /* The tactile obsidian anchor. One per screen — it is the loudest thing on
+     the page, so it may not be used for secondary actions. */
+  .obsidian {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--obsidian-edge);
+    background-color: var(--obsidian);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: var(--obsidian-glow);
+    transition:
+      background-color 200ms ease,
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 200ms ease;
+  }
+  .obsidian:hover {
+    background-color: var(--obsidian-hover);
+    transform: translateY(-1px);
+    box-shadow:
+      var(--obsidian-glow),
+      0 12px 24px -12px rgb(7 19 41 / 0.55);
+  }
+  .obsidian:active {
+    transform: scale(0.975);
+  }
+
+  /* Sidebar rows. The active state is a wash plus a violet-free left marker. */
+  .nav-item {
+    position: relative;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.65rem;
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink-2);
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .nav-item:hover {
+    background-color: color-mix(in oklab, var(--ink) 5%, transparent);
+    color: var(--ink);
+  }
+  .nav-item[data-active="true"] {
+    background-color: var(--signal-wash);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .nav-item[data-active="true"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 1rem;
+    width: 2px;
+    translate: 0 -50%;
+    border-radius: 999px;
+    background-color: var(--signal);
+  }
+
+  .quota-track {
+    height: 8px;
+    border-radius: 999px;
+    background-color: var(--surface-3);
+    padding: 1px;
+    overflow: hidden;
+  }
+  .quota-fill {
+    height: 100%;
+    border-radius: 999px;
+    background-image: linear-gradient(90deg, var(--signal), var(--signal-bright));
+    transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Gradient chip for plan badges and the sidebar offer card. */
+  .badge-grad {
+    background-image: linear-gradient(
+      100deg,
+      var(--signal) 0%,
+      var(--signal-bright) 100%
+    );
+    color: #ffffff;
+  }
+
+  /* Command palette rows. Keyboard selection and hover share one look so the
+     arrow keys never feel different from the mouse. */
+  .cmd-item[data-selected="true"] {
+    background-color: var(--signal-wash);
+    color: var(--ink);
   }
 
   .brand-aurora {
