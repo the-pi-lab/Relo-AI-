@@ -429,7 +429,11 @@ export function DashboardView({ go }: { go: (view: string) => void }) {
           title="No Instagram account connected"
           sub="One Facebook Login round trip. The Page token is stored AES-GCM encrypted and never leaves the Worker in plain text."
         >
-          <Button variant="signal" size="lg" onClick={() => go("settings")}>
+          <Button
+            variant="signal"
+            size="lg"
+            onClick={() => window.dispatchEvent(new CustomEvent("relo:open-connect"))}
+          >
             Connect Instagram
             <ArrowRight className="size-4" aria-hidden />
           </Button>

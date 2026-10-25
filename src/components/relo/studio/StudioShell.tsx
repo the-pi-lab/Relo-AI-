@@ -16,9 +16,6 @@ import {
   Settings,
   ShieldAlert,
   Sparkles,
-  Sun,
-  Moon,
-  Monitor,
   X,
 } from "lucide-react";
 
@@ -30,6 +27,7 @@ import { TIER_META, planLabel } from "@/lib/relo/data";
 import { AlertsBell } from "./alerts";
 import { CommandPalette } from "./command-palette";
 import { HelpDrawer } from "./help-drawer";
+import { ConnectInstagramModal, FloatingConnectWidget } from "./connect-modal";
 import { NAV_GROUPS, navItemFor, lockedBy, type NavItem } from "./nav-config";
 import {
   DropdownMenu,
@@ -417,6 +415,27 @@ export function StudioShell({
   const [drawer, setDrawer] = useState(false);
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  /* Auto-open Zorcha-style onboarding popup if no account connected (once per session) */
+  useEffect(() => {
+    try {
+      const shown = sessionStorage.getItem("relo_connect_popup_shown");
+      if (!shown && accounts.length === 0) {
+        sessionStorage.setItem("relo_connect_popup_shown", "1");
+        setConnectOpen(true);
+      }
+    } catch {
+      if (accounts.length === 0) setConnectOpen(true);
+    }
+  }, [accounts.length]);
+
+  /* Allow any component in the studio to pop open the connect modal */
+  useEffect(() => {
+    const onOpen = () => setConnectOpen(true);
+    window.addEventListener("relo:open-connect", onOpen);
+    return () => window.removeEventListener("relo:open-connect", onOpen);
+  }, []);
 
   /* Read the stored preference after mount: rendering it on the server would
      produce a collapsed rail for everyone and then flip on hydration. */
@@ -549,8 +568,8 @@ export function StudioShell({
             {accounts.length === 0 ? (
               <button
                 type="button"
-                onClick={() => go("settings")}
-                className="inline-flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-wash px-3 py-1.5 text-[12px] font-semibold text-warn"
+                onClick={() => setConnectOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-wash px-3 py-1.5 text-[12px] font-semibold text-warn shadow-sm hover:border-warn hover:bg-warn-wash/80 transition-colors"
               >
                 <ShieldAlert className="size-3.5" aria-hidden />
                 Connect Instagram
@@ -700,6 +719,16 @@ export function StudioShell({
       />
 
       <HelpDrawer open={help} onClose={() => setHelp(false)} go={go} />
+
+      <ConnectInstagramModal
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+      />
+
+      <FloatingConnectWidget
+        hasAccount={accounts.length > 0}
+        onOpenConnect={() => setConnectOpen(true)}
+      />
     </div>
   );
 }

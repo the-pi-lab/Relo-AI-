@@ -639,12 +639,7 @@ export function SettingsView() {
   const atAccountLimit = accounts.length >= limits.maxAccounts;
 
   const connect = () => {
-    if (!metaReady) {
-      toast.error("Instagram sign-in is not configured for this build.");
-      return;
-    }
-    // The callback page finishes the exchange and returns to Settings.
-    api.beginMetaOAuth();
+    window.dispatchEvent(new CustomEvent("relo:open-connect"));
   };
 
   const recordUpi = async () => {
