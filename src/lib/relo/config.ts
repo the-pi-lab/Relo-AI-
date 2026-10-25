@@ -36,9 +36,7 @@ export const APP_URL = trimTrailing(
 );
 
 /** Meta (Facebook) app id. The matching secret lives only on the Worker. */
-export const META_APP_ID = (
-  getEnv("NEXT_PUBLIC_META_APP_ID", "VITE_META_APP_ID", "2078625202922249")
-).trim();
+export const META_APP_ID = getEnv("NEXT_PUBLIC_META_APP_ID", "VITE_META_APP_ID").trim();
 
 /**
  * The page Meta sends the creator back to after the OAuth dialog. It must be
