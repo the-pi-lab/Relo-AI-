@@ -107,7 +107,7 @@ import {
   type JwtPayload,
 } from "../auth";
 import { encryptSecret, decryptSecret, getMasterKey, getOtpPepper, timingSafeEqualAsync } from "../crypto";
-import { metaGraphClient } from "../meta/client";
+import { metaGraphClient, type ConnectedInstagramAccountInfo } from "../meta/client";
 import { validateReplyVariations } from "../engine/spintax";
 import { campaignWindowSeconds, normalizeCampaignCard } from "../engine/campaignWorker";
 import { createAccountId, createAutomationId, createMediaId } from "../types/ids";
@@ -993,7 +993,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
               pageAccessToken: longLivedToken,
               instagramAccountId: profile.id,
               instagramUsername: profile.username,
-              profilePictureUrl: profile.profilePictureUrl,
+              profilePictureUrl: profile.profile_picture_url,
             },
           ];
           isInstagramLogin = true;

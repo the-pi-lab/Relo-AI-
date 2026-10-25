@@ -310,7 +310,7 @@ export class MetaGraphClient {
       throw new MetaApiError(`Instagram token exchange failed: ${msg}`, {
         code: res.status,
         statusCode: res.status,
-        type: data.error_type || "OAuthException",
+        errorType: data.error_type || "OAuthException",
       });
     }
     return {
@@ -382,7 +382,7 @@ export class MetaGraphClient {
     return {
       id: resolvedId,
       username: resolvedUsername,
-      profilePictureUrl: data.profile_picture_url,
+      profile_picture_url: data.profile_picture_url,
     };
   }
 
