@@ -256,6 +256,7 @@ export function SiteFooter({ navigate }: { navigate: Nav }) {
               { label: "Privacy", to: "/privacy" },
               { label: "Terms", to: "/terms" },
               { label: "Cookies", to: "/cookies" },
+              { label: "Data Deletion", to: "/data-deletion" },
             ].map((l) => (
               <button key={l.label} type="button" onClick={() => navigate(l.to)} className="hover:text-ink">
                 {l.label}

@@ -61,6 +61,13 @@ function DocFooter({ navigate }: { navigate: (to: string) => void }) {
           >
             Cookies
           </button>
+          <button
+            type="button"
+            onClick={() => navigate("/data-deletion")}
+            className="transition-colors hover:text-ink"
+          >
+            Data Deletion
+          </button>
           <CookieSettingsLink />
           <a
             href="mailto:hello@thepilab.in"

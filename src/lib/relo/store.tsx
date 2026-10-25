@@ -50,6 +50,7 @@ export type Route =
   | { name: "blog" }
   | { name: "docs" }
   | { name: "security" }
+  | { name: "data-deletion" }
   | { name: "compare"; competitor: string }
   | { name: "use-case"; niche: string }
   | { name: "product"; feature: string }
@@ -87,6 +88,7 @@ export function parseHash(hash: string): Route {
   if (h === "blog") return { name: "blog" };
   if (h === "docs") return { name: "docs" };
   if (h === "security") return { name: "security" };
+  if (h === "data-deletion" || h === "user-data-deletion") return { name: "data-deletion" };
 
   if (h.startsWith("compare/")) {
     const competitor = h.slice("compare/".length);

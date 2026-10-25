@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/lib/relo/theme";
 import { LandingPage } from "./landing";
 import { LoginPage } from "./login";
 import { PrivacyPage, TermsPage, CookiesPage, NotFoundPage } from "./pages";
+import { DataDeletionContent } from "./data-deletion";
 import { ComparisonPage } from "./pages-compare";
 import { UseCasePage } from "./pages-usecases";
 import { AboutPage, CareersPage, AffiliatesPage, PricingPage } from "./pages-company";
@@ -114,6 +115,7 @@ function Router() {
         {route.name === "blog" && <BlogPage navigate={navigate} />}
         {route.name === "docs" && <DocsPage navigate={navigate} />}
         {route.name === "security" && <SecurityPage navigate={navigate} />}
+        {route.name === "data-deletion" && <DataDeletionContent navigate={navigate} />}
         {route.name === "compare" && <ComparisonPage competitor={route.competitor} navigate={navigate} />}
         {route.name === "use-case" && <UseCasePage niche={route.niche} navigate={navigate} />}
         {route.name === "product" && <ProductDetailPage feature={route.feature} navigate={navigate} />}

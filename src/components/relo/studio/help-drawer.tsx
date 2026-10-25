@@ -154,6 +154,7 @@ export function HelpDrawer({
               { label: "Privacy", to: "/privacy" },
               { label: "Terms", to: "/terms" },
               { label: "Cookies", to: "/cookies" },
+              { label: "Data Deletion", to: "/data-deletion" },
               { label: "Settings", to: "/studio/settings" },
             ].map((link) => (
               <button
