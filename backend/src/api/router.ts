@@ -511,7 +511,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       );
     }
 
-    const sendResult = await sendOtpEmail(email, code, env.RESEND_API_KEY, devMode);
+    const sendResult = await sendOtpEmail(email, code, env.RESEND_API_KEY, devMode, env.RESEND_FROM_EMAIL);
     if (!sendResult.success) {
       console.error(`[Auth] OTP email delivery failed for ${email}: ${sendResult.error}`);
       if (sendResult.error === "EMAIL_NOT_CONFIGURED") {

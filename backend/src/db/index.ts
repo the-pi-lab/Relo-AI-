@@ -10,6 +10,7 @@ export interface Env {
   JWT_SECRET: string;
   ENCRYPTION_MASTER_KEY?: string; // Required at runtime — no secret fallback
   RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
   LEMON_SQUEEZY_WEBHOOK_SECRET?: string;
   DEBUG_OTPS?: string; // Only ever set outside production
   /**

@@ -203,7 +203,8 @@ export async function sendOtpEmail(
   email: string,
   code: string,
   resendApiKey?: string,
-  devMode = false
+  devMode = false,
+  fromEmail?: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!resendApiKey) {
     if (!devMode) {
@@ -221,7 +222,7 @@ export async function sendOtpEmail(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "RELO <auth@relo.ai>",
+        from: fromEmail || "RELO <onboarding@resend.dev>",
         to: [email],
         subject: `Your RELO Login Code: ${code}`,
         html: `
