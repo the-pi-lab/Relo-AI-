@@ -21,8 +21,6 @@
    the inline script in app/layout.tsx and kept in sync by ThemeProvider.
    ========================================================================== */
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
-
 /* ── Light ──────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
@@ -101,87 +99,6 @@
 
   --radius: 12px;
   --wrap: 1200px;
-}
-
-/* ── Dark ───────────────────────────────────────────────────────────────── */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-
-  --canvas: #050b18;
-  --surface: #0b1526;
-  --surface-2: #071020;
-  --surface-3: #122238;
-
-  --ink: #eaf2ff;
-  --ink-2: #a4b6ce;
-  /* Lifted from the usual grey so 11px labels clear 4.5:1 on every surface. */
-  --ink-3: #8ba0bd;
-  --ink-invert: #050b18;
-
-  --signal: #22d3ee;
-  --signal-hover: #67e8f9;
-  --signal-ink: #04121f;
-  --signal-wash: rgb(34 211 238 / 0.14);
-  --signal-bright: #67e8f9;
-
-  --brand: #06182f;
-  --brand-hover: #0b2a4d;
-  --brand-line: #2563eb;
-  --brand-ink: #ffffff;
-
-  /* In the deep theme the anchor lifts one step so it stays a *shape* rather
-     than a hole, and the inner glow goes cyan instead of pale azure. */
-  --obsidian: #0a1a33;
-  --obsidian-hover: #12274a;
-  --obsidian-edge: rgb(255 255 255 / 0.1);
-  --obsidian-glow: inset 0 11px 16px rgb(34 211 238 / 0.22);
-
-  --ok: #34d399;
-  --ok-wash: rgb(52 211 153 / 0.14);
-  --warn: #fbbf24;
-  --warn-wash: rgb(251 191 36 / 0.14);
-  --bad: #f87171;
-  --bad-ink: #1a0505;
-  --bad-wash: rgb(248 113 113 / 0.13);
-  --info: #7dd3fc;
-  --info-wash: rgb(125 211 252 / 0.12);
-
-  --line: rgb(148 180 214 / 0.16);
-  --line-strong: rgb(148 180 214 / 0.28);
-  --line-faint: rgb(255 255 255 / 0.05);
-
-  --sh-1: 0 1px 1px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.45);
-  --sh-2: 0 2px 6px -1px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.6);
-  --sh-3: 0 12px 32px -8px rgb(0 0 0 / 0.65), 0 36px 72px -28px rgb(0 0 0 / 0.8);
-  --sh-inset: inset 0 1px 0 rgb(255 255 255 / 0.04);
-
-  /* Menus, tooltips and sheets lift to the navy surface. */
-  --popover: var(--surface-3);
-  --overlay: rgb(2 6 14 / 0.72);
-  --hero-glow: rgb(6 24 47 / 0.6);
-
-  --chart-1: #22d3ee;
-  --chart-2: #60a5fa;
-  --chart-3: #34d399;
-  --chart-4: #fbbf24;
-  --chart-5: #c084fc;
-
-  /* The same liquid field, now lit from inside: cyan ribbon, cobalt core and a
-     cold highlight edge. Opacity is deliberately low; the glass does the work. */
-  --glow-1: rgb(34 211 238 / 0.2);
-  --glow-2: rgb(37 99 235 / 0.32);
-  --glow-3: rgb(14 165 233 / 0.18);
-  --glow-4: rgb(125 211 252 / 0.08);
-
-  /* Smoked glass over the swirl. Cards stay one step lighter than the canvas
-     so the elevation order survives in a dark theme too. */
-  --glass: rgb(13 27 46 / 0.72);
-  --glass-strong: rgb(13 27 46 / 0.9);
-  --glass-edge: rgb(170 200 235 / 0.14);
-  --glass-highlight: rgb(255 255 255 / 0.07);
-  --glass-shadow: 0 18px 44px -24px rgb(0 0 0 / 0.9),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
-  --grain-opacity: 0.26;
 }
 
 /* ── Utilities generated from the tokens above ──────────────────────────── */

@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { ArrowRight, Check, Sparkles, X, ShieldCheck, Zap, ArrowLeft, Star, Heart } from "lucide-react";
 import { Button, Container, Logo } from "./chrome";
-import { ThemeToggle } from "@/lib/relo/theme";
 import { LiquidBackdrop } from "./ambient";
 import { Reveal } from "./motion";
 
@@ -159,7 +158,6 @@ export function ComparisonPage({ competitor, navigate }: CompareProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <ThemeToggle />
             <button
               type="button"
               onClick={() => navigate("/")}

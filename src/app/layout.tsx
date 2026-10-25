@@ -25,7 +25,7 @@ const code = JetBrains_Mono({
   display: "swap",
 });
 
-const THEME_SCRIPT = `(function(){try{var c=localStorage.getItem("relo-theme");if(c!=="light"&&c!=="dark"&&c!=="system")c="light";var d=c==="dark"||(c==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var t=d?"dark":"light";var e=document.documentElement;e.setAttribute("data-theme",t);e.style.colorScheme=t;}catch(_){var e=document.documentElement;e.setAttribute("data-theme","light");e.style.colorScheme="light";}})();`;
+const THEME_SCRIPT = `(function(){try{var e=document.documentElement;e.setAttribute("data-theme","light");e.style.colorScheme="light";}catch(_){}})();`;
 
 /* metadataBase resolves OG/Twitter relative URLs; production injects the real
    origin through NEXT_PUBLIC_APP_URL, previews fall back to the local server. */
@@ -64,10 +64,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f2ee" },
-    { media: "(prefers-color-scheme: dark)", color: "#050b18" },
-  ],
+  themeColor: "#f4f2ee",
 };
 
 export default async function RootLayout({

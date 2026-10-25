@@ -1,9 +1,6 @@
 "use client";
 
-﻿"use client";
-
 import React, { useEffect, useRef } from "react";
-import { useTheme } from "@/lib/relo/theme";
 import { cn } from "@/lib/utils";
 
 interface FlowingGradientsCanvasProps {
@@ -20,9 +17,9 @@ export function FlowingGradientsCanvas({
   interactive = true,
 }: FlowingGradientsCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const { isDark } = useTheme();
   const mouseRef = useRef({ x: 0.5, y: 0.5, targetX: 0.5, targetY: 0.5 });
   const animFrameRef = useRef<number | null>(null);
+  const isDark = false;
 
   // Mouse interaction listener
   useEffect(() => {

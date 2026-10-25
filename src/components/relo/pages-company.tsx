@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Heart, Sparkles, Star, Users, Briefcase, DollarSign, ShieldCheck, Zap } from "lucide-react";
 import { Button, Container, Logo } from "./chrome";
-import { ThemeToggle } from "@/lib/relo/theme";
 import { LiquidBackdrop } from "./ambient";
 import { Reveal } from "./motion";
 
@@ -23,7 +22,6 @@ function PageHeader({ title, navigate }: { title: string; navigate: (to: string)
         </div>
 
         <div className="flex items-center gap-3">
-          <ThemeToggle />
           <button
             type="button"
             onClick={() => navigate("/")}

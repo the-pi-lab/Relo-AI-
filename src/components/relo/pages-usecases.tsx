@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Heart, MessageCircle, Sparkles, Star, Zap } from "lucide-react";
 import { Button, Container, Logo } from "./chrome";
-import { ThemeToggle } from "@/lib/relo/theme";
 import { LiquidBackdrop } from "./ambient";
 import { Reveal } from "./motion";
 
@@ -195,7 +194,6 @@ export function UseCasePage({ niche, navigate }: UseCaseProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <ThemeToggle />
             <button
               type="button"
               onClick={() => navigate("/")}

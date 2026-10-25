@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button, Container, Logo } from "./chrome";
-import { ThemeToggle } from "@/lib/relo/theme";
 import { CookieSettingsLink } from "./cookie-consent";
 import { LiquidBackdrop } from "./ambient";
 import { cn } from "@/lib/utils";
@@ -23,7 +22,6 @@ function DocNav({ navigate }: { navigate: (to: string) => void }) {
         <Logo onClick={() => navigate("/")} />
         <span className="caption ml-1 hidden sm:block">Legal</span>
         <div className="ml-auto flex items-center gap-2.5">
-          <ThemeToggle className="hidden sm:inline-flex" />
           <Button variant="outline" size="sm" onClick={() => navigate("/")}>
             Back to site
           </Button>

@@ -39,7 +39,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useTheme, type ThemeChoice } from "@/lib/relo/theme";
 
 const SIDEBAR_KEY = "relo-sidebar-collapsed";
 
@@ -399,48 +398,6 @@ function WorkspaceSwitcher({ go }: { go: (view: string) => void }) {
   );
 }
 
-/* ── Appearance control (inside the avatar menu) ─────────────────────────── */
-
-function AppearanceRow() {
-  const { choice, set } = useTheme();
-  const options: { value: ThemeChoice; label: string; Icon: typeof Sun }[] = [
-    { value: "light", label: "Light", Icon: Sun },
-    { value: "system", label: "Auto", Icon: Monitor },
-    { value: "dark", label: "Dark", Icon: Moon },
-  ];
-
-  return (
-    <div className="px-2.5 py-1.5">
-      <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.11em] text-ink-3">
-        Appearance
-      </p>
-      <div
-        role="radiogroup"
-        aria-label="Colour theme"
-        className="grid grid-cols-3 gap-0.5 rounded-lg bg-surface-2 p-0.5"
-      >
-        {options.map(({ value, label, Icon }) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={choice === value}
-            onClick={() => set(value)}
-            className={cn(
-              "inline-flex items-center justify-center gap-1 rounded-[6px] py-1 text-[11px] font-semibold transition-colors",
-              choice === value
-                ? "bg-surface text-ink shadow-[var(--sh-1)]"
-                : "text-ink-3 hover:text-ink"
-            )}
-          >
-            <Icon className="size-3" aria-hidden />
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /* ── Shell ───────────────────────────────────────────────────────────────── */
 
@@ -692,8 +649,6 @@ export function StudioShell({
                     </span>
                   </DropdownMenuLabel>
 
-                  <DropdownMenuSeparator />
-                  <AppearanceRow />
                   <DropdownMenuSeparator />
 
                   <DropdownMenuItem onSelect={() => go("settings")} className="gap-2 text-[12.5px]">

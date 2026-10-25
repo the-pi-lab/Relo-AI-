@@ -11,7 +11,6 @@ import { Button, Field, Logo, inputClass } from "./chrome";
 import { BrandAurora, LiquidBackdrop } from "./ambient";
 import { Turnstile } from "./turnstile";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { ThemeToggle } from "@/lib/relo/theme";
 import { useRelo } from "@/lib/relo/store";
 import * as api from "@/lib/relo/api";
 import { DEMO_TOKEN, DEMO_USER } from "@/lib/relo/demo";
@@ -199,7 +198,6 @@ export function LoginPage({ navigate }: { navigate: (to: string) => void }) {
       <div className="relative z-10 flex flex-col">
         <div className="flex items-center justify-between p-5 sm:p-6">
           <Logo onClick={() => navigate("/")} className="lg:invisible" />
-          <ThemeToggle />
         </div>
 
         <div className="flex flex-1 items-center justify-center px-5 pb-16 sm:px-6">

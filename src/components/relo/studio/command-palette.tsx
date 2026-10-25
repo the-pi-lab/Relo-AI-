@@ -7,15 +7,12 @@ import {
   CornerDownLeft,
   Lock,
   LogOut,
-  Moon,
   Plus,
   Search,
-  Sun,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useRelo } from "@/lib/relo/store";
-import { useTheme } from "@/lib/relo/theme";
 import { NAV_GROUPS, lockedBy, type NavItem } from "./nav-config";
 
 /**
@@ -52,7 +49,6 @@ export function CommandPalette({
   onOpenHelp: () => void;
 }) {
   const { limits, plan, signOut } = useRelo();
-  const { isDark, set } = useTheme();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -113,17 +109,6 @@ export function CommandPalette({
         },
       },
       {
-        id: "action:theme",
-        label: isDark ? "Switch to light theme" : "Switch to dark theme",
-        hint: `Currently ${isDark ? "dark" : "light"}`,
-        group: "Actions",
-        icon: isDark ? Sun : Moon,
-        run: () => {
-          set(isDark ? "light" : "dark");
-          onClose();
-        },
-      },
-      {
         id: "action:help",
         label: "Open help & documentation",
         hint: "Connecting, keywords, Meta limits",
@@ -149,7 +134,7 @@ export function CommandPalette({
     ];
 
     return [...actions, ...nav];
-  }, [go, isDark, limits, onClose, onOpenHelp, set, signOut]);
+  }, [go, limits, onClose, onOpenHelp, signOut]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
