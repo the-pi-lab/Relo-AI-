@@ -7,12 +7,17 @@ import {
   Check,
   Copy,
   Download,
+  ExternalLink,
   Loader2,
+  MessageSquare,
   Pencil,
   Plus,
   Search,
+  ShieldCheck,
+  Sparkles,
   Timer,
   Trash2,
+  UserCheck,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -60,10 +65,15 @@ const toInput = (automation: Automation): AutomationInput => ({
   reelThumbnailUrl: automation.reelThumbnailUrl,
   triggerKeywords: automation.triggerKeywords,
   commentReplies: automation.commentReplies,
-  templateCard: automation.templateCard,
+  templateCard: {
+    ...automation.templateCard,
+    optInText: automation.templateCard.optInText || "Hey! Tap below to get instant access 👇",
+    optInButtonText: automation.templateCard.optInButtonText || "Send me the access",
+  },
   isActive: automation.isActive,
   followUpEnabled: automation.followUpEnabled,
   followUpDelayMinutes: automation.followUpDelayMinutes,
+  followGateEnabled: Boolean(automation.followGateEnabled),
 });
 
 function ArmToggle({
@@ -138,11 +148,14 @@ export function AutomationsView() {
       templateCard: {
         title: "",
         subtitle: "",
+        optInText: "Hey! Tap below to get instant access 👇",
+        optInButtonText: "Send me the access",
         buttons: [{ type: "web_url", title: "", url: "" }],
       },
       isActive: true,
       followUpEnabled: false,
       followUpDelayMinutes: 60,
+      followGateEnabled: false,
     });
     setOpen(true);
   };
@@ -292,17 +305,28 @@ export function AutomationsView() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  {automation.triggerKeywords.slice(0, 5).map((keyword) => (
-                    <span
-                      key={keyword}
-                      className="rounded-md border border-line/70 bg-surface-2/70 px-1.5 py-0.5 font-mono text-[11px] text-ink-2"
-                    >
-                      #{keyword}
+                  {automation.triggerKeywords.includes("*") ? (
+                    <span className="rounded-md border border-signal/40 bg-signal-wash px-2 py-0.5 text-[11px] font-semibold text-signal">
+                      ⚡ Any comment
                     </span>
-                  ))}
-                  {automation.triggerKeywords.length > 5 && (
+                  ) : (
+                    automation.triggerKeywords.slice(0, 5).map((keyword) => (
+                      <span
+                        key={keyword}
+                        className="rounded-md border border-line/70 bg-surface-2/70 px-1.5 py-0.5 font-mono text-[11px] text-ink-2"
+                      >
+                        #{keyword}
+                      </span>
+                    ))
+                  )}
+                  {!automation.triggerKeywords.includes("*") && automation.triggerKeywords.length > 5 && (
                     <span className="font-mono text-[11px] text-ink-3">
                       +{automation.triggerKeywords.length - 5}
+                    </span>
+                  )}
+                  {automation.followGateEnabled && (
+                    <span className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-400">
+                      🔒 Follow-Gate
                     </span>
                   )}
                 </div>
@@ -426,7 +450,7 @@ function AutomationEditor({
   onClose: () => void;
   onDraftChange: (draft: AutomationInput) => void;
 }) {
-  const { reels, saveAutomation } = useRelo();
+  const { reels, saveAutomation, account } = useRelo();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -451,14 +475,15 @@ function AutomationEditor({
     });
 
   const selectedReel = reels.data.find((reel) => reel.id === draft.instagramMediaId);
-  const steps = ["Reel", "Replies", "DM card", "Delivery"];
+  const steps = ["Reel & Trigger", "Replies", "DM Funnel", "Review"];
+  const [previewTab, setPreviewTab] = useState<0 | 1 | 2>(0);
 
   const validate = (): string | null => {
     if (!draft.instagramMediaId || !draft.reelPermalink) {
       return "Pick the Reel this automation watches.";
     }
     if (draft.triggerKeywords.length === 0) {
-      return "Add at least one keyword (use * to match every comment).";
+      return "Select 'Any Comment' or add at least one trigger keyword.";
     }
     const replies = draft.commentReplies.map((reply) => reply.trim()).filter(Boolean);
     if (replies.length < limits.replyMin || replies.length > limits.replyMax) {
@@ -466,7 +491,13 @@ function AutomationEditor({
         ? "The Free tier runs exactly two reply variations."
         : `Use between ${limits.replyMin} and ${limits.replyMax} reply variations.`;
     }
-    if (!draft.templateCard.title.trim()) return "Give the DM card a title.";
+    if ((draft.templateCard.optInText ?? "").length > 80) {
+      return "Opt-in hook message is limited to 80 characters.";
+    }
+    if ((draft.templateCard.optInButtonText ?? "").length > 20) {
+      return "Opt-in button text is limited to 20 characters.";
+    }
+    if (!draft.templateCard.title.trim()) return "Give the delivery card a title.";
     if (draft.templateCard.title.trim().length > 80) {
       return "Card titles are limited to 80 characters.";
     }
@@ -474,7 +505,7 @@ function AutomationEditor({
       return "Card subtitles are limited to 80 characters.";
     }
     const buttons = draft.templateCard.buttons.filter((button) => button.title.trim());
-    if (buttons.length === 0) return "Add at least one button.";
+    if (buttons.length === 0) return "Add at least one link button.";
     if (buttons.length > limits.buttons) {
       return plan === "free"
         ? "Free allows two buttons — RELO adds its own branded button after them."
@@ -485,7 +516,7 @@ function AutomationEditor({
         return "Button labels are limited to 20 characters.";
       }
       if (button.type === "web_url" && !/^https:\/\/[^\s"'<>]+$/.test(button.url ?? "")) {
-        return "URL buttons need an https:// link.";
+        return "URL buttons need a valid https:// link.";
       }
     }
     return null;
@@ -504,10 +535,13 @@ function AutomationEditor({
         ...draft,
         triggerKeywords: draft.triggerKeywords.map((keyword) => keyword.trim()).filter(Boolean),
         commentReplies: draft.commentReplies.map((reply) => reply.trim()).filter(Boolean),
+        followGateEnabled: Boolean(draft.followGateEnabled),
         templateCard: {
           ...draft.templateCard,
           title: draft.templateCard.title.trim(),
           subtitle: draft.templateCard.subtitle?.trim() || undefined,
+          optInText: draft.templateCard.optInText?.trim() || "Hey! Tap below to get instant access 👇",
+          optInButtonText: draft.templateCard.optInButtonText?.trim() || "Send me the access",
           buttons: draft.templateCard.buttons
             .filter((button) => button.title.trim())
             .map((button) => ({
@@ -641,18 +675,83 @@ function AutomationEditor({
                 </p>
               )}
 
-              <Field label="Trigger keywords" hint="Whole-word match. Enter or comma to add.">
-                <TagInput
-                  tags={draft.triggerKeywords}
-                  onChange={(triggerKeywords) => set({ triggerKeywords })}
-                  placeholder="price, link, guide…"
-                  max={25}
-                />
-              </Field>
-              <p className="text-[12px] leading-relaxed text-ink-3">
-                Use <span className="font-mono text-ink-2">*</span> to answer
-                every comment on the Reel, not just keyword matches.
-              </p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[13px] font-semibold text-ink">Comment Trigger</label>
+                  <span className="text-[12px] text-ink-3">When should RELO fire?</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (draft.triggerKeywords.includes("*")) {
+                        set({ triggerKeywords: [] });
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col gap-1 rounded-xl border p-3.5 text-left transition-all",
+                      !draft.triggerKeywords.includes("*")
+                        ? "border-signal bg-signal-wash/60 ring-1 ring-signal/30"
+                        : "border-line bg-surface hover:border-line-strong hover:bg-surface-2"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-semibold text-ink">Specific Keywords</span>
+                      {!draft.triggerKeywords.includes("*") && (
+                        <Check className="size-4 text-signal" strokeWidth={2} />
+                      )}
+                    </div>
+                    <span className="text-[12px] text-ink-3 leading-relaxed">
+                      Only triggers when a viewer types specific words (e.g. COURSE, LINK, VIP)
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => set({ triggerKeywords: ["*"] })}
+                    className={cn(
+                      "flex flex-col gap-1 rounded-xl border p-3.5 text-left transition-all",
+                      draft.triggerKeywords.includes("*")
+                        ? "border-signal bg-signal-wash/60 ring-1 ring-signal/30"
+                        : "border-line bg-surface hover:border-line-strong hover:bg-surface-2"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
+                        <span>⚡ Any Comment</span>
+                      </span>
+                      {draft.triggerKeywords.includes("*") && (
+                        <Check className="size-4 text-signal" strokeWidth={2} />
+                      )}
+                    </div>
+                    <span className="text-[12px] text-ink-3 leading-relaxed">
+                      Triggers on ANY comment (kuch bhi comment karne par reply & DM chala jaye)
+                    </span>
+                  </button>
+                </div>
+
+                {draft.triggerKeywords.includes("*") ? (
+                  <div className="rounded-xl border border-signal/30 bg-signal-wash/40 p-3.5 text-[12.5px] text-ink flex items-start gap-2.5">
+                    <span className="text-signal text-[15px]">⚡</span>
+                    <div>
+                      <p className="font-semibold text-signal">Catch-All Wildcard Active</p>
+                      <p className="text-ink-2 mt-0.5">
+                        RELO will automatically reply to <strong>every viewer comment</strong> on this Reel and send them the DM funnel.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <Field label="Trigger keywords" hint="Enter or comma to add. Whole-word match.">
+                    <TagInput
+                      tags={draft.triggerKeywords}
+                      onChange={(triggerKeywords) => set({ triggerKeywords })}
+                      placeholder="e.g. link, course, prompt, access..."
+                      max={25}
+                    />
+                  </Field>
+                )}
+              </div>
             </div>
           )}
 
@@ -730,136 +829,320 @@ function AutomationEditor({
           )}
 
           {step === 2 && (
-            <div className="space-y-4">
-              <Field label="Card title" hint="Max 80 characters.">
-                <input
-                  value={draft.templateCard.title}
-                  onChange={(event) => setCard({ title: event.target.value })}
-                  placeholder="The Creator OS, free pack"
-                  maxLength={80}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Subtitle" hint="Optional.">
-                <input
-                  value={draft.templateCard.subtitle ?? ""}
-                  onChange={(event) => setCard({ subtitle: event.target.value })}
-                  placeholder="3 templates · no email needed"
-                  maxLength={80}
-                  className={inputCls}
-                />
-              </Field>
-
-              <div>
-                <p className="caption mb-2">
-                  Buttons · up to {limits.buttons}
-                </p>
-                <div className="space-y-2.5">
-                  {draft.templateCard.buttons.map((button, index) => (
-                    <div key={index} className="rounded-lg border border-line bg-surface-2 p-3">
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={button.type}
-                          onChange={(event) =>
-                            setButton(index, {
-                              type: event.target.value as TemplateButton["type"],
-                            })
-                          }
-                          className="rounded-md border border-line-strong bg-surface px-2 py-1.5 font-mono text-[11px] text-ink outline-none focus:border-signal focus:ring-[3px] focus:ring-signal/18"
-                          aria-label="Button type"
-                        >
-                          <option value="web_url">URL</option>
-                          <option value="postback">Postback</option>
-                          <option value="phone_number">Phone</option>
-                        </select>
-                        <input
-                          value={button.title}
-                          onChange={(event) => setButton(index, { title: event.target.value })}
-                          placeholder="Download free pack"
-                          maxLength={20}
-                          className={cn(inputCls, "flex-1 py-1.5")}
-                        />
-                        {draft.templateCard.buttons.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCard({
-                                buttons: draft.templateCard.buttons.filter(
-                                  (_, position) => position !== index
-                                ),
-                              })
-                            }
-                            className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-3 hover:text-bad"
-                            aria-label="Remove button"
-                          >
-                            <X className="size-3.5" strokeWidth={1.75} aria-hidden />
-                          </button>
-                        )}
-                      </div>
-                      {button.type === "web_url" && (
-                        <input
-                          value={button.url ?? ""}
-                          onChange={(event) => setButton(index, { url: event.target.value })}
-                          placeholder="https://yourshop.in/pack"
-                          className={cn(inputCls, "mt-2 py-1.5 font-mono text-[12px]")}
-                        />
-                      )}
+            <div className="space-y-6">
+              {/* Part 1: Step 1 DM (Opt-In Card) */}
+              <div className="rounded-xl border border-line bg-surface-2/40 p-4 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="grid size-6 place-items-center rounded-md bg-signal text-[11px] font-bold text-signal-ink">
+                      1
+                    </span>
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink">Step 1: Private Reply (Initial DM)</p>
+                      <p className="text-[11.5px] text-ink-3">Hook message with 1 CTA button sent immediately to commenter</p>
                     </div>
-                  ))}
+                  </div>
+                  <span className="rounded-md border border-signal/30 bg-signal-wash px-2 py-0.5 font-mono text-[10px] text-signal font-semibold">
+                    Opens 24h Window
+                  </span>
                 </div>
-                {draft.templateCard.buttons.length < limits.buttons && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCard({
-                        buttons: [
-                          ...draft.templateCard.buttons,
-                          { type: "web_url", title: "", url: "" },
-                        ],
-                      })
-                    }
-                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
-                  >
-                    <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
-                    Add button
-                  </button>
+
+                <Field label="Hook message" hint="Max 80 chars. What viewer sees first in DM.">
+                  <input
+                    value={draft.templateCard.optInText ?? ""}
+                    onChange={(event) => setCard({ optInText: event.target.value })}
+                    placeholder="Hey! Tap below to get instant access 👇"
+                    maxLength={80}
+                    className={inputCls}
+                  />
+                </Field>
+
+                <Field label="Action Button Label" hint="Max 20 chars. Button that user taps to unlock access.">
+                  <input
+                    value={draft.templateCard.optInButtonText ?? ""}
+                    onChange={(event) => setCard({ optInButtonText: event.target.value })}
+                    placeholder="Send me the access"
+                    maxLength={20}
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+
+              {/* Part 2: Smart Follow-Gate */}
+              <div className="rounded-xl border border-line bg-surface-2/40 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="grid size-6 place-items-center rounded-md bg-sky-500 text-[11px] font-bold text-white">
+                      2
+                    </span>
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
+                        <span>Smart Follow-Gate</span>
+                        {draft.followGateEnabled && (
+                          <span className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">
+                            Active
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[11.5px] text-ink-3">
+                        Require viewer to follow before receiving resource links
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={Boolean(draft.followGateEnabled)}
+                    onCheckedChange={(followGateEnabled) => set({ followGateEnabled })}
+                  />
+                </div>
+
+                {draft.followGateEnabled ? (
+                  <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-[12px] leading-relaxed text-ink-2">
+                    <p className="font-semibold text-sky-400 mb-0.5">🔒 Follow-Gate Active</p>
+                    When viewer taps &quot;{draft.templateCard.optInButtonText || "Send me the access"}&quot;, RELO sends a card asking them to follow @{account?.username || "creator"} with <strong>[ Visit Profile 👤 ]</strong> and <strong>[ I&apos;m following ✅ ]</strong> buttons.
+                  </div>
+                ) : (
+                  <p className="text-[12px] leading-relaxed text-ink-3">
+                    ⏩ <strong>Direct Delivery:</strong> Follow-gate is OFF. Viewer gets the final resource delivery card directly without asking for a follow.
+                  </p>
                 )}
               </div>
 
-              <div className="rounded-lg border border-line bg-surface-2 p-4">
-                <p className="caption mb-2">Preview</p>
-                <div className="rounded-lg border border-line bg-surface p-3">
-                  <p className="text-[13px] font-semibold text-ink">
-                    {draft.templateCard.title || "Your card title"}
-                  </p>
-                  {draft.templateCard.subtitle && (
-                    <p className="font-mono text-[11px] text-ink-3">
-                      {draft.templateCard.subtitle}
-                    </p>
-                  )}
-                  <div className="mt-2.5 space-y-1.5">
-                    {draft.templateCard.buttons
-                      .filter((button) => button.title.trim())
-                      .map((button, index) => (
-                        <div
-                          key={`${button.title}-${index}`}
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-center text-[11.5px] font-semibold",
-                            index === 0
-                              ? "bg-signal text-signal-ink"
-                              : "border border-line bg-surface text-ink-2"
-                          )}
-                        >
-                          {button.title}
-                        </div>
-                      ))}
+              {/* Part 3: Resource Delivery Card */}
+              <div className="rounded-xl border border-line bg-surface-2/40 p-4 space-y-3.5">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-6 place-items-center rounded-md bg-signal text-[11px] font-bold text-signal-ink">
+                    3
+                  </span>
+                  <div>
+                    <p className="text-[13px] font-semibold text-ink">Step {draft.followGateEnabled ? "3" : "2"}: Resource Delivery Card</p>
+                    <p className="text-[11.5px] text-ink-3">Final card with up to 3 links (e.g. Free access, WhatsApp, Website)</p>
                   </div>
                 </div>
-                <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink-3">
-                  {plan === "free"
-                    ? "Free adds a branded “Automated by RELO” button after yours."
-                    : "Every https:// button gets its own tracked short link."}
-                </p>
+
+                <Field label="Delivery card title" hint="Max 80 chars. Bold headline on final card.">
+                  <input
+                    value={draft.templateCard.title}
+                    onChange={(event) => setCard({ title: event.target.value })}
+                    placeholder="Codex 3.0 Free Access Pack"
+                    maxLength={80}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Subtitle" hint="Optional. Max 80 chars.">
+                  <input
+                    value={draft.templateCard.subtitle ?? ""}
+                    onChange={(event) => setCard({ subtitle: event.target.value })}
+                    placeholder="3 templates · click below to get your links"
+                    maxLength={80}
+                    className={inputCls}
+                  />
+                </Field>
+
+                <div>
+                  <p className="caption mb-2">
+                    Action Buttons · up to {limits.buttons}
+                  </p>
+                  <div className="space-y-2.5">
+                    {draft.templateCard.buttons.map((button, index) => (
+                      <div key={index} className="rounded-lg border border-line bg-surface p-3">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={button.type}
+                            onChange={(event) =>
+                              setButton(index, {
+                                type: event.target.value as TemplateButton["type"],
+                              })
+                            }
+                            className="rounded-md border border-line-strong bg-surface px-2 py-1.5 font-mono text-[11px] text-ink outline-none focus:border-signal focus:ring-[3px] focus:ring-signal/18"
+                            aria-label="Button type"
+                          >
+                            <option value="web_url">URL</option>
+                            <option value="postback">Postback</option>
+                            <option value="phone_number">Phone</option>
+                          </select>
+                          <input
+                            value={button.title}
+                            onChange={(event) => setButton(index, { title: event.target.value })}
+                            placeholder={index === 0 ? "Get Access Free 🚀" : index === 1 ? "WhatsApp Channel 📲" : "Visit Website 🌐"}
+                            maxLength={20}
+                            className={cn(inputCls, "flex-1 py-1.5")}
+                          />
+                          {draft.templateCard.buttons.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCard({
+                                  buttons: draft.templateCard.buttons.filter(
+                                    (_, position) => position !== index
+                                  ),
+                                })
+                              }
+                              className="grid size-8 shrink-0 place-items-center rounded-md text-ink-3 transition-colors hover:bg-surface-3 hover:text-bad"
+                              aria-label="Remove button"
+                            >
+                              <X className="size-3.5" strokeWidth={1.75} aria-hidden />
+                            </button>
+                          )}
+                        </div>
+                        {button.type === "web_url" && (
+                          <input
+                            value={button.url ?? ""}
+                            onChange={(event) => setButton(index, { url: event.target.value })}
+                            placeholder="https://yourlink.com/free"
+                            className={cn(inputCls, "mt-2 py-1.5 font-mono text-[12px]")}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {draft.templateCard.buttons.length < limits.buttons && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCard({
+                          buttons: [
+                            ...draft.templateCard.buttons,
+                            { type: "web_url", title: "", url: "" },
+                          ],
+                        })
+                      }
+                      className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-ink-2 transition-colors hover:border-ink-3 hover:bg-surface-2 hover:text-ink"
+                    >
+                      <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+                      Add button
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Part 4: Interactive Live Preview with Tabs */}
+              <div className="rounded-xl border border-line bg-surface-2/60 p-4">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <p className="caption">Funnel Live Preview</p>
+                  <div className="flex gap-1 rounded-lg border border-line bg-surface p-0.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab(0)}
+                      className={cn(
+                        "rounded-md px-2 py-1 font-medium transition-colors",
+                        previewTab === 0
+                          ? "bg-signal text-signal-ink"
+                          : "text-ink-3 hover:text-ink"
+                      )}
+                    >
+                      1. Opt-In Card
+                    </button>
+                    {draft.followGateEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab(1)}
+                        className={cn(
+                          "rounded-md px-2 py-1 font-medium transition-colors",
+                          previewTab === 1
+                            ? "bg-sky-500 text-white"
+                            : "text-ink-3 hover:text-ink"
+                        )}
+                      >
+                        2. Follow-Gate
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTab(2)}
+                      className={cn(
+                        "rounded-md px-2 py-1 font-medium transition-colors",
+                        previewTab === 2
+                          ? "bg-signal text-signal-ink"
+                          : "text-ink-3 hover:text-ink"
+                      )}
+                    >
+                      {draft.followGateEnabled ? "3. Delivery Card" : "2. Delivery Card"}
+                    </button>
+                  </div>
+                </div>
+
+                {previewTab === 0 && (
+                  <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="size-2 rounded-full bg-signal" />
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-signal">
+                        Step 1: Private Reply (Initial DM)
+                      </p>
+                    </div>
+                    <p className="text-[13.5px] font-medium text-ink leading-relaxed">
+                      {draft.templateCard.optInText || "Hey! Tap below to get instant access 👇"}
+                    </p>
+                    <p className="mt-1 text-[12px] text-ink-3">
+                      {draft.templateCard.title || "Complete guide & resources"}
+                    </p>
+                    <div className="mt-3.5">
+                      <div className="rounded-lg bg-signal px-3 py-2 text-center text-[12px] font-semibold text-signal-ink shadow-sm">
+                        {draft.templateCard.optInButtonText || "Send me the access"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {previewTab === 1 && draft.followGateEnabled && (
+                  <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="size-2 rounded-full bg-sky-400" />
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-400">
+                        Step 2: Smart Follow-Gate
+                      </p>
+                    </div>
+                    <p className="text-[13.5px] font-semibold text-ink">
+                      ⚡ Almost there! Please follow @{account?.username || "creator"} first:
+                    </p>
+                    <p className="mt-1 text-[12px] text-ink-3">
+                      Tap Visit Profile to follow, then tap I&apos;m following to get instant access.
+                    </p>
+                    <div className="mt-3.5 space-y-1.5">
+                      <div className="rounded-lg border border-line bg-surface px-3 py-2 text-center text-[12px] font-semibold text-ink-2">
+                        Visit Profile 👤
+                      </div>
+                      <div className="rounded-lg bg-sky-500 px-3 py-2 text-center text-[12px] font-semibold text-white shadow-sm">
+                        I&apos;m following ✅
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {previewTab === 2 && (
+                  <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="size-2 rounded-full bg-signal" />
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-signal">
+                        {draft.followGateEnabled ? "Step 3: Final Delivery Card" : "Step 2: Final Delivery Card"}
+                      </p>
+                    </div>
+                    <p className="text-[13.5px] font-semibold text-ink">
+                      {draft.templateCard.title || "Your Resource Title"}
+                    </p>
+                    {draft.templateCard.subtitle && (
+                      <p className="mt-1 text-[12px] text-ink-3">
+                        {draft.templateCard.subtitle}
+                      </p>
+                    )}
+                    <div className="mt-3.5 space-y-1.5">
+                      {draft.templateCard.buttons
+                        .filter((button) => button.title.trim())
+                        .map((button, index) => (
+                          <div
+                            key={`${button.title}-${index}`}
+                            className={cn(
+                              "rounded-lg px-3 py-2 text-center text-[12px] font-semibold",
+                              index === 0
+                                ? "bg-signal text-signal-ink shadow-sm"
+                                : "border border-line bg-surface text-ink-2"
+                            )}
+                          >
+                            {button.title}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -931,17 +1214,27 @@ function AutomationEditor({
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-ink-3">Keywords</dt>
-                    <dd className="font-mono text-ink">{draft.triggerKeywords.length}</dd>
+                    <dt className="text-ink-3">Trigger</dt>
+                    <dd className="font-semibold text-ink">
+                      {draft.triggerKeywords.includes("*")
+                        ? "⚡ Any Comment (Wildcard)"
+                        : `${draft.triggerKeywords.length} keyword(s)`}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-ink-3">Variations</dt>
-                    <dd className="font-mono text-ink">{draft.commentReplies.length}</dd>
+                    <dt className="text-ink-3">Smart Follow-Gate</dt>
+                    <dd className="font-semibold text-ink">
+                      {draft.followGateEnabled ? "🔒 Active (Require Follow)" : "⏩ Off (Direct Delivery)"}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-ink-3">Buttons</dt>
+                    <dt className="text-ink-3">Public Replies</dt>
+                    <dd className="font-mono text-ink">{draft.commentReplies.length} variations</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ink-3">Delivery Links</dt>
                     <dd className="font-mono text-ink">
-                      {draft.templateCard.buttons.filter((button) => button.title.trim()).length}
+                      {draft.templateCard.buttons.filter((button) => button.title.trim()).length} button(s)
                     </dd>
                   </div>
                 </dl>

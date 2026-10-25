@@ -92,6 +92,8 @@ const templateCardSchema = z.object({
   imageUrl: optionalText(500),
   // Free = 2, Pro/Studio = 3; the exact ceiling is applied by the route.
   buttons: z.array(templateButtonSchema).max(5),
+  optInText: optionalText(200),
+  optInButtonText: optionalText(50),
 });
 
 export const automationSaveSchema = z.object({
@@ -106,6 +108,7 @@ export const automationSaveSchema = z.object({
   isActive: flag,
   followUpEnabled: flag,
   followUpDelayMinutes: z.number().optional(),
+  followGateEnabled: flag,
 });
 
 /* ── products ────────────────────────────────────────────────────────── */

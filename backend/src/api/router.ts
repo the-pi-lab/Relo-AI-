@@ -1395,6 +1395,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       1440,
       Math.max(5, Math.floor(Number(body?.followUpDelayMinutes)) || 60)
     );
+    const followGateEnabled = Boolean(body?.followGateEnabled);
 
     await saveReelAutomation(env.DB, {
       id: automationId,
@@ -1408,6 +1409,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       isActive: body?.isActive !== false,
       followUpEnabled,
       followUpDelayMinutes,
+      followGateEnabled,
     });
 
     // Sent → Clicked tracking: one short link per web_url button (plan.md §4.5)
@@ -1435,6 +1437,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         isActive: body?.isActive !== false,
         followUpEnabled,
         followUpDelayMinutes,
+        followGateEnabled,
       },
     });
   }

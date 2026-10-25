@@ -404,6 +404,7 @@ export async function getActiveAutomationsForMedia(
     updatedAt: row.updated_at,
     followUpEnabled: Boolean(row.follow_up_enabled),
     followUpDelayMinutes: Number(row.follow_up_delay_minutes ?? 60),
+    followGateEnabled: Boolean(row.follow_gate_enabled),
   }));
 }
 
@@ -442,6 +443,7 @@ export async function getAutomationById(
     updatedAt: row.updated_at,
     followUpEnabled: Boolean(row.follow_up_enabled),
     followUpDelayMinutes: Number(row.follow_up_delay_minutes ?? 60),
+    followGateEnabled: Boolean(row.follow_gate_enabled),
   };
 }
 
@@ -1134,6 +1136,7 @@ export async function getAutomationsForAccount(
     updatedAt: row.updated_at,
     followUpEnabled: Boolean(row.follow_up_enabled),
     followUpDelayMinutes: Number(row.follow_up_delay_minutes ?? 60),
+    followGateEnabled: Boolean(row.follow_gate_enabled),
   }));
 }
 
@@ -1154,6 +1157,7 @@ export async function saveReelAutomation(
     isActive: boolean;
     followUpEnabled?: boolean;
     followUpDelayMinutes?: number;
+    followGateEnabled?: boolean;
   }
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -1182,9 +1186,7 @@ export async function saveReelAutomation(
       automation.reelThumbnailUrl || null,
       JSON.stringify(automation.triggerKeywords),
       JSON.stringify(automation.commentReplies),
-      // The follower gate is retired: it called a Graph endpoint that does not
-      // exist. The column stays for schema compatibility and is always 0.
-      0,
+      automation.followGateEnabled ? 1 : 0,
       JSON.stringify(automation.templateCard),
       automation.isActive ? 1 : 0,
       now,

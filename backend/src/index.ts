@@ -3,6 +3,8 @@ import type { Env } from "./db";
 import {
   getAccountByInstagramId,
   getActiveAutomationsForMedia,
+  getAutomationById,
+  getAutomationsForAccount,
   insertJobIfNew,
   setHumanTakeoverPause,
   recordWebhookAuditLog,
@@ -22,7 +24,11 @@ import {
 import { verifyMetaSignature, timingSafeEqualAsync, decryptSecret, getMasterKey } from "./crypto";
 import { parseWebhookEnvelope } from "./engine/parse";
 import { findMatchingKeyword } from "./engine/keyword";
-import { processDueJobsBatch } from "./engine/processor";
+import {
+  processDueJobsBatch,
+  buildDeliveryCardPayload,
+  buildFollowGatePayload,
+} from "./engine/processor";
 import { processScheduledCampaigns } from "./engine/campaignWorker";
 import { refreshExpiringTokens } from "./engine/tokenRefresh";
 import {
@@ -35,7 +41,7 @@ import { metaGraphClient, setMetaGraphVersion } from "./meta/client";
 import { handleApiRequest } from "./api/router";
 import { getPublishedLinkPage, getLinkPageBySlug, getAndTrackLinkBlock } from "./db/linkPage";
 import { renderLinkPageHtml } from "./api/linkPageHtml";
-import { createJobId } from "./types/ids";
+import { createAutomationId, createJobId } from "./types/ids";
 import type { ReelAutomation } from "./types";
 import { preflightResponse, withCors } from "./security/cors";
 import { assertTenantPolicies } from "./db/tenancy";
@@ -576,11 +582,137 @@ async function handleMessageEvent(
     event.senderId as Parameters<typeof markLeadInbound>[2]
   );
 
+  // 1. Funnel Actions (Opt-in button tap & Follow-Gate confirmation tap)
+  const quickReplyPayload = event.quickReplyPayload || "";
+  const rawText = (event.text || "").trim();
+
+  // Funnel: User tapped the Opt-in CTA button (Step 1 -> Step 2 or Step 3)
+  if (
+    quickReplyPayload.startsWith("RELO_OPTIN:") ||
+    rawText.toLowerCase() === "send me the access"
+  ) {
+    const rawAutoId = quickReplyPayload.replace("RELO_OPTIN:", "").trim();
+    const handled = await handleFunnelOptIn(event, account, rawAutoId, env).catch((err) => {
+      console.warn("[Funnel Opt-In] skipped:", err);
+      return false;
+    });
+    if (handled) return;
+  }
+
+  // Funnel: User confirmed they followed (Step 2 -> Step 3)
+  if (
+    quickReplyPayload.startsWith("RELO_FOLLOWED:") ||
+    rawText.includes("I'm following") ||
+    rawText.toLowerCase() === "following"
+  ) {
+    const rawAutoId = quickReplyPayload.replace("RELO_FOLLOWED:", "").trim();
+    const handled = await handleFunnelFollowed(event, account, rawAutoId, env).catch((err) => {
+      console.warn("[Funnel Followed] skipped:", err);
+      return false;
+    });
+    if (handled) return;
+  }
+
   // AI product-Q&A (plan.md §4.4). Wrapped so a failure here can never drop
   // the webhook — the lead anchor above has already been written.
   await handleAiProductQA(event, account, env).catch((err) => {
     console.warn("[AI product-Q&A] skipped:", err);
   });
+}
+
+/**
+ * Handles viewer tapping the Opt-in button in DM ("Send me the access").
+ * If Follow-Gate is enabled, sends the Follow-Gate card with creator profile link.
+ * If Follow-Gate is disabled, sends the Final Delivery Card directly.
+ */
+async function handleFunnelOptIn(
+  event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "message" }>,
+  account: NonNullable<Awaited<ReturnType<typeof getAccountByInstagramId>>>,
+  rawAutoId: string,
+  env: Env
+): Promise<boolean> {
+  let automation: ReelAutomation | null = null;
+  if (rawAutoId) {
+    automation = await getAutomationById(env.DB, createAutomationId(rawAutoId));
+  }
+  if (!automation) {
+    const automations = await getAutomationsForAccount(env.DB, account.id);
+    automation = automations.find((a) => a.isActive) || null;
+  }
+  if (!automation || !automation.isActive) return false;
+
+  const token = await decryptSecret(account.accessTokenEncrypted, getMasterKey(env));
+
+  if (automation.followGateEnabled) {
+    // Send Follow-Gate Card (Funnel Step 2)
+    const followGatePayload = buildFollowGatePayload(account, automation, { id: event.senderId });
+    const res = await metaGraphClient.sendDirectMessage(
+      token,
+      event.senderId,
+      followGatePayload.message as any
+    );
+    if (res?.message_id) {
+      await recordOutboundMessage(env.DB, account.id, event.senderId, res.message_id);
+    }
+    return true;
+  }
+
+  // Follow-gate is disabled: Deliver the resource card directly (Funnel Step 3)
+  const deliveryPayload = await buildDeliveryCardPayload(
+    env,
+    account,
+    automation,
+    { id: event.senderId }
+  );
+  const res = await metaGraphClient.sendDirectMessage(
+    token,
+    event.senderId,
+    deliveryPayload.message as any
+  );
+  if (res?.message_id) {
+    await recordOutboundMessage(env.DB, account.id, event.senderId, res.message_id);
+  }
+  return true;
+}
+
+/**
+ * Handles viewer tapping "I'm following ✅" on the Follow-Gate card.
+ * Directly delivers the final resource card with the 1-3 links.
+ */
+async function handleFunnelFollowed(
+  event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "message" }>,
+  account: NonNullable<Awaited<ReturnType<typeof getAccountByInstagramId>>>,
+  rawAutoId: string,
+  env: Env
+): Promise<boolean> {
+  let automation: ReelAutomation | null = null;
+  if (rawAutoId) {
+    automation = await getAutomationById(env.DB, createAutomationId(rawAutoId));
+  }
+  if (!automation) {
+    const automations = await getAutomationsForAccount(env.DB, account.id);
+    automation = automations.find((a) => a.isActive) || null;
+  }
+  if (!automation || !automation.isActive) return false;
+
+  const token = await decryptSecret(account.accessTokenEncrypted, getMasterKey(env));
+
+  // Send Final Delivery Card (Funnel Step 3)
+  const deliveryPayload = await buildDeliveryCardPayload(
+    env,
+    account,
+    automation,
+    { id: event.senderId }
+  );
+  const res = await metaGraphClient.sendDirectMessage(
+    token,
+    event.senderId,
+    deliveryPayload.message as any
+  );
+  if (res?.message_id) {
+    await recordOutboundMessage(env.DB, account.id, event.senderId, res.message_id);
+  }
+  return true;
 }
 
 /**

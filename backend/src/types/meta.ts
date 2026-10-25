@@ -42,6 +42,11 @@ export interface MetaWebhookMessaging {
       payload: string;
     };
   };
+  postback?: {
+    mid?: string;
+    title?: string;
+    payload?: string;
+  };
 }
 
 export interface MetaWebhookEnvelope {

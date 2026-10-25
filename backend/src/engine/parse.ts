@@ -158,6 +158,22 @@ function parseMessagingEvent(
     return null;
   }
 
+  // Support Meta postback button clicks (e.g. from Generic Template buttons)
+  if (msg.postback) {
+    const postback = msg.postback;
+    return {
+      type: "message",
+      accountId,
+      senderId,
+      recipientId: msg.recipient?.id || accountId,
+      mid: postback.mid || `postback_${msg.timestamp || Date.now()}_${senderId}`,
+      text: postback.title?.trim() || undefined,
+      quickReplyPayload: postback.payload || undefined,
+      isEcho: false,
+      timestamp: msg.timestamp || Date.now(),
+    };
+  }
+
   const message = msg.message;
   if (!message) {
     return null;

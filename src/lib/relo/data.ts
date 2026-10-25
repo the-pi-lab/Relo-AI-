@@ -59,6 +59,8 @@ export interface TemplateCard {
   subtitle?: string;
   imageUrl?: string;
   buttons: TemplateButton[];
+  optInText?: string;
+  optInButtonText?: string;
 }
 
 export interface Automation {
@@ -73,6 +75,7 @@ export interface Automation {
   isActive: boolean;
   followUpEnabled: boolean;
   followUpDelayMinutes: number;
+  followGateEnabled?: boolean;
   /** unix seconds */
   createdAt: number;
   updatedAt: number;
@@ -96,6 +99,7 @@ export interface AutomationInput {
   isActive: boolean;
   followUpEnabled: boolean;
   followUpDelayMinutes: number;
+  followGateEnabled?: boolean;
 }
 
 /* ── Leads ────────────────────────────────────────────────────────────── */

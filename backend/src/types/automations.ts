@@ -26,6 +26,9 @@ export interface TemplateCardConfig {
   subtitle?: string; // Descriptive supporting text (up to 80 chars)
   imageUrl?: string;
   buttons: [GenericTemplateButton, ...GenericTemplateButton[]]; // 1 to 3 buttons max
+  // High-converting 3-step funnel fields
+  optInText?: string; // Hook text for Step 1 private reply (e.g. "Tap below to get instant access 👇")
+  optInButtonText?: string; // Button text for Step 1 (e.g. "Send me the access")
 }
 
 /**
@@ -37,7 +40,7 @@ export interface ReelAutomation {
   instagramMediaId: MediaId;
   reelPermalink: string;
   reelThumbnailUrl?: string;
-  triggerKeywords: string[]; // Normalized keywords (e.g. ["GUIDE", "VIP"])
+  triggerKeywords: string[]; // Normalized keywords (e.g. ["GUIDE", "VIP"]) or ["*"] for any comment
   commentReplies: string[]; // Min 3, Max 8 variations with {spintax}
   templateCard: TemplateCardConfig;
   isActive: boolean;
@@ -45,4 +48,5 @@ export interface ReelAutomation {
   updatedAt: number;
   followUpEnabled: boolean; // Pro/Studio: one no-click nudge after the DM
   followUpDelayMinutes: number;
+  followGateEnabled: boolean; // Smart Follow-Gate toggle
 }

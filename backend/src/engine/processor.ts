@@ -191,52 +191,12 @@ export async function processDueJobsBatch(
         : { comment_id: job.commentId };
       let dmPayload: OutgoingMessagePayload;
 
-      if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
-        // High-converting 3-Button Generic Template Card.
-        // Buttons route through RELO short links for Sent → Clicked tracking.
-        const links = await getShortLinksForAutomation(env.DB, automation.id);
-        let buttons = automation.templateCard.buttons.map((btn, i) => {
-          const link = links.find((l) => l.buttonIndex === i);
-          if (btn.type === "web_url" && link) {
-            const base = env.PUBLIC_BASE_URL || "";
-            if (base) {
-              return { ...btn, url: `${base.replace(/\/$/, "")}/l/${link.id}` };
-            }
-          }
-          return btn;
-        });
-
-        // Free tier: RELO branding button occupies the slot AFTER the user's
-        // last button (plan.md §3 — the viral loop, injected at dispatch so
-        // tier changes apply to in-flight jobs immediately).
-        if (account.plan === "free") {
-          const brandingUrl = `${(env.PUBLIC_APP_URL || "https://relo.ai").replace(/\/$/, "")}/?ref=${account.id}`;
-          buttons = [
-            ...buttons,
-            { type: "web_url" as const, title: "⚡ Automated by RELO", url: brandingUrl },
-          ];
-        }
-        const finalButtons = buttons.slice(0, 3) as typeof automation.templateCard.buttons;
-
-        dmPayload = {
-          recipient,
-          message: {
-            attachment: {
-              type: "template",
-              payload: {
-                template_type: "generic",
-                elements: [
-                  {
-                    title: automation.templateCard.title,
-                    subtitle: automation.templateCard.subtitle,
-                    image_url: automation.templateCard.imageUrl,
-                    buttons: finalButtons,
-                  },
-                ],
-              },
-            },
-          },
-        };
+      if (!job.isFollowUp && automation.templateCard?.optInButtonText) {
+        // High-converting funnel: Send Opt-in Card with 1 action button
+        dmPayload = buildOptInCardPayload(automation, recipient);
+      } else if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
+        // Direct Delivery Card (or follow-up)
+        dmPayload = await buildDeliveryCardPayload(env, account, automation, recipient);
       } else {
         // Fallback plain-text DM
         dmPayload = {
@@ -327,4 +287,142 @@ export async function processDueJobsBatch(
   }
 
   return result;
+}
+
+/**
+ * Builds the initial Private Reply Opt-In Card (Funnel Step 1)
+ */
+export function buildOptInCardPayload(
+  automation: ReelAutomation,
+  recipient: { id?: string; comment_id?: string }
+): OutgoingMessagePayload {
+  const optInTitle = (
+    automation.templateCard.optInText || "Hey! Tap below to get instant access 👇"
+  ).slice(0, 80);
+  const optInButtonTitle = (
+    automation.templateCard.optInButtonText || "Send me the access"
+  ).slice(0, 20);
+  const subtitle = (
+    automation.templateCard.title || "Click below to receive your access & resources!"
+  ).slice(0, 80);
+
+  return {
+    recipient,
+    message: {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "generic",
+          elements: [
+            {
+              title: optInTitle,
+              subtitle,
+              image_url: automation.templateCard.imageUrl,
+              buttons: [
+                {
+                  type: "postback",
+                  title: optInButtonTitle,
+                  payload: `RELO_OPTIN:${automation.id}`,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Builds the Smart Follow-Gate Card (Funnel Step 2)
+ */
+export function buildFollowGatePayload(
+  account: { username?: string; instagramUsername?: string },
+  automation: ReelAutomation,
+  recipient: { id: string }
+): OutgoingMessagePayload {
+  const name = account.username || account.instagramUsername;
+  const handle = name ? `@${name}` : "our profile";
+  const profileUrl = name ? `https://instagram.com/${name}` : "https://instagram.com";
+
+  return {
+    recipient,
+    message: {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "generic",
+          elements: [
+            {
+              title: `⚡ Almost there! Please follow ${handle} first:`.slice(0, 80),
+              subtitle: `Tap Visit Profile to follow, then tap I'm following to get instant access.`.slice(0, 80),
+              buttons: [
+                {
+                  type: "web_url",
+                  title: "Visit Profile 👤",
+                  url: profileUrl,
+                },
+                {
+                  type: "postback",
+                  title: "I'm following ✅",
+                  payload: `RELO_FOLLOWED:${automation.id}`,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Builds the Final Resource Delivery Card (Funnel Step 3)
+ */
+export async function buildDeliveryCardPayload(
+  env: Env,
+  account: { id: string; plan: string },
+  automation: ReelAutomation,
+  recipient: { id?: string; comment_id?: string }
+): Promise<OutgoingMessagePayload> {
+  const links = await getShortLinksForAutomation(env.DB, automation.id);
+  let buttons = (automation.templateCard.buttons || []).map((btn, i) => {
+    const link = links.find((l) => l.buttonIndex === i);
+    if (btn.type === "web_url" && link) {
+      const base = env.PUBLIC_BASE_URL || "";
+      if (base) {
+        return { ...btn, url: `${base.replace(/\/$/, "")}/l/${link.id}` };
+      }
+    }
+    return btn;
+  });
+
+  if (account.plan === "free") {
+    const brandingUrl = `${(env.PUBLIC_APP_URL || "https://relo.ai").replace(/\/$/, "")}/?ref=${account.id}`;
+    buttons = [
+      ...buttons,
+      { type: "web_url" as const, title: "⚡ Automated by RELO", url: brandingUrl },
+    ];
+  }
+  const finalButtons = buttons.slice(0, 3) as typeof automation.templateCard.buttons;
+
+  return {
+    recipient,
+    message: {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "generic",
+          elements: [
+            {
+              title: (automation.templateCard.title || "Your Access").slice(0, 80),
+              subtitle: automation.templateCard.subtitle?.slice(0, 80),
+              image_url: automation.templateCard.imageUrl,
+              buttons: finalButtons,
+            },
+          ],
+        },
+      },
+    },
+  };
 }
