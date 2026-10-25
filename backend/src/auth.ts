@@ -222,7 +222,7 @@ export async function sendOtpEmail(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: fromEmail || "RELO <onboarding@resend.dev>",
+        from: fromEmail || "RELO <auth@thepilab.in>",
         to: [email],
         subject: `Your RELO Login Code: ${code}`,
         html: `

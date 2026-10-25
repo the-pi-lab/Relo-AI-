@@ -19,6 +19,7 @@ ALLOWED_ORIGINS = "https://relo-nu.vercel.app"
 # Flip to "1" only after TURNSTILE_SECRET_KEY is set as a secret: makes a
 # missing CAPTCHA secret a hard failure instead of a logged warning.
 REQUIRE_CAPTCHA = "0"
+RESEND_FROM_EMAIL = "RELO <auth@thepilab.in>"
 
 # Secrets — set with `wrangler secret put <NAME>`, never in this file:
 #   JWT_SECRET                 256-bit random string (required; the API fails closed without it)
