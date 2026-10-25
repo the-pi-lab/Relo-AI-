@@ -3,7 +3,7 @@ import type {
   OutgoingMessagePayload,
   PlainTextPayload,
 } from "../types/meta";
-import { parseMetaError, MetaApiError } from "./errors";
+import { parseMetaError, MetaApiError, TokenExpiredError } from "./errors";
 
 const DEFAULT_META_GRAPH_VERSION = "v21.0";
 let metaBaseUrl = `https://graph.facebook.com/${DEFAULT_META_GRAPH_VERSION}`;
@@ -152,13 +152,27 @@ export class MetaGraphClient {
   /**
    * 1. Public Comment Reply:
    * Publishes a public reply comment to an Instagram Reel comment.
-   * Endpoint: POST /{comment_id}/replies
+   * Supports both graph.instagram.com and graph.facebook.com endpoints.
    */
   async sendCommentReply(
     pageAccessToken: string,
     commentId: string,
     messageText: string
   ): Promise<{ id: string }> {
+    try {
+      const igUrl = new URL(`https://graph.instagram.com/v21.0/${commentId}/replies`);
+      igUrl.searchParams.set("access_token", pageAccessToken);
+      const res = await fetch(igUrl.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ message: messageText }),
+      });
+      const data = (await res.json()) as any;
+      if (res.ok && data?.id) {
+        return data;
+      }
+    } catch (_) {}
+
     return this.request<{ id: string }>(`/${commentId}/replies`, {
       method: "POST",
       token: pageAccessToken,
@@ -171,13 +185,26 @@ export class MetaGraphClient {
   /**
    * 2. Private Reply to Comment (Direct Message):
    * Dispatches an Instagram Direct Message replying to a specific comment.
-   * Supports both 3-button Generic Template card or plain text spintax.
-   * Endpoint: POST /me/messages (with recipient.comment_id)
+   * Supports both graph.instagram.com and graph.facebook.com endpoints.
    */
   async sendPrivateReply(
     pageAccessToken: string,
     payload: OutgoingMessagePayload
   ): Promise<{ recipient_id: string; message_id: string }> {
+    try {
+      const igUrl = new URL(`https://graph.instagram.com/v21.0/me/messages`);
+      igUrl.searchParams.set("access_token", pageAccessToken);
+      const res = await fetch(igUrl.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json()) as any;
+      if (res.ok && data?.message_id) {
+        return data;
+      }
+    } catch (_) {}
+
     return this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
       method: "POST",
       token: pageAccessToken,
@@ -188,13 +215,30 @@ export class MetaGraphClient {
   /**
    * 3. Standard Direct Message:
    * Sends a standard DM to an Instagram user ID (within the 24h interaction window).
-   * Endpoint: POST /me/messages (with recipient.id)
+   * Supports both graph.instagram.com and graph.facebook.com endpoints.
    */
   async sendDirectMessage(
     pageAccessToken: string,
     recipientId: string,
     payload: { text?: string; attachment?: unknown }
   ): Promise<{ recipient_id: string; message_id: string }> {
+    try {
+      const igUrl = new URL(`https://graph.instagram.com/v21.0/me/messages`);
+      igUrl.searchParams.set("access_token", pageAccessToken);
+      const res = await fetch(igUrl.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          recipient: { id: recipientId },
+          message: payload,
+        }),
+      });
+      const data = (await res.json()) as any;
+      if (res.ok && data?.message_id) {
+        return data;
+      }
+    } catch (_) {}
+
     return this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
       method: "POST",
       token: pageAccessToken,
@@ -206,21 +250,80 @@ export class MetaGraphClient {
   }
 
   /**
-   * 4. List Recent Instagram Reels:
+   * 4. List Recent Instagram Reels / Posts:
    * Fetches the latest 25 video/reel posts for the Creator Studio dashboard.
+   * Supports Direct Instagram Graph API (graph.instagram.com) with Facebook Graph fallback.
    */
   async getRecentReels(
     accessToken: string,
     instagramAccountId: string,
     limit = 25
   ): Promise<InstagramMediaItem[]> {
+    const fields = "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp";
+
+    // 1. First try Direct Instagram Graph API (/me/media) for Instagram Business Login
+    try {
+      const igUrl = new URL("https://graph.instagram.com/v21.0/me/media");
+      igUrl.searchParams.set("fields", fields);
+      igUrl.searchParams.set("limit", String(limit));
+      igUrl.searchParams.set("access_token", accessToken);
+
+      const res = await fetch(igUrl.toString(), {
+        headers: { Accept: "application/json" },
+      });
+      const data = (await res.json()) as any;
+      if (res.ok && Array.isArray(data.data)) {
+        return data.data;
+      }
+      if (data?.error) {
+        const parsed = parseMetaError(res.status, data);
+        if (parsed instanceof TokenExpiredError || parsed.code === 190) {
+          throw parsed;
+        }
+        console.warn("[Meta] graph.instagram.com/me/media:", parsed.message);
+      }
+    } catch (err) {
+      if (err instanceof TokenExpiredError || (err instanceof MetaApiError && err.code === 190)) {
+        throw err;
+      }
+    }
+
+    // 2. Try Direct Instagram Graph API with accountId
+    if (instagramAccountId && instagramAccountId !== "ig_user") {
+      try {
+        const igUrl = new URL(`https://graph.instagram.com/v21.0/${instagramAccountId}/media`);
+        igUrl.searchParams.set("fields", fields);
+        igUrl.searchParams.set("limit", String(limit));
+        igUrl.searchParams.set("access_token", accessToken);
+
+        const res = await fetch(igUrl.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        const data = (await res.json()) as any;
+        if (res.ok && Array.isArray(data.data)) {
+          return data.data;
+        }
+        if (data?.error) {
+          const parsed = parseMetaError(res.status, data);
+          if (parsed instanceof TokenExpiredError || parsed.code === 190) {
+            throw parsed;
+          }
+        }
+      } catch (err) {
+        if (err instanceof TokenExpiredError || (err instanceof MetaApiError && err.code === 190)) {
+          throw err;
+        }
+      }
+    }
+
+    // 3. Fallback to Facebook Graph API for legacy Facebook Page tokens
     const result = await this.request<{ data: InstagramMediaItem[] }>(
       `/${instagramAccountId}/media`,
       {
         method: "GET",
         token: accessToken,
         queryParams: {
-          fields: "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp",
+          fields,
           limit,
         },
       }

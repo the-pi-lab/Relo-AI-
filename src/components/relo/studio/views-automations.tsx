@@ -113,6 +113,7 @@ export function AutomationsView() {
     reels,
     saveAutomation,
     deleteAutomation,
+    refreshAccounts,
   } = useRelo();
 
   const [draft, setDraft] = useState<AutomationInput | null>(null);
@@ -219,7 +220,25 @@ export function AutomationsView() {
         </div>
       )}
 
-      {reelsUnavailable && (
+      {reels.error?.code === "TOKEN_REVOKED" && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3.5 text-[13px] text-ink">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-amber-500">Instagram Disconnected:</span>
+            <span>Your Instagram account access was removed in Instagram settings. Please reconnect to continue.</span>
+          </div>
+          <Button
+            variant="signal"
+            size="sm"
+            onClick={() => {
+              void refreshAccounts();
+            }}
+          >
+            Reconnect account
+          </Button>
+        </div>
+      )}
+
+      {reelsUnavailable && reels.error?.code !== "TOKEN_REVOKED" && (
         <ErrorNotice
           message="Instagram did not return your Reels, so new automations cannot pick a video yet."
           detail={reels.error?.code}

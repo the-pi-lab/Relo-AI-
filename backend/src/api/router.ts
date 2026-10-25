@@ -108,6 +108,7 @@ import {
 } from "../auth";
 import { encryptSecret, decryptSecret, getMasterKey, getOtpPepper, timingSafeEqualAsync } from "../crypto";
 import { metaGraphClient, type ConnectedInstagramAccountInfo } from "../meta/client";
+import { MetaApiError, TokenExpiredError } from "../meta/errors";
 import { validateReplyVariations } from "../engine/spintax";
 import { campaignWindowSeconds, normalizeCampaignCard } from "../engine/campaignWorker";
 import { createAccountId, createAutomationId, createMediaId } from "../types/ids";
@@ -939,6 +940,32 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     return jsonSuccess({ deleted: true });
   }
 
+  // POST /api/auth/meta/deauthorize (Meta Deauthorize Callback)
+  if (path === "/api/auth/meta/deauthorize" && method === "POST") {
+    try {
+      const formData = await request.formData();
+      const signedRequest = formData.get("signed_request") as string;
+      if (signedRequest && env.META_APP_SECRET) {
+        const parts = signedRequest.split(".");
+        if (parts.length === 2) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+          const igUserId = payload.user_id;
+          if (igUserId) {
+            console.log(`[Meta] Deauthorize callback received for Instagram User ID: ${igUserId}`);
+            await env.DB.prepare(
+              `UPDATE connected_accounts 
+               SET is_active = 0, access_token_encrypted = '', user_token_encrypted = NULL, updated_at = unixepoch() 
+               WHERE (instagram_user_id = ? OR id = ?) AND is_active = 1`
+            ).bind(String(igUserId), String(igUserId)).run();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[Meta] Failed to process deauthorize callback:", err);
+    }
+    return jsonSuccess({ success: true });
+  }
+
   // POST /api/auth/meta/callback (OAuth Code Exchange, server-side)
   if (path === "/api/auth/meta/callback" && method === "POST") {
     const parsed = await parseBody(request, metaCallbackSchema);
@@ -1172,6 +1199,20 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
       return jsonSuccess({ reels });
     } catch (err: any) {
+      if (
+        err instanceof TokenExpiredError ||
+        (err instanceof MetaApiError && (err.code === 190 || err.statusCode === 401))
+      ) {
+        console.warn(`[Meta] Instagram token revoked/expired for @${account.username} (${account.id}). Automatically disconnecting.`);
+        await deleteConnectedAccount(env.DB, account.id, user.sub);
+        return jsonError(
+          "TOKEN_REVOKED",
+          "Your Instagram account connection was revoked or disconnected. Please reconnect your account.",
+          422,
+          { accountId: account.id, reconnectRequired: true }
+        );
+      }
+      console.error("[Meta] getRecentReels failed:", err?.message || err);
       return jsonError("GRAPH_API_ERROR", "Failed to fetch reels from Instagram.", 502);
     }
   }
