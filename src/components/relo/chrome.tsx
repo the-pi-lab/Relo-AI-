@@ -92,13 +92,15 @@ export const Button = React.forwardRef<
 
 /* ── Logo ───────────────────────────────────────────────────────────────── */
 
-/* Official RELO 3D ribbon mark (aspect ratio 402:315 preserved exactly) */
+/* Official RELO 3D ribbon mark (pure transparent background, zero distortion) */
 export function ReloMark({ className }: { className?: string }) {
   return (
     <img
       src="/assets/relo-mark.png"
       alt="RELO"
-      className={cn("h-7 w-auto aspect-[402/315] object-contain select-none shrink-0", className)}
+      width={646}
+      height={717}
+      className={cn("h-7 w-auto object-contain select-none shrink-0", className)}
       loading="eager"
       draggable={false}
     />
