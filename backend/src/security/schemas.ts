@@ -82,14 +82,14 @@ export const referralClaimSchema = z.object({
 const templateButtonSchema = z.object({
   type: text(20),
   title: text(200),
-  url: optionalText(500),
+  url: optionalText(2048),
   payload: optionalText(1000),
 });
 
 const templateCardSchema = z.object({
   title: text(200),
   subtitle: optionalText(200),
-  imageUrl: optionalText(500),
+  imageUrl: optionalText(8192),
   // Free = 2, Pro/Studio = 3; the exact ceiling is applied by the route.
   buttons: z.array(templateButtonSchema).max(5),
   optInText: optionalText(200),
@@ -100,8 +100,8 @@ export const automationSaveSchema = z.object({
   id: optionalId,
   accountId: requiredId,
   instagramMediaId: text(128),
-  reelPermalink: text(500),
-  reelThumbnailUrl: optionalText(500),
+  reelPermalink: text(2048),
+  reelThumbnailUrl: optionalText(8192),
   triggerKeywords: z.array(text(40)).max(25).default([]),
   commentReplies: z.array(text(600)).max(10).default([]),
   templateCard: templateCardSchema,
