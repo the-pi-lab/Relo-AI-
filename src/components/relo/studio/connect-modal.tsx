@@ -36,17 +36,16 @@ export function ConnectInstagramModal({
   open,
   onOpenChange,
 }: ConnectInstagramModalProps) {
-  // 3-step Zorcha verification checklist
+  // 2-step direct Instagram verification checklist
   const [step1Checked, setStep1Checked] = useState(true);
   const [step2Checked, setStep2Checked] = useState(true);
-  const [step3Checked, setStep3Checked] = useState(true);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
 
   const metaReady = isMetaConfigured();
 
   const handleConnect = () => {
     if (!metaReady) {
-      toast.error("Meta App ID is not configured yet in .env", {
+      toast.error("Instagram App ID is not configured yet in .env", {
         description: "Add NEXT_PUBLIC_META_APP_ID to your environment variables.",
       });
       return;
@@ -54,7 +53,7 @@ export function ConnectInstagramModal({
     api.beginMetaOAuth();
   };
 
-  const allChecked = step1Checked && step2Checked && step3Checked;
+  const allChecked = step1Checked && step2Checked;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -83,13 +82,13 @@ export function ConnectInstagramModal({
             <div className="min-w-0 flex-1">
               <div className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-0.5 text-[11px] font-semibold text-signal">
                 <Sparkles className="size-3" />
-                Meta Official Onboarding
+                Instagram Business Login
               </div>
               <DialogTitle className="mt-1.5 text-[19px] font-bold tracking-tight text-ink">
                 Connect your Instagram Account
               </DialogTitle>
               <DialogDescription className="mt-1 text-[13px] leading-relaxed text-ink-2">
-                Verify these 3 quick checks in your Instagram app to ensure comment automation and DMs work without errors.
+                Verify these 2 quick checks in your Instagram app to ensure comment automation and DMs work smoothly.
               </DialogDescription>
             </div>
           </div>
@@ -99,10 +98,10 @@ export function ConnectInstagramModal({
         <div className="p-6 space-y-4">
           <div className="flex items-center justify-between">
             <span className="caption font-mono text-[11px] uppercase tracking-wider text-ink-3">
-              Pre-Flight Checklist (Zorcha-Grade)
+              Pre-Flight Checklist (Direct Instagram)
             </span>
             <span className="text-[12px] font-semibold text-signal">
-              {[step1Checked, step2Checked, step3Checked].filter(Boolean).length}/3 Ready
+              {[step1Checked, step2Checked].filter(Boolean).length}/2 Ready
             </span>
           </div>
 
@@ -161,7 +160,7 @@ export function ConnectInstagramModal({
             </div>
           </div>
 
-          {/* Step 2: Linked Facebook Page */}
+          {/* Step 2: Enable "Allow Access to Messages" */}
           <div
             className={cn(
               "rounded-2xl border transition-all duration-150",
@@ -186,65 +185,10 @@ export function ConnectInstagramModal({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[14px] font-semibold text-ink flex items-center gap-2">
-                    <ExternalLink className="size-4 text-ink-3" />
-                    2. Linked to a Facebook Page
-                  </span>
-                  <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10.5px] font-medium text-ink-3">
-                    Required
-                  </span>
-                </div>
-                <p className="mt-1 text-[12.5px] text-ink-2 leading-relaxed">
-                  Meta authorizes Instagram messaging permissions through a linked Facebook Page that you admin.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => setExpandedStep(expandedStep === 2 ? null : 2)}
-                  className="mt-2 text-[12px] font-medium text-signal underline decoration-signal/30 underline-offset-2 hover:decoration-signal"
-                >
-                  {expandedStep === 2 ? "Hide instructions" : "How to link a Page →"}
-                </button>
-
-                {expandedStep === 2 && (
-                  <div className="mt-2.5 rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2 space-y-1">
-                    <p>1. Open Instagram profile → tap <strong>Edit profile</strong>.</p>
-                    <p>2. Under <em>Public business information</em>, tap <strong>Page</strong>.</p>
-                    <p>3. Choose an existing Page you manage or create a new one in 10 seconds.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Step 3: Allow Access to Messages (The #1 source of DM failures) */}
-          <div
-            className={cn(
-              "rounded-2xl border transition-all duration-150",
-              step3Checked
-                ? "border-line bg-surface-1"
-                : "border-warn/40 bg-warn-wash/40"
-            )}
-          >
-            <div className="flex items-start gap-3 p-4">
-              <button
-                type="button"
-                onClick={() => setStep3Checked(!step3Checked)}
-                className="mt-0.5 text-signal hover:opacity-80 transition-opacity"
-              >
-                {step3Checked ? (
-                  <CheckCircle2 className="size-5 fill-signal text-surface" />
-                ) : (
-                  <Circle className="size-5 text-ink-3" />
-                )}
-              </button>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[14px] font-semibold text-ink flex items-center gap-2">
                     <ShieldCheck className="size-4 text-signal" />
-                    3. Enable &quot;Allow Access to Messages&quot;
+                    2. Enable &quot;Allow Access to Messages&quot;
                   </span>
-                  <span className="rounded bg-signal/15 px-1.5 py-0.5 text-[10.5px] font-bold text-signal">
+                  <span className="rounded bg-signal/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-signal">
                     Crucial for DMs
                   </span>
                 </div>
@@ -254,13 +198,13 @@ export function ConnectInstagramModal({
 
                 <button
                   type="button"
-                  onClick={() => setExpandedStep(expandedStep === 3 ? null : 3)}
+                  onClick={() => setExpandedStep(expandedStep === 2 ? null : 2)}
                   className="mt-2 text-[12px] font-medium text-signal underline decoration-signal/30 underline-offset-2 hover:decoration-signal"
                 >
-                  {expandedStep === 3 ? "Hide instructions" : "How to enable in Instagram →"}
+                  {expandedStep === 2 ? "Hide instructions" : "How to enable in Instagram →"}
                 </button>
 
-                {expandedStep === 3 && (
+                {expandedStep === 2 && (
                   <div className="mt-2.5 rounded-xl border border-line bg-surface-2 p-3 text-[12px] text-ink-2 space-y-1">
                     <p>1. Open Instagram → <strong>Settings and privacy</strong>.</p>
                     <p>2. Tap <strong>Messages and story replies</strong> → <strong>Message controls</strong>.</p>
@@ -278,16 +222,16 @@ export function ConnectInstagramModal({
             type="button"
             variant="signal"
             size="lg"
-            className="w-full justify-center shadow-lg"
+            className="w-full justify-center shadow-lg bg-gradient-to-r from-[#e1306c] via-[#fd1d1d] to-[#f77737] hover:opacity-95 text-white border-0 py-3 text-[15px] font-bold"
             onClick={handleConnect}
           >
-            Continue with Meta &amp; Connect Instagram
+            Log in with Instagram
             <ArrowRight className="size-4" />
           </Button>
 
           <div className="mt-3.5 flex items-center justify-center gap-2 text-[11.5px] text-ink-3">
             <Lock className="size-3.5 text-signal" />
-            <span>Official Meta Graph API v21.0 · We never see or store your password</span>
+            <span>Official Instagram Business Login · Zero Facebook page required</span>
           </div>
         </div>
       </DialogContent>

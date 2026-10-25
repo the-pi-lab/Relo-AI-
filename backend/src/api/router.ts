@@ -960,39 +960,79 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     }
 
     try {
-      // 1. Resolve a short-lived user token: either exchanged from the OAuth
-      //    code or supplied directly by the client-side login flow.
-      let shortLivedToken: string;
+      let accounts: ConnectedInstagramAccountInfo[] = [];
+      let longLivedToken = "";
+      let tokenExpiresAt = Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
+      let isInstagramLogin = false;
+
+      // 1. Try Direct Instagram Business Login first (Zorcha style, zero Facebook Page required)
       if (code) {
-        const exchanged = await metaGraphClient.exchangeCodeForToken(
-          env.META_APP_ID,
-          env.META_APP_SECRET,
-          code,
-          parsed.data.redirectUri
-        );
-        shortLivedToken = exchanged.access_token;
-      } else {
-        shortLivedToken = clientAccessToken as string;
+        try {
+          const igShort = await metaGraphClient.exchangeInstagramCodeForToken(
+            env.META_APP_ID,
+            env.META_APP_SECRET,
+            code,
+            parsed.data.redirectUri
+          );
+          const igLong = await metaGraphClient.exchangeInstagramForLongLivedToken(
+            env.META_APP_SECRET,
+            igShort.access_token
+          );
+          longLivedToken = igLong.access_token;
+          tokenExpiresAt = Math.floor(Date.now() / 1000) + (igLong.expires_in || 60 * 24 * 60 * 60);
+
+          const profile = await metaGraphClient.getInstagramUserProfile(
+            longLivedToken,
+            igShort.user_id as string
+          );
+
+          accounts = [
+            {
+              pageId: profile.id,
+              pageName: profile.username,
+              pageAccessToken: longLivedToken,
+              instagramAccountId: profile.id,
+              instagramUsername: profile.username,
+              profilePictureUrl: profile.profilePictureUrl,
+            },
+          ];
+          isInstagramLogin = true;
+          console.log(`[Meta] Instagram Business Login success for @${profile.username} (ID: ${profile.id})`);
+        } catch (igErr) {
+          console.warn("[Meta] Instagram Business Login token exchange not matched, trying Facebook exchange:", igErr);
+        }
       }
 
-      // 2. Upgrade to a long-lived token (~60 days) so connected accounts
-      //    actually survive past the first hour.
-      const longLived = await metaGraphClient.exchangeForLongLivedToken(
-        env.META_APP_ID,
-        env.META_APP_SECRET,
-        shortLivedToken
-      );
-      const longLivedToken = longLived.access_token;
-      const tokenExpiresAt =
-        Math.floor(Date.now() / 1000) + (longLived.expires_in || 60 * 24 * 60 * 60);
+      // 2. Fallback to Facebook Login if Instagram exchange was not used
+      if (!isInstagramLogin) {
+        let shortLivedToken: string;
+        if (code) {
+          const exchanged = await metaGraphClient.exchangeCodeForToken(
+            env.META_APP_ID,
+            env.META_APP_SECRET,
+            code,
+            parsed.data.redirectUri
+          );
+          shortLivedToken = exchanged.access_token;
+        } else {
+          shortLivedToken = clientAccessToken as string;
+        }
 
-      // 3. Fetch connected Instagram business pages
-      const accounts = await metaGraphClient.getConnectedAccounts(longLivedToken);
+        const longLived = await metaGraphClient.exchangeForLongLivedToken(
+          env.META_APP_ID,
+          env.META_APP_SECRET,
+          shortLivedToken
+        );
+        longLivedToken = longLived.access_token;
+        tokenExpiresAt = Math.floor(Date.now() / 1000) + (longLived.expires_in || 60 * 24 * 60 * 60);
+
+        accounts = await metaGraphClient.getConnectedAccounts(longLivedToken);
+      }
 
       if (accounts.length === 0) {
         return jsonError(
           "NO_INSTAGRAM_ACCOUNT",
-          "No Instagram Professional/Creator account was found linked to your Facebook Page. Please link your Instagram account in Page Settings.",
+          "No Instagram Professional/Creator account was found. Please ensure your Instagram account is switched to a Professional account (Creator or Business) in Instagram Settings.",
           400
         );
       }

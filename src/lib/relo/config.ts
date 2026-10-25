@@ -35,9 +35,9 @@ export const APP_URL = trimTrailing(
   process.env.NEXT_PUBLIC_APP_URL || "https://relo-nu.vercel.app"
 );
 
-/** Meta (Facebook) app id. The matching secret lives only on the Worker. */
+/** Instagram App ID for direct Instagram Business Login. */
 export const META_APP_ID = (
-  process.env.NEXT_PUBLIC_META_APP_ID || "2078625202922249"
+  process.env.NEXT_PUBLIC_META_APP_ID || "689575834092271"
 ).trim();
 
 /**
@@ -55,21 +55,21 @@ export const TURNSTILE_SITE_KEY = (
 ).trim();
 
 /**
- * Scopes for Facebook Login for Business. RELO reads the Pages the creator
- * manages, the Instagram account linked to each Page, and then replies to
- * comments and DMs through that Page.
+ * Scopes for Instagram Business Login (Direct Instagram OAuth, zero Facebook Page required).
  */
 export const META_SCOPES = [
-  "instagram_basic",
-  "instagram_manage_comments",
-  "instagram_manage_messages",
-  "pages_show_list",
-  "pages_read_engagement",
-  "pages_manage_metadata",
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
+  "instagram_business_content_publish",
 ].join(",");
 
 export const META_OAUTH_VERSION = "v21.0";
 
+/**
+ * Direct Instagram OAuth Authorization URL.
+ * Opens the native Instagram login dialog directly without Facebook dependencies.
+ */
 export function metaOAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: META_APP_ID,
@@ -77,8 +77,10 @@ export function metaOAuthUrl(state: string): string {
     response_type: "code",
     scope: META_SCOPES,
     state,
+    enable_fb_login: "0",
+    force_authentication: "1",
   });
-  return `https://www.facebook.com/${META_OAUTH_VERSION}/dialog/oauth?${params.toString()}`;
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
 }
 
 export const isMetaConfigured = () => Boolean(META_APP_ID && META_REDIRECT_URI);

@@ -279,6 +279,114 @@ export class MetaGraphClient {
   }
 
   /**
+   * 6c. Exchange Instagram OAuth Code for short-lived user token (Instagram Business Login).
+   */
+  async exchangeInstagramCodeForToken(
+    appId: string,
+    appSecret: string,
+    code: string,
+    redirectUri?: string
+  ): Promise<{ access_token: string; user_id: string | number }> {
+    const cleanCode = code.replace(/#_$/, "");
+    const cleanUri = (redirectUri || "").replace(/#_$/, "");
+    const params = new URLSearchParams({
+      client_id: appId,
+      client_secret: appSecret,
+      grant_type: "authorization_code",
+      redirect_uri: cleanUri,
+      code: cleanCode,
+    });
+    const res = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: params.toString(),
+    });
+    const data = (await res.json()) as any;
+    if (!res.ok || data.error_type || data.error) {
+      const msg = data.error_message || data.error?.message || `HTTP ${res.status}`;
+      throw new MetaApiError(`Instagram token exchange failed: ${msg}`, {
+        code: res.status,
+        statusCode: res.status,
+        type: data.error_type || "OAuthException",
+      });
+    }
+    return {
+      access_token: data.access_token,
+      user_id: String(data.user_id),
+    };
+  }
+
+  /**
+   * 6d. Upgrade short-lived Instagram token to 60-day long-lived token.
+   */
+  async exchangeInstagramForLongLivedToken(
+    appSecret: string,
+    shortLivedToken: string
+  ): Promise<{ access_token: string; token_type: string; expires_in: number }> {
+    const url = new URL("https://graph.instagram.com/access_token");
+    url.searchParams.set("grant_type", "ig_exchange_token");
+    url.searchParams.set("client_secret", appSecret);
+    url.searchParams.set("access_token", shortLivedToken);
+
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    const data = (await res.json()) as any;
+    if (!res.ok || data.error) {
+      const msg = data.error?.message || `HTTP ${res.status}`;
+      throw new MetaApiError(`Instagram long-lived token exchange failed: ${msg}`, {
+        code: res.status,
+        statusCode: res.status,
+      });
+    }
+    return {
+      access_token: data.access_token,
+      token_type: data.token_type || "bearer",
+      expires_in: data.expires_in || 60 * 24 * 60 * 60,
+    };
+  }
+
+  /**
+   * 7b. Fetch Instagram Professional Profile directly (no Facebook Page required).
+   */
+  async getInstagramUserProfile(
+    token: string,
+    userId?: string
+  ): Promise<{ id: string; username: string; profile_picture_url?: string }> {
+    const url = new URL(
+      userId ? `https://graph.instagram.com/v21.0/${userId}` : "https://graph.instagram.com/v21.0/me"
+    );
+    url.searchParams.set("fields", "id,username,profile_picture_url");
+    url.searchParams.set("access_token", token);
+
+    let res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    let data = (await res.json()) as any;
+    if (!res.ok || data.error) {
+      const fallbackUrl = new URL("https://graph.instagram.com/me");
+      fallbackUrl.searchParams.set("fields", "id,username,profile_picture_url");
+      fallbackUrl.searchParams.set("access_token", token);
+      const fallbackRes = await fetch(fallbackUrl.toString(), {
+        headers: { Accept: "application/json" },
+      });
+      data = (await fallbackRes.json()) as any;
+    }
+    const resolvedId = String(data.id || data.user_id || userId || "ig_user");
+    const resolvedUsername = data.username || `ig_${resolvedId.slice(-6)}`;
+    return {
+      id: resolvedId,
+      username: resolvedUsername,
+      profilePictureUrl: data.profile_picture_url,
+    };
+  }
+
+  /**
    * 7. Fetch Connected Facebook Pages & Associated Instagram Accounts:
    */
   async getConnectedAccounts(
