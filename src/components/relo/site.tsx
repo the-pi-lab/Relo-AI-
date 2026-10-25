@@ -49,7 +49,7 @@ export function SiteNav({ navigate, onPhoto = false }: { navigate: Nav; onPhoto?
         )}
         aria-label="Main"
       >
-        <Logo onClick={() => navigate("/")} className={cn(light && "[&_span:last-child]:text-on-photo")} />
+        <Logo onClick={() => navigate("/")} className={cn(light && "[&>span:last-child]:text-on-photo")} />
         <span className={cn("mx-3 hidden h-5 w-px sm:block", light ? "bg-white/30" : "bg-line-strong")} />
         <div className="hidden flex-1 items-center gap-1 md:flex">
           {NAV_LINKS.map((l) => (

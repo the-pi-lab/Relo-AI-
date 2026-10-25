@@ -92,13 +92,13 @@ export const Button = React.forwardRef<
 
 /* ── Logo ───────────────────────────────────────────────────────────────── */
 
-/* Official RELO 3D ribbon play/loop mark */
+/* Official RELO 3D ribbon mark (aspect ratio 402:315 preserved exactly) */
 export function ReloMark({ className }: { className?: string }) {
   return (
     <img
       src="/assets/relo-mark.png"
       alt="RELO"
-      className={cn("object-contain select-none shrink-0", className)}
+      className={cn("h-7 w-auto aspect-[402/315] object-contain select-none shrink-0", className)}
       loading="eager"
       draggable={false}
     />
@@ -120,18 +120,18 @@ export function Logo({
       onClick={onClick}
       aria-label="RELO, home"
       className={cn(
-        "group inline-flex w-fit select-none items-center gap-2 rounded-md",
-        "transition-colors duration-150 ease-out",
+        "group inline-flex w-fit select-none items-center gap-2.5 rounded-md",
+        "transition-colors duration-150 ease-out active:scale-95",
         className
       )}
     >
       <span
         className={cn(
-          "grid shrink-0 place-items-center transition-transform duration-300 ease-out group-hover:scale-105",
-          size === "md" ? "size-7" : "size-8"
+          "flex shrink-0 items-center justify-center transition-transform duration-300 ease-out group-hover:scale-105",
+          size === "md" ? "h-7" : "h-8"
         )}
       >
-        <ReloMark className={size === "md" ? "size-7" : "size-8"} />
+        <ReloMark className={size === "md" ? "h-7" : "h-8"} />
       </span>
       <span
         className={cn(

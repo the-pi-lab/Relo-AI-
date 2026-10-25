@@ -197,8 +197,8 @@ function Sidebar({
           aria-label="RELO, dashboard"
           className="inline-flex items-center gap-2.5 rounded-md"
         >
-          <span className="grid size-7 shrink-0 place-items-center">
-            <ReloMark className="size-7" />
+          <span className="flex h-7 shrink-0 items-center justify-center">
+            <ReloMark className="h-7 w-auto" />
           </span>
           {!collapsed && (
             <span className="text-[17px] font-extrabold tracking-[-0.045em] text-ink">
