@@ -452,12 +452,14 @@ function AutomationEditor({
 }) {
   const { reels, saveAutomation, account } = useRelo();
   const [step, setStep] = useState(0);
+  const [previewTab, setPreviewTab] = useState<0 | 1 | 2>(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setStep(0);
+      setPreviewTab(0);
       setError(null);
     }
   }, [open]);
@@ -476,7 +478,6 @@ function AutomationEditor({
 
   const selectedReel = reels.data.find((reel) => reel.id === draft.instagramMediaId);
   const steps = ["Reel & Trigger", "Replies", "DM Funnel", "Review"];
-  const [previewTab, setPreviewTab] = useState<0 | 1 | 2>(0);
 
   const validate = (): string | null => {
     if (!draft.instagramMediaId || !draft.reelPermalink) {
