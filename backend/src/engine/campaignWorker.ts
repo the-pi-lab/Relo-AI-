@@ -8,6 +8,8 @@ import {
   updateCampaign,
   countPendingCampaignTargets,
   getCampaignsForAccount,
+  META_MESSAGING_WINDOW_SECONDS,
+  recordOutboundMessage,
 } from "../db/queries";
 import { decryptSecret } from "../crypto";
 import { metaGraphClient } from "../meta/client";
@@ -112,6 +114,103 @@ export function applyHumanAgentTag(
   };
 }
 
+/**
+ * Meta's HUMAN_AGENT tag widens the messaging window from 24 hours to 7 days.
+ * It only exists once Meta has approved the app, so the opt-in flag alone is
+ * not enough — sending the tag unapproved makes Meta reject the whole message.
+ */
+export const HUMAN_AGENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+
+export function humanAgentTagApproved(
+  campaign: { usesHumanAgentTag?: boolean },
+  env: { META_HUMAN_AGENT_APPROVED?: string }
+): boolean {
+  return Boolean(campaign.usesHumanAgentTag) && env.META_HUMAN_AGENT_APPROVED === "1";
+}
+
+/** The window a campaign may actually use for a given deployment. */
+export function campaignWindowSeconds(
+  campaign: { usesHumanAgentTag?: boolean },
+  env: { META_HUMAN_AGENT_APPROVED?: string }
+): number {
+  return humanAgentTagApproved(campaign, env)
+    ? HUMAN_AGENT_WINDOW_SECONDS
+    : META_MESSAGING_WINDOW_SECONDS;
+}
+
+export interface CampaignCard {
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  buttons: Array<{ type: "web_url"; title: string; url: string }>;
+}
+
+/**
+ * Validates a campaign card against Meta's generic-template limits before it is
+ * ever stored. An over-long title or a fourth button makes the whole send fail
+ * per recipient, at cron time, where nobody is watching — so it is rejected at
+ * compose time instead.
+ */
+export function normalizeCampaignCard(
+  raw: unknown
+): { ok: true; card: CampaignCard } | { ok: false; message: string } {
+  if (!raw || typeof raw !== "object") {
+    return { ok: false, message: "Card content is missing." };
+  }
+  const input = raw as Record<string, unknown>;
+
+  const title = String(input.title || "").trim();
+  if (!title) return { ok: false, message: "A card needs a title." };
+  if (title.length > 80) {
+    return { ok: false, message: "Card titles are limited to 80 characters." };
+  }
+
+  const subtitle = String(input.subtitle || "").trim();
+  if (subtitle.length > 80) {
+    return { ok: false, message: "Card subtitles are limited to 80 characters." };
+  }
+
+  const imageUrlRaw = String(input.imageUrl || "").trim();
+  if (imageUrlRaw && !/^https:\/\//i.test(imageUrlRaw)) {
+    return { ok: false, message: "Card images must use an https:// URL." };
+  }
+
+  const rawButtons = Array.isArray(input.buttons) ? input.buttons : [];
+  if (rawButtons.length > 3) {
+    return { ok: false, message: "A card can carry at most 3 buttons." };
+  }
+
+  const buttons: CampaignCard["buttons"] = [];
+  for (const rawButton of rawButtons) {
+    if (!rawButton || typeof rawButton !== "object") {
+      return { ok: false, message: "Each button needs a title and an https:// URL." };
+    }
+    const button = rawButton as Record<string, unknown>;
+    const buttonTitle = String(button.title || "").trim();
+    const buttonUrl = String(button.url || "").trim();
+    if (!buttonTitle || !buttonUrl) {
+      return { ok: false, message: "Each button needs a title and an https:// URL." };
+    }
+    if (buttonTitle.length > 20) {
+      return { ok: false, message: "Button labels are limited to 20 characters." };
+    }
+    if (!/^https:\/\//i.test(buttonUrl)) {
+      return { ok: false, message: "Button URLs must start with https://." };
+    }
+    buttons.push({ type: "web_url", title: buttonTitle, url: buttonUrl });
+  }
+
+  return {
+    ok: true,
+    card: {
+      title,
+      subtitle: subtitle || undefined,
+      imageUrl: imageUrlRaw || undefined,
+      buttons,
+    },
+  };
+}
+
 export async function sendCampaignBatch(
   env: Env,
   campaignId: string,
@@ -157,16 +256,25 @@ export async function sendCampaignBatch(
   const targets = await getSendableCampaignTargets(
     env.DB,
     campaignId,
-    options.batchLimit || DEFAULT_BATCH
+    options.batchLimit || DEFAULT_BATCH,
+    campaignWindowSeconds(campaign, env)
   );
 
   for (const target of targets) {
     try {
       let payload = buildCampaignMessage(campaign, target.username);
       payload = { ...payload, recipient: { id: target.instagramScopedId } };
-      payload = applyHumanAgentTag(payload, campaign);
+      if (humanAgentTagApproved(campaign, env)) {
+        payload = applyHumanAgentTag(payload, campaign);
+      }
 
       const response = await metaGraphClient.sendPrivateReply(token, payload);
+      await recordOutboundMessage(
+        env.DB,
+        campaign.accountId,
+        target.instagramScopedId,
+        response.message_id
+      );
       await markCampaignTargetSent(env.DB, target.id, response.message_id);
       result.sent++;
       await bumpCampaignCounters(env.DB, campaignId, { sent: 1 });

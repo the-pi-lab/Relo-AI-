@@ -1,4 +1,5 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
+import { hashOtp } from "../crypto";
 import type {
   AccountId,
   AutomationId,
@@ -214,6 +215,9 @@ export async function isThreadPausedByHumanTakeover(
 
 /**
  * 7. Set 30-minute Human Takeover auto-pause when manual reply is detected.
+ * Upserts: one row per thread. The previous plain INSERT appended a row for
+ * every inbound message, so the table grew without bound and every lookup had
+ * to scan duplicates.
  */
 export async function setHumanTakeoverPause(
   db: D1Database,
@@ -225,9 +229,102 @@ export async function setHumanTakeoverPause(
   await db
     .prepare(
       `INSERT INTO human_takeovers (id, account_id, thread_id, paused_until)
-       VALUES (?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (account_id, thread_id) DO UPDATE SET
+         paused_until = MAX(human_takeovers.paused_until, excluded.paused_until)`
     )
     .bind(crypto.randomUUID(), accountId, threadId, pausedUntil)
+    .run();
+}
+
+/**
+ * 7a. Message-id ledger.
+ *
+ * Two problems share one solution:
+ *   - Meta redelivers webhooks, so the same inbound message can be processed
+ *     twice (double AI replies, double pause writes).
+ *   - An `is_echo` message is either our own outbound message coming back, or
+ *     the creator replying by hand. Only the second is a takeover signal, and
+ *     the only way to tell them apart is remembering the mids we sent.
+ */
+export async function claimInboundMessage(
+  db: D1Database,
+  accountId: AccountId,
+  threadId: string,
+  mid: string
+): Promise<boolean> {
+  const res = await db
+    .prepare(
+      `INSERT OR IGNORE INTO message_mids (mid, account_id, thread_id, direction)
+       VALUES (?, ?, ?, 'in')`
+    )
+    .bind(mid, accountId, threadId)
+    .run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+/** Records a message WE sent, so its echo is not mistaken for a human reply. */
+export async function recordOutboundMessage(
+  db: D1Database,
+  accountId: AccountId,
+  threadId: string,
+  mid: string
+): Promise<void> {
+  if (!mid) return;
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO message_mids (mid, account_id, thread_id, direction)
+       VALUES (?, ?, ?, 'out')`
+    )
+    .bind(mid, accountId, threadId)
+    .run();
+}
+
+/** True when `mid` is a message this account sent (an echo of our own DM). */
+export async function isOutboundMessage(db: D1Database, mid: string): Promise<boolean> {
+  if (!mid) return false;
+  const row = await db
+    .prepare(`SELECT 1 FROM message_mids WHERE mid = ? AND direction = 'out' LIMIT 1`)
+    .bind(mid)
+    .first();
+  return Boolean(row);
+}
+
+/**
+ * 7b. Per-thread AI clock. Returns the unix second of the last AI reply, so the
+ * caller can enforce a cooldown instead of answering every message in a burst.
+ */
+export async function getLastAiReplyAt(
+  db: D1Database,
+  accountId: AccountId,
+  threadId: string
+): Promise<number> {
+  const row = (await db
+    .prepare(
+      `SELECT last_ai_reply_at FROM ai_thread_state
+       WHERE account_id = ? AND thread_id = ? LIMIT 1`
+    )
+    .bind(accountId, threadId)
+    .first()) as any;
+  return Number(row?.last_ai_reply_at || 0);
+}
+
+/** Stamps the AI clock (and the inbound message it acted on) after a send. */
+export async function markAiReplySent(
+  db: D1Database,
+  accountId: AccountId,
+  threadId: string
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO ai_thread_state (account_id, thread_id, last_ai_reply_at, last_inbound_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (account_id, thread_id) DO UPDATE SET
+         last_ai_reply_at = excluded.last_ai_reply_at,
+         last_inbound_at = excluded.last_inbound_at`
+    )
+    .bind(accountId, threadId, now, now)
     .run();
 }
 
@@ -379,15 +476,19 @@ export async function getAccountsDueForTokenRefresh(
   Array<{
     id: AccountId;
     username: string;
+    instagramUserId: string;
     accessTokenEncrypted: string;
     tokenExpiresAt: number;
+    userTokenEncrypted: string | null;
+    userTokenExpiresAt: number;
   }>
 > {
   const now = Math.floor(Date.now() / 1000);
   const retryCutoff = now - 12 * 60 * 60;
   const { results } = await db
     .prepare(
-      `SELECT a.id, a.username, a.access_token_encrypted, a.token_expires_at
+      `SELECT a.id, a.username, a.instagram_user_id, a.access_token_encrypted,
+              a.token_expires_at, a.user_token_encrypted, a.user_token_expires_at
        FROM connected_accounts a
        WHERE a.is_active = 1
          AND a.token_expires_at <= ?
@@ -406,21 +507,51 @@ export async function getAccountsDueForTokenRefresh(
   return (results || []).map((row: any) => ({
     id: createAccountId(row.id),
     username: row.username,
+    instagramUserId: String(row.instagram_user_id || ""),
     accessTokenEncrypted: row.access_token_encrypted,
     tokenExpiresAt: Number(row.token_expires_at),
+    userTokenEncrypted: row.user_token_encrypted || null,
+    userTokenExpiresAt: Number(row.user_token_expires_at || 0),
   }));
 }
 
 /**
  * 9e. Store a rotated token and its new expiry.
+ *
+ * The page token cannot be renewed on its own — Meta's `fb_exchange_token`
+ * grant only accepts a user token — so a refresh writes both halves. The user
+ * token arguments are optional to keep older callers compiling; when omitted
+ * the stored user token is left untouched.
  */
 export async function updateAccountToken(
   db: D1Database,
   accountId: AccountId,
   accessTokenEncrypted: string,
-  tokenExpiresAt: number
+  tokenExpiresAt: number,
+  userTokenEncrypted?: string | null,
+  userTokenExpiresAt?: number
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+  if (userTokenEncrypted !== undefined) {
+    await db
+      .prepare(
+        `UPDATE connected_accounts
+         SET access_token_encrypted = ?, token_expires_at = ?,
+             user_token_encrypted = ?, user_token_expires_at = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .bind(
+        accessTokenEncrypted,
+        tokenExpiresAt,
+        userTokenEncrypted,
+        Number(userTokenExpiresAt || 0),
+        now,
+        accountId
+      )
+      .run();
+    return;
+  }
+
   await db
     .prepare(
       `UPDATE connected_accounts
@@ -575,20 +706,141 @@ export async function findOrCreateUserByEmail(
   };
 }
 
+/** Look up a user (and their billing state) by email, without creating one. */
+export async function getUserByEmail(
+  db: D1Database,
+  email: string
+): Promise<{
+  id: string;
+  email: string;
+  plan: "free" | "pro" | "studio";
+  aiCreditsRemaining: number;
+  aiCreditsResetAt: number;
+  freeReelConsumed: number;
+  planExpiresAt: number;
+} | null> {
+  const row = (await db
+    .prepare(
+      `SELECT id, email, plan, ai_credits_remaining, ai_credits_reset_at,
+              free_reel_consumed, plan_expires_at
+       FROM users WHERE email = ? LIMIT 1`
+    )
+    .bind(email.toLowerCase().trim())
+    .first()) as any;
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    plan: row.plan === "studio" || row.plan === "pro" ? row.plan : "free",
+    aiCreditsRemaining: Number(row.ai_credits_remaining ?? 0),
+    aiCreditsResetAt: Number(row.ai_credits_reset_at ?? 0),
+    freeReelConsumed: Number(row.free_reel_consumed ?? 0),
+    planExpiresAt: Number(row.plan_expires_at ?? 0),
+  };
+}
+
+/**
+ * 13b. Server-side session ledger (JWT revocation).
+ *
+ * A token is only accepted while its `jti` has a live row here. Logging out
+ * stamps `revoked_at`; "sign out everywhere" stamps every row for the user.
+ */
+export interface SessionRecord {
+  jti: string;
+  userId: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export async function createSession(
+  db: D1Database,
+  jti: string,
+  userId: string,
+  expiresAt: number
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO sessions (jti, user_id, created_at, expires_at)
+       VALUES (?, ?, ?, ?)`
+    )
+    .bind(jti, userId, now, expiresAt)
+    .run();
+}
+
+export async function getActiveSession(
+  db: D1Database,
+  jti: string
+): Promise<{ userId: string; expiresAt: number } | null> {
+  if (!jti) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const row = (await db
+    .prepare(
+      `SELECT user_id, expires_at FROM sessions
+       WHERE jti = ? AND revoked_at IS NULL AND expires_at > ?
+       LIMIT 1`
+    )
+    .bind(jti, now)
+    .first()) as any;
+  if (!row) return null;
+  return { userId: row.user_id, expiresAt: Number(row.expires_at) };
+}
+
+export async function revokeSession(
+  db: D1Database,
+  jti: string,
+  userId: string
+): Promise<boolean> {
+  const now = Math.floor(Date.now() / 1000);
+  const res = await db
+    .prepare(
+      `UPDATE sessions SET revoked_at = ?
+       WHERE jti = ? AND user_id = ? AND revoked_at IS NULL`
+    )
+    .bind(now, jti, userId)
+    .run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+/** Revokes every session for a user, including the caller's own token. */
+export async function revokeAllSessions(
+  db: D1Database,
+  userId: string
+): Promise<number> {
+  const now = Math.floor(Date.now() / 1000);
+  const res = await db
+    .prepare(
+      `UPDATE sessions SET revoked_at = ?
+       WHERE user_id = ? AND revoked_at IS NULL`
+    )
+    .bind(now, userId)
+    .run();
+  return res.meta?.changes ?? 0;
+}
+
 /**
  * 14. Save Email OTP code for passwordless sign-in (10 min expiry).
  * Enforces a 60-second resend throttle per email to prevent email-bombing.
+ *
+ * The code is stored as HMAC-SHA256(code, pepper), never in plaintext: a D1
+ * snapshot (or a support export) must not contain a live login credential.
  */
 export async function saveEmailOtp(
   db: D1Database,
   email: string,
   code: string,
-  expiresInSeconds = 600
+  expiresInSeconds = 600,
+  pepper = ""
 ): Promise<{ ok: true } | { ok: false; retryAfterSeconds: number }> {
   const normalizedEmail = email.toLowerCase().trim();
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + expiresInSeconds;
   const resendThrottleSeconds = 60;
+
+  if (!pepper) {
+    throw new Error("[Auth] An OTP pepper is required to store a login code.");
+  }
+  const codeHash = await hashOtp(code, pepper);
 
   const existing = (await db
     .prepare(`SELECT created_at FROM email_otps WHERE email = ? LIMIT 1`)
@@ -604,16 +856,16 @@ export async function saveEmailOtp(
 
   await db
     .prepare(
-      `INSERT INTO email_otps (email, code, expires_at, created_at, attempts, last_sent_at)
+      `INSERT INTO email_otps (email, code_hash, expires_at, created_at, attempts, last_sent_at)
        VALUES (?, ?, ?, ?, 0, ?)
        ON CONFLICT (email) DO UPDATE SET
-         code = excluded.code,
+         code_hash = excluded.code_hash,
          expires_at = excluded.expires_at,
          created_at = excluded.created_at,
          attempts = 0,
          last_sent_at = excluded.last_sent_at`
     )
-    .bind(normalizedEmail, code, expiresAt, now, now)
+    .bind(normalizedEmail, codeHash, expiresAt, now, now)
     .run();
 
   return { ok: true };
@@ -625,14 +877,22 @@ const MAX_OTP_ATTEMPTS = 5;
  * 15. Verify and consume Email OTP code.
  * Brute-force hardened: at most MAX_OTP_ATTEMPTS failed tries invalidate the
  * code, and consumption is an atomic conditional DELETE (no TOCTOU window).
+ *
+ * The submitted code is hashed with the same pepper before comparison, so the
+ * stored row never needs to hold (or reveal) the plaintext code. A missing
+ * pepper fails closed rather than matching an empty digest.
  */
 export async function verifyAndConsumeEmailOtp(
   db: D1Database,
   email: string,
-  code: string
+  code: string,
+  pepper = ""
 ): Promise<boolean> {
+  if (!pepper) return false;
+
   const normalizedEmail = email.toLowerCase().trim();
   const now = Math.floor(Date.now() / 1000);
+  const codeHash = await hashOtp(code, pepper);
 
   const row = (await db
     .prepare(
@@ -650,13 +910,13 @@ export async function verifyAndConsumeEmailOtp(
     return false;
   }
 
-  // Atomic consume: the delete only succeeds when the code matches exactly,
+  // Atomic consume: the delete only succeeds when the digest matches exactly,
   // so two concurrent verifications can never both "consume" the same OTP.
   const consume = await db
     .prepare(
-      `DELETE FROM email_otps WHERE email = ? AND code = ? AND expires_at > ?`
+      `DELETE FROM email_otps WHERE email = ? AND code_hash = ? AND expires_at > ?`
     )
-    .bind(normalizedEmail, code.trim(), now)
+    .bind(normalizedEmail, codeHash, now)
     .run();
 
   if ((consume.meta?.changes ?? 0) > 0) {
@@ -708,7 +968,7 @@ export async function getAccountsForUser(
       `SELECT id, user_id, instagram_user_id, username, profile_picture_url,
               token_expires_at, is_active, created_at, plan
        FROM connected_accounts
-       WHERE user_id = ?
+       WHERE user_id = ? AND is_active = 1
        ORDER BY created_at DESC`
     )
     .bind(userId)
@@ -746,23 +1006,43 @@ export async function upsertConnectedAccount(
     profilePictureUrl?: string;
     accessTokenEncrypted: string;
     tokenExpiresAt: number;
+    /** Long-lived user token, from which the page token is derived. */
+    userTokenEncrypted?: string | null;
+    userTokenExpiresAt?: number;
   }
-): Promise<void> {
+): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000);
-  await db
+  // `WHERE connected_accounts.user_id = excluded.user_id` makes the SQL itself
+  // refuse a cross-user takeover, instead of relying only on the router guard.
+  //
+  // Billing columns are seeded from the user's row: if a paying user connects a
+  // new Instagram account (or reconnects one after disconnecting), the new row
+  // must inherit the plan/credits/free-slot instead of silently starting on
+  // Free. On conflict they are deliberately NOT overwritten — a reconnect must
+  // never reset the tier that is already on the row.
+  const res = await db
     .prepare(
       `INSERT INTO connected_accounts (
         id, user_id, instagram_user_id, username, profile_picture_url,
-        access_token_encrypted, token_expires_at, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        access_token_encrypted, token_expires_at,
+        user_token_encrypted, user_token_expires_at,
+        is_active, created_at, updated_at,
+        plan, ai_credits_remaining, ai_credits_reset_at, free_reel_consumed
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?,
+             u.plan, u.ai_credits_remaining, u.ai_credits_reset_at, u.free_reel_consumed
+        FROM users u
+       WHERE u.id = ?
       ON CONFLICT (instagram_user_id) DO UPDATE SET
-        user_id = excluded.user_id,
         username = excluded.username,
         profile_picture_url = excluded.profile_picture_url,
         access_token_encrypted = excluded.access_token_encrypted,
         token_expires_at = excluded.token_expires_at,
+        user_token_encrypted = excluded.user_token_encrypted,
+        user_token_expires_at = excluded.user_token_expires_at,
         is_active = 1,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      WHERE connected_accounts.user_id = excluded.user_id`
     )
     .bind(
       account.id,
@@ -772,25 +1052,53 @@ export async function upsertConnectedAccount(
       account.profilePictureUrl || null,
       account.accessTokenEncrypted,
       account.tokenExpiresAt,
+      account.userTokenEncrypted || null,
+      Number(account.userTokenExpiresAt || 0),
       now,
-      now
+      now,
+      account.userId
     )
     .run();
+  return (res.meta?.changes ?? 0) > 0;
 }
 
 /**
- * 18. Delete / disconnect connected account.
+ * 18. Disconnect a connected account.
+ *
+ * This is a soft delete on purpose: payments, automations, campaigns and lead
+ * history reference the account row, and a hard DELETE either cascaded that
+ * history away or failed on a foreign key. The row stays, but it disappears
+ * from every active-account query (`is_active = 1`) and its tokens are wiped,
+ * so a reconnect cannot silently keep using a revoked grant.
  */
 export async function deleteConnectedAccount(
   db: D1Database,
   accountId: string,
   userId: string
 ): Promise<boolean> {
-  const res = await db
-    .prepare(`DELETE FROM connected_accounts WHERE id = ? AND user_id = ?`)
-    .bind(accountId, userId)
-    .run();
-  return (res.meta?.changes ?? 0) > 0;
+  const results = await db.batch([
+    db
+      .prepare(
+        `UPDATE connected_accounts
+            SET is_active = 0,
+                access_token_encrypted = '',
+                user_token_encrypted = NULL,
+                user_token_expires_at = 0,
+                updated_at = unixepoch()
+          WHERE id = ? AND user_id = ? AND is_active = 1`
+      )
+      .bind(accountId, userId),
+    // Payments keep their durable user_id; only the account attribution is
+    // detached. This mirrors what ON DELETE SET NULL used to do, without
+    // destroying the account row (and its automations/leads).
+    db
+      .prepare(
+        `UPDATE payments SET account_id = NULL
+          WHERE account_id = ? AND user_id = ?`
+      )
+      .bind(accountId, userId),
+  ]);
+  return (results[0]?.meta?.changes ?? 0) > 0;
 }
 
 /**
@@ -895,11 +1203,23 @@ export async function deleteReelAutomation(
   automationId: string,
   accountId: string
 ): Promise<boolean> {
-  const res = await db
-    .prepare(`DELETE FROM reel_automations WHERE id = ? AND account_id = ?`)
-    .bind(automationId, accountId)
-    .run();
-  return (res.meta?.changes ?? 0) > 0;
+  // `jobs.matched_automation_id` references this row. Older databases were
+  // created without ON DELETE SET NULL, so detach the history first — in the
+  // same transaction as the delete — then drop the automation. Historical jobs
+  // stay intact and simply lose their rule pointer.
+  const results = await db.batch([
+    db
+      .prepare(
+        `UPDATE jobs
+            SET matched_automation_id = NULL, updated_at = unixepoch()
+          WHERE matched_automation_id = ? AND account_id = ?`
+      )
+      .bind(automationId, accountId),
+    db
+      .prepare(`DELETE FROM reel_automations WHERE id = ? AND account_id = ?`)
+      .bind(automationId, accountId),
+  ]);
+  return (results[1]?.meta?.changes ?? 0) > 0;
 }
 
 /**
@@ -1340,10 +1660,19 @@ export async function countActiveAutomations(
  */
 export async function markFreeReelConsumed(db: D1Database, accountId: AccountId): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  await db
-    .prepare(`UPDATE connected_accounts SET free_reel_consumed = 1, updated_at = ? WHERE id = ?`)
-    .bind(now, accountId)
-    .run();
+  const userSubquery = `(SELECT user_id FROM connected_accounts WHERE id = ?)`;
+  await db.batch([
+    db
+      .prepare(`UPDATE users SET free_reel_consumed = 1 WHERE id = ${userSubquery}`)
+      .bind(accountId),
+    db
+      .prepare(
+        `UPDATE connected_accounts
+            SET free_reel_consumed = 1, updated_at = ?
+          WHERE user_id = (SELECT user_id FROM connected_accounts WHERE id = ?)`
+      )
+      .bind(now, accountId),
+  ]);
 }
 
 /**
@@ -1356,19 +1685,38 @@ export async function replaceShortLinks(
   accountId: AccountId,
   targets: string[]
 ): Promise<void> {
-  await db
-    .prepare(`DELETE FROM short_links WHERE automation_id = ?`)
-    .bind(automationId)
-    .run();
+  // Preserve ids for buttons whose target did not change. Re-issuing ids on
+  // every save would 404 every /l/ link already sitting in a delivered DM and
+  // would reset its click history. A changed target reuses the id too, so
+  // in-flight DMs keep working and simply point at the new URL.
+  const existing = await getShortLinksForAutomation(db, automationId);
+  const byIndex = new Map(existing.map((link) => [link.buttonIndex, link]));
+
+  const statements: D1PreparedStatement[] = [];
   for (let i = 0; i < targets.length; i++) {
-    await db
-      .prepare(
-        `INSERT INTO short_links (id, account_id, automation_id, button_index, target_url)
-         VALUES (?, ?, ?, ?, ?)`
-      )
-      .bind(crypto.randomUUID(), accountId, automationId, i, targets[i])
-      .run();
+    const previous = byIndex.get(i);
+    byIndex.delete(i);
+    if (previous && previous.targetUrl === targets[i]) continue;
+
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO short_links (id, account_id, automation_id, button_index, target_url)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             button_index = excluded.button_index,
+             target_url = excluded.target_url`
+        )
+        .bind(previous?.id ?? crypto.randomUUID(), accountId, automationId, i, targets[i])
+    );
   }
+
+  // Buttons that no longer exist: their links should stop resolving.
+  for (const stale of byIndex.values()) {
+    statements.push(db.prepare(`DELETE FROM short_links WHERE id = ?`).bind(stale.id));
+  }
+
+  if (statements.length > 0) await db.batch(statements);
 }
 
 /**
@@ -1437,7 +1785,6 @@ export async function insertFollowUpJob(
   job: {
     id: JobId;
     accountId: AccountId;
-    commentId: CommentId;
     commenterUserId: InstagramUserId;
     commenterUsername: string;
     postId: MediaId;
@@ -1446,6 +1793,11 @@ export async function insertFollowUpJob(
     sendAt: number;
   }
 ): Promise<boolean> {
+  // `jobs.comment_id` is the atomic dedupe key and is UNIQUE NOT NULL, so a
+  // follow-up cannot reuse the parent's comment id (that is exactly why the
+  // old INSERT OR IGNORE silently inserted zero rows). A synthetic key,
+  // derived from the parent job, is unique per follow-up and still idempotent
+  // if the parent's completion path runs twice.
   const result = await db
     .prepare(
       `INSERT OR IGNORE INTO jobs (
@@ -1457,7 +1809,7 @@ export async function insertFollowUpJob(
     .bind(
       job.id,
       job.accountId,
-      job.commentId,
+      `followup:${job.parentJobId}`,
       job.commenterUserId,
       job.commenterUsername,
       job.postId,
@@ -1467,6 +1819,27 @@ export async function insertFollowUpJob(
     )
     .run();
   return (result.meta?.changes ?? 0) > 0;
+}
+
+/**
+ * Follow-ups and campaign sends go to `recipient.id`, which Meta only permits
+ * inside an open 24-hour window. A lead who has messaged us is anchored on
+ * that inbound message; otherwise the private reply to their comment is the
+ * anchor (recorded as `first_interaction_at`).
+ */
+export async function getLeadMessagingAnchor(
+  db: D1Database,
+  accountId: AccountId,
+  instagramScopedId: InstagramUserId
+): Promise<number> {
+  const row = (await db
+    .prepare(
+      `SELECT last_inbound_at, first_interaction_at FROM captured_leads
+       WHERE account_id = ? AND instagram_scoped_id = ? LIMIT 1`
+    )
+    .bind(accountId, instagramScopedId)
+    .first()) as any;
+  return Number(row?.last_inbound_at || 0) || Number(row?.first_interaction_at || 0) || 0;
 }
 
 /**
@@ -1513,7 +1886,15 @@ export async function hasLeadRepliedSince(
  */
 export async function purgeRetentionData(
   db: D1Database
-): Promise<{ textsPurged: number; jobsDeleted: number; logsDeleted: number }> {
+): Promise<{
+  textsPurged: number;
+  jobsDeleted: number;
+  logsDeleted: number;
+  midsDeleted: number;
+  aiStateDeleted: number;
+  takeoversDeleted: number;
+  sessionsDeleted: number;
+}> {
   const now = Math.floor(Date.now() / 1000);
   const texts = await db
     .prepare(
@@ -1531,10 +1912,44 @@ export async function purgeRetentionData(
     .prepare(`DELETE FROM webhook_logs WHERE created_at < ?`)
     .bind(now - 7 * 86400)
     .run();
+  // The mid ledger only needs to outlive webhook retries; the AI clock and the
+  // takeover pause are shorter still. Left unpruned, all three grow forever.
+  // Each delete is independent and tolerated-on-failure: an older database that
+  // has not applied migration 005 should still purge jobs and logs.
+  const mids = await db
+    .prepare(`DELETE FROM message_mids WHERE created_at < ?`)
+    .bind(now - 7 * 86400)
+    .run()
+    .catch(() => null);
+  const aiState = await db
+    .prepare(`DELETE FROM ai_thread_state WHERE last_inbound_at < ?`)
+    .bind(now - 7 * 86400)
+    .run()
+    .catch(() => null);
+  const takeovers = await db
+    .prepare(`DELETE FROM human_takeovers WHERE paused_until < ?`)
+    .bind(now - 86400)
+    .run()
+    .catch(() => null);
+  // Revoked/expired sessions are dead weight; removing them keeps the auth
+  // lookup small (and a pre-007 database simply skips this).
+  const sessions = await db
+    .prepare(
+      `DELETE FROM sessions
+        WHERE expires_at < ?
+           OR (revoked_at IS NOT NULL AND revoked_at < ?)`
+    )
+    .bind(now, now - 7 * 86400)
+    .run()
+    .catch(() => null);
   return {
     textsPurged: texts.meta?.changes ?? 0,
     jobsDeleted: jobs.meta?.changes ?? 0,
     logsDeleted: logs.meta?.changes ?? 0,
+    midsDeleted: mids?.meta?.changes ?? 0,
+    aiStateDeleted: aiState?.meta?.changes ?? 0,
+    takeoversDeleted: takeovers?.meta?.changes ?? 0,
+    sessionsDeleted: sessions?.meta?.changes ?? 0,
   };
 }
 
@@ -1577,16 +1992,23 @@ export async function resetMonthlyCreditsIfDue(
 
   const limit = TIER_CREDIT_LIMITS[account.plan] ?? 3;
   const nextReset = now + 30 * 86400;
-  await db
-    .prepare(
-      `UPDATE connected_accounts SET ai_credits_remaining = ?, ai_credits_reset_at = ? WHERE id = ?`
-    )
-    .bind(limit, nextReset, account.id)
-    .run();
-  await db
-    .prepare(`INSERT INTO credit_ledger (id, account_id, delta, reason) VALUES (?, ?, ?, ?)`)
-    .bind(crypto.randomUUID(), account.id, limit, `monthly_reset_${account.plan}`)
-    .run();
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE users SET ai_credits_remaining = ?, ai_credits_reset_at = ?
+          WHERE id = (SELECT user_id FROM connected_accounts WHERE id = ?)`
+      )
+      .bind(limit, nextReset, account.id),
+    db
+      .prepare(
+        `UPDATE connected_accounts SET ai_credits_remaining = ?, ai_credits_reset_at = ?
+          WHERE user_id = (SELECT user_id FROM connected_accounts WHERE id = ?)`
+      )
+      .bind(limit, nextReset, account.id),
+    db
+      .prepare(`INSERT INTO credit_ledger (id, account_id, delta, reason) VALUES (?, ?, ?, ?)`)
+      .bind(crypto.randomUUID(), account.id, limit, `monthly_reset_${account.plan}`),
+  ]);
 
   return { ...account, aiCreditsRemaining: limit, aiCreditsResetAt: nextReset };
 }
@@ -1595,55 +2017,292 @@ export async function resetMonthlyCreditsIfDue(
  * 41. Atomically spend one AI credit. Returns false when exhausted.
  */
 export async function spendAiCredit(db: D1Database, accountId: AccountId): Promise<boolean> {
+  // Creditors are pooled per user, so the decrement must target users — using
+  // the per-account mirror would let a second account spend from a stale
+  // balance. The mirror is refreshed in the same batch.
   const res = await db
     .prepare(
-      `UPDATE connected_accounts
-       SET ai_credits_remaining = ai_credits_remaining - 1
-       WHERE id = ? AND ai_credits_remaining > 0`
+      `UPDATE users
+          SET ai_credits_remaining = ai_credits_remaining - 1
+        WHERE id = (SELECT user_id FROM connected_accounts WHERE id = ?)
+          AND ai_credits_remaining > 0`
     )
     .bind(accountId)
     .run();
   const spent = (res.meta?.changes ?? 0) > 0;
   if (spent) {
-    await db
-      .prepare(`INSERT INTO credit_ledger (id, account_id, delta, reason) VALUES (?, ?, ?, ?)`)
-      .bind(crypto.randomUUID(), accountId, -1, "ai_reply")
-      .run();
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE connected_accounts
+              SET ai_credits_remaining = (SELECT ai_credits_remaining FROM users WHERE id = user_id)
+            WHERE user_id = (SELECT user_id FROM connected_accounts WHERE id = ?)`
+        )
+        .bind(accountId),
+      db
+        .prepare(`INSERT INTO credit_ledger (id, account_id, delta, reason) VALUES (?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), accountId, -1, "ai_reply"),
+    ]);
   }
   return spent;
 }
 
 /**
- * 42. Owner-activated payment → set plan on ALL of the user's accounts
- * and grant the tier's monthly credits immediately.
+ * 42. Owner-activated payment → set plan on the USER row and grant the tier's
+ * monthly credits immediately.
+ *
+ * `expiresAt` is optional so existing callers (and grandfathered/comped plans)
+ * keep the old "no expiry recorded" behaviour. Paid call sites pass a real
+ * timestamp; cron then downgrades the account when it lapses.
  */
 export async function activatePlanForUser(
   db: D1Database,
   userId: string,
-  plan: "pro" | "studio"
+  plan: "pro" | "studio",
+  expiresAt?: number
 ): Promise<number> {
   const now = Math.floor(Date.now() / 1000);
   const limit = TIER_CREDIT_LIMITS[plan] ?? 3;
-  const res = await db
-    .prepare(
-      `UPDATE connected_accounts
-       SET plan = ?, ai_credits_remaining = ?, ai_credits_reset_at = ?, updated_at = ?
-       WHERE user_id = ?`
-    )
-    .bind(plan, limit, now + 30 * 86400, now, userId)
-    .run();
+  const resetAt =
+    typeof expiresAt === "number" && expiresAt > now ? expiresAt : now + 30 * 86400;
 
-  const { results } = await db
+  // The plan belongs to the user row. The mirrored columns on
+  // connected_accounts are kept in sync for backwards compatibility only.
+  const userStatement =
+    typeof expiresAt === "number"
+      ? db
+          .prepare(
+            `UPDATE users
+                SET plan = ?, ai_credits_remaining = ?, ai_credits_reset_at = ?, plan_expires_at = ?
+              WHERE id = ?`
+          )
+          .bind(plan, limit, resetAt, Math.floor(expiresAt), userId)
+      : db
+          .prepare(
+            `UPDATE users SET plan = ?, ai_credits_remaining = ?, ai_credits_reset_at = ? WHERE id = ?`
+          )
+          .bind(plan, limit, resetAt, userId);
+
+  const results = await db.batch([
+    userStatement,
+    db
+      .prepare(
+        `UPDATE connected_accounts
+            SET plan = ?, ai_credits_remaining = ?, ai_credits_reset_at = ?, updated_at = ?
+          WHERE user_id = ?`
+      )
+      .bind(plan, limit, resetAt, now, userId),
+  ]);
+
+  const { results: accounts } = await db
     .prepare(`SELECT id FROM connected_accounts WHERE user_id = ?`)
     .bind(userId)
     .all();
-  for (const row of results || []) {
-    await db
-      .prepare(`INSERT INTO credit_ledger (id, account_id, delta, reason) VALUES (?, ?, ?, ?)`)
-      .bind(crypto.randomUUID(), (row as any).id, limit, `plan_activated_${plan}`)
-      .run();
+  const ledger: D1PreparedStatement[] = [];
+  for (const row of accounts || []) {
+    ledger.push(
+      db
+        .prepare(`INSERT INTO credit_ledger (id, account_id, delta, reason) VALUES (?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), (row as any).id, limit, `plan_activated_${plan}`)
+    );
   }
-  return res.meta?.changes ?? 0;
+  if (ledger.length > 0) await db.batch(ledger);
+
+  return results[0]?.meta?.changes ?? 0;
+}
+
+/**
+ * 42b. Move only the expiry. Used when a subscription is cancelled: the
+ * creator keeps the plan they already paid for until the period ends.
+ */
+export async function setPlanExpiry(
+  db: D1Database,
+  userId: string,
+  expiresAt: number
+): Promise<boolean> {
+  const res = await db
+    .prepare(`UPDATE users SET plan_expires_at = ? WHERE id = ?`)
+    .bind(Math.floor(expiresAt), userId)
+    .run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+/**
+ * 42c. Record a provider payment exactly once.
+ *
+ * `(provider, external_ref)` is UNIQUE, so a retried Lemon Squeezy webhook
+ * cannot grant a second month. Returns `inserted: false` for a duplicate and
+ * the existing row id.
+ */
+export async function recordBillingPayment(
+  db: D1Database,
+  payment: {
+    userId: string;
+    accountId?: string | null;
+    provider: "lemon_squeezy" | "manual_upi";
+    externalRef: string;
+    plan: "pro" | "studio";
+    amountInr: number;
+    status?: "pending" | "verified" | "rejected";
+  }
+): Promise<{ inserted: boolean; id: string }> {
+  const id = crypto.randomUUID();
+  const now = Math.floor(Date.now() / 1000);
+  const status = payment.status ?? "verified";
+  const res = await db
+    .prepare(
+      `INSERT OR IGNORE INTO payments
+         (id, account_id, user_id, provider, external_ref, plan, amount_inr, status, verified_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      payment.accountId ?? null,
+      payment.userId,
+      payment.provider,
+      payment.externalRef,
+      payment.plan,
+      payment.amountInr,
+      status,
+      status === "verified" ? now : null
+    )
+    .run();
+
+  if ((res.meta?.changes ?? 0) > 0) {
+    return { inserted: true, id };
+  }
+
+  const existing = (await db
+    .prepare(
+      `SELECT id FROM payments WHERE provider = ? AND external_ref = ? LIMIT 1`
+    )
+    .bind(payment.provider, payment.externalRef)
+    .first()) as any;
+  return { inserted: false, id: existing?.id ?? id };
+}
+
+/** Full billing state from the canonical `users` row. */
+export async function getUserBilling(
+  db: D1Database,
+  userId: string
+): Promise<{
+  plan: "free" | "pro" | "studio";
+  aiCreditsRemaining: number;
+  aiCreditsResetAt: number;
+  freeReelConsumed: number;
+  planExpiresAt: number;
+} | null> {
+  let row: any;
+  try {
+    row = (await db
+      .prepare(
+        `SELECT plan, ai_credits_remaining, ai_credits_reset_at,
+                free_reel_consumed, plan_expires_at
+         FROM users WHERE id = ? LIMIT 1`
+      )
+      .bind(userId)
+      .first()) as any;
+  } catch {
+    // A Worker deployed ahead of migration 006 must still be able to read the
+    // plan; only the expiry field is unknown, and 0 means "no expiry".
+    row = (await db
+      .prepare(
+        `SELECT plan, ai_credits_remaining, ai_credits_reset_at, free_reel_consumed
+         FROM users WHERE id = ? LIMIT 1`
+      )
+      .bind(userId)
+      .first()) as any;
+  }
+  if (!row) return null;
+  return {
+    plan: row.plan === "studio" || row.plan === "pro" ? row.plan : "free",
+    aiCreditsRemaining: Number(row.ai_credits_remaining ?? 0),
+    aiCreditsResetAt: Number(row.ai_credits_reset_at ?? 0),
+    freeReelConsumed: Number(row.free_reel_consumed ?? 0),
+    planExpiresAt: Number(row.plan_expires_at ?? 0),
+  };
+}
+
+/**
+ * 42d. Downgrade one user if their paid plan has lapsed.
+ *
+ * Returns true when a downgrade happened. `plan_expires_at = 0` is deliberate:
+ * it means "grandfathered / no expiry", never "expired long ago".
+ */
+export async function expirePlanForUserIfDue(
+  db: D1Database,
+  userId: string
+): Promise<boolean> {
+  const now = Math.floor(Date.now() / 1000);
+  let row: any;
+  try {
+    row = (await db
+      .prepare(
+        `SELECT plan, plan_expires_at FROM users WHERE id = ? LIMIT 1`
+      )
+      .bind(userId)
+      .first()) as any;
+  } catch {
+    // Pre-006 database: there is no expiry column, so nothing can be due.
+    return false;
+  }
+  if (!row) return false;
+  const plan = row.plan === "studio" || row.plan === "pro" ? row.plan : "free";
+  const expiresAt = Number(row.plan_expires_at ?? 0);
+  if (plan === "free" || expiresAt <= 0 || expiresAt > now) return false;
+
+  const limit = TIER_CREDIT_LIMITS.free;
+  const nextReset = now + 30 * 86400;
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE users
+            SET plan = 'free', ai_credits_remaining = ?, ai_credits_reset_at = ?,
+                plan_expires_at = 0
+          WHERE id = ?`
+      )
+      .bind(limit, nextReset, userId),
+    db
+      .prepare(
+        `UPDATE connected_accounts
+            SET plan = 'free', ai_credits_remaining = ?, ai_credits_reset_at = ?,
+                updated_at = ?
+          WHERE user_id = ?`
+      )
+      .bind(limit, nextReset, now, userId),
+  ]);
+  return true;
+}
+
+/** Cron entry point: downgrade up to `limit` lapsed plans per tick. */
+export async function expireDuePlans(
+  db: D1Database,
+  limit = 100
+): Promise<number> {
+  const now = Math.floor(Date.now() / 1000);
+  let due: Array<{ id: string }> = [];
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT id FROM users
+          WHERE plan != 'free' AND plan_expires_at > 0 AND plan_expires_at <= ?
+          ORDER BY plan_expires_at ASC
+          LIMIT ?`
+      )
+      .bind(now, limit)
+      .all();
+    due = (results || []) as Array<{ id: string }>;
+  } catch {
+    // A database that has not applied migration 006 yet keeps its plans; the
+    // next stage in cron still runs and the deploy is not stuck on this one.
+    return 0;
+  }
+
+  let expired = 0;
+  for (const row of due) {
+    if (await expirePlanForUserIfDue(db, row.id)) expired++;
+  }
+  return expired;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1968,10 +2627,11 @@ export async function deleteCampaign(
 export async function fanOutCampaignTargets(
   db: D1Database,
   campaignId: string,
-  accountId: AccountId
+  accountId: AccountId,
+  windowSeconds: number = META_MESSAGING_WINDOW_SECONDS
 ): Promise<{ total: number; reachable: number; unreachable: number }> {
   const now = Math.floor(Date.now() / 1000);
-  const windowStart = now - META_MESSAGING_WINDOW_SECONDS;
+  const windowStart = now - windowSeconds;
 
   const leads = (await db
     .prepare(`SELECT id, last_inbound_at, first_interaction_at FROM captured_leads WHERE account_id = ?`)
@@ -2052,12 +2712,13 @@ function mapCampaignTargetRow(row: any): CampaignTargetRow {
 export async function getSendableCampaignTargets(
   db: D1Database,
   campaignId: string,
-  limit: number
+  limit: number,
+  windowSeconds: number = META_MESSAGING_WINDOW_SECONDS
 ): Promise<
   Array<CampaignTargetRow & { instagramScopedId: string; username?: string; anchor: number }>
 > {
   const now = Math.floor(Date.now() / 1000);
-  const windowStart = now - META_MESSAGING_WINDOW_SECONDS;
+  const windowStart = now - windowSeconds;
   const { results } = await db
     .prepare(
       `SELECT ct.id, ct.campaign_id, ct.lead_id, ct.status, ct.failure_reason,

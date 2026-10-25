@@ -203,6 +203,9 @@ export function BioView() {
     const blocks = draft.blocks
       .filter((block) => block.label.trim())
       .map((block) => ({
+        // Existing server ids are echoed back so the backend can keep the
+        // block (and its lifetime click count) instead of replacing it.
+        id: block.key,
         label: block.label.trim(),
         targetUrl: block.targetUrl.trim(),
         productId: block.productId,

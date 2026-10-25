@@ -92,22 +92,16 @@ export const Button = React.forwardRef<
 
 /* ── Logo ───────────────────────────────────────────────────────────────── */
 
-/* The mark says what the product does: a comment, and an arrow leaving it. */
+/* Official RELO 3D ribbon play/loop mark */
 export function ReloMark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      <path d="M11.5 5.5H5.5A2.5 2.5 0 0 0 3 8v5a2.5 2.5 0 0 0 2.5 2.5H7v3.2L11 15.5h.5" />
-      <path d="M14.5 10.5h6.5m0 0-2.8-2.8m2.8 2.8-2.8 2.8" />
-    </svg>
+    <img
+      src="/assets/relo-mark.png"
+      alt="RELO"
+      className={cn("object-contain select-none shrink-0", className)}
+      loading="eager"
+      draggable={false}
+    />
   );
 }
 
@@ -126,24 +120,23 @@ export function Logo({
       onClick={onClick}
       aria-label="RELO, home"
       className={cn(
-        "group inline-flex w-fit select-none items-center gap-2.5 rounded-md",
+        "group inline-flex w-fit select-none items-center gap-2 rounded-md",
         "transition-colors duration-150 ease-out",
         className
       )}
     >
       <span
         className={cn(
-          "grid shrink-0 place-items-center rounded-[9px] ember-gradient text-brand-ink shadow-[0_6px_16px_-6px_var(--signal)]",
-          "transition-transform duration-300 ease-out group-hover:-rotate-6",
+          "grid shrink-0 place-items-center transition-transform duration-300 ease-out group-hover:scale-105",
           size === "md" ? "size-7" : "size-8"
         )}
       >
-        <ReloMark className={size === "md" ? "size-[17px]" : "size-5"} />
+        <ReloMark className={size === "md" ? "size-7" : "size-8"} />
       </span>
       <span
         className={cn(
-          "font-heading font-bold tracking-[-0.04em] text-ink",
-          size === "md" ? "text-[17px]" : "text-[19px]"
+          "font-heading font-extrabold tracking-[-0.04em] text-ink",
+          size === "md" ? "text-[18px]" : "text-[21px]"
         )}
       >
         RELO

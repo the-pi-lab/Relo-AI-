@@ -295,7 +295,7 @@ export interface LinkPageInput {
   bio?: string;
   theme: LinkTheme;
   isPublished: boolean;
-  blocks: Array<{ label: string; targetUrl: string; productId?: string }>;
+  blocks: Array<{ id?: string; label: string; targetUrl: string; productId?: string }>;
 }
 
 /* ── Content planning ─────────────────────────────────────────────────── */

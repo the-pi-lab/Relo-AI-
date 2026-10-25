@@ -11,6 +11,13 @@ import {
   getAndTrackShortLink,
   markLeadInbound,
   getProductById,
+  claimInboundMessage,
+  recordOutboundMessage,
+  isOutboundMessage,
+  isThreadPausedByHumanTakeover,
+  getLastAiReplyAt,
+  markAiReplySent,
+  expireDuePlans,
 } from "./db/queries";
 import { verifyMetaSignature, timingSafeEqualAsync, decryptSecret, getMasterKey } from "./crypto";
 import { parseWebhookEnvelope } from "./engine/parse";
@@ -24,9 +31,9 @@ import {
   aiEnabledForPlan,
   OWNER_HANDOFF_REPLY,
 } from "./engine/aiResponder";
-import { metaGraphClient } from "./meta/client";
+import { metaGraphClient, setMetaGraphVersion } from "./meta/client";
 import { handleApiRequest } from "./api/router";
-import { getPublishedLinkPage, getLinkPageBySlug } from "./db/linkPage";
+import { getPublishedLinkPage, getLinkPageBySlug, getAndTrackLinkBlock } from "./db/linkPage";
 import { renderLinkPageHtml } from "./api/linkPageHtml";
 import { createJobId } from "./types/ids";
 import type { ReelAutomation } from "./types";
@@ -75,6 +82,21 @@ function applySecurityHeaders(response: Response): Response {
   return response;
 }
 
+/**
+ * Runs one cron stage in isolation.
+ *
+ * The minute cron used to share a single try/catch, so one failing stage (say,
+ * a provider outage during token refresh) silently skipped every stage after it
+ * — including campaign delivery and retention. Each stage now fails alone.
+ */
+async function runCronStage(name: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    console.error(`[Cron:${name}] stage failed:`, error);
+  }
+}
+
 export default {
   /**
    * Main HTTP Request Router for Cloudflare Workers.
@@ -84,6 +106,7 @@ export default {
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     assertTenantPolicies();
+    setMetaGraphVersion(env.META_GRAPH_API_VERSION);
 
     const url = new URL(request.url);
 
@@ -166,12 +189,13 @@ export default {
       const token = url.searchParams.get("hub.verify_token") || "";
       const challenge = url.searchParams.get("hub.challenge");
 
-      const tokenMatches = await timingSafeEqualAsync(
-        token,
-        env.META_VERIFY_TOKEN || ""
-      );
+      // Fail closed: an unset verify token must never match an empty query
+      // parameter, otherwise anyone can complete the handshake.
+      const configuredToken = env.META_VERIFY_TOKEN || "";
+      const tokenMatches =
+        configuredToken.length > 0 && (await timingSafeEqualAsync(token, configuredToken));
       if (mode === "subscribe" && tokenMatches) {
-        return new Response(challenge, {
+        return new Response(challenge ?? "", {
           status: 200,
           headers: { "Content-Type": "text/plain" },
         });
@@ -258,6 +282,20 @@ export default {
       });
     }
 
+    // 5d. Link-in-bio block click redirect (counts the tap, then forwards)
+    if (method === "GET" && path.startsWith("/c/")) {
+      const blockId = path.slice(3).trim();
+      if (!/^[A-Za-z0-9-]{8,64}$/.test(blockId)) {
+        return new Response("Not Found", { status: 404 });
+      }
+      const block = await getAndTrackLinkBlock(env.DB, blockId);
+      if (!block) return new Response("Not Found", { status: 404 });
+      return new Response(null, {
+        status: 302,
+        headers: { Location: block.targetUrl, "Cache-Control": "no-store" },
+      });
+    }
+
     // 5c. Public link-in-bio page (plan.md §4.5 / Phase 2)
     //     Unauthenticated by design — this is the page you put in your bio.
     if (method === "GET" && (path.startsWith("/p/") || path.startsWith("/b/"))) {
@@ -266,11 +304,13 @@ export default {
       if (!/^[a-z0-9_-]{3,60}$/.test(key)) {
         return new Response("Not Found", { status: 404 });
       }
-      const page = prefix === "b"
-        ? (await getLinkPageBySlug(env.DB, key)
-            ? await getPublishedLinkPage(env.DB, (await getLinkPageBySlug(env.DB, key))!.id)
-            : null)
-        : await getPublishedLinkPage(env.DB, key);
+      let page: Awaited<ReturnType<typeof getPublishedLinkPage>> = null;
+      if (prefix === "b") {
+        const bySlug = await getLinkPageBySlug(env.DB, key);
+        page = bySlug ? await getPublishedLinkPage(env.DB, bySlug.id) : null;
+      } else {
+        page = await getPublishedLinkPage(env.DB, key);
+      }
       if (!page) return new Response("Not Found", { status: 404 });
 
       const origin = new URL(request.url).origin;
@@ -306,39 +346,59 @@ export default {
   ): Promise<void> {
     ctx.waitUntil(
       (async () => {
-        try {
-          // Reaper: jobs whose isolate died mid-dispatch are stuck in
-          // 'processing' forever — requeue anything past the 5-minute lease.
+        setMetaGraphVersion(env.META_GRAPH_API_VERSION);
+
+        // Reaper: jobs whose isolate died mid-dispatch are stuck in
+        // 'processing' forever — requeue anything past the 5-minute lease.
+        await runCronStage("requeue", async () => {
           const requeued = await requeueStaleProcessingJobs(env.DB, 300);
           if (requeued > 0) {
             console.warn(`[Cron Queue] Requeued ${requeued} stale 'processing' jobs.`);
           }
+        });
 
+        await runCronStage("jobs", async () => {
           const result = await processDueJobsBatch(env, { batchLimit: 50 });
           if (result.processedCount > 0) {
             console.log(
               `[Cron Queue] Processed ${result.processedCount} jobs: ${result.completedCount} completed, ${result.failedCount} failed, ${result.skippedCount} skipped.`
             );
           }
+        });
 
-          // Token upkeep: long-lived tokens last ~60 days and nothing else in
-          // the request path renews them, so expiring accounts are refreshed
-          // here (best effort — a rejected grant is surfaced as "reconnect
-          // needed" in Settings rather than retried in a loop).
+        // Token upkeep: long-lived tokens last ~60 days and nothing else in
+        // the request path renews them, so expiring accounts are refreshed
+        // here (best effort — a rejected grant is surfaced as "reconnect
+        // needed" in Settings rather than retried in a loop).
+        await runCronStage("tokens", async () => {
           const refreshed = await refreshExpiringTokens(env, { limit: 10 });
           if (refreshed.refreshed > 0 || refreshed.failed > 0) {
             console.log(
               `[Token Refresh] scanned ${refreshed.scanned}, renewed ${refreshed.refreshed}, failed ${refreshed.failed}.`
             );
           }
+        });
 
-          // Retention: purge old comment text, terminal jobs, and logs (plan.md §5)
+        // Retention: purge old comment text, terminal jobs, and logs (plan.md §5)
+        await runCronStage("retention", async () => {
           const purged = await purgeRetentionData(env.DB);
           if (purged.jobsDeleted > 0 || purged.logsDeleted > 0) {
             console.log(`[Retention] purged ${JSON.stringify(purged)}`);
           }
+        });
 
-          // Campaigns (plan.md §4.3): one batch per scheduled campaign per tick.
+        // Billing: a paid plan that lapsed goes back to Free. `plan_expires_at
+        // = 0` is grandfathered and is never touched. This stage is isolated
+        // so a pre-migration database cannot block campaign delivery.
+        await runCronStage("plans", async () => {
+          const expired = await expireDuePlans(env.DB, 100);
+          if (expired > 0) {
+            console.log(`[Billing] downgraded ${expired} lapsed plan(s).`);
+          }
+        });
+
+        // Campaigns (plan.md §4.3): one batch per scheduled campaign per tick.
+        await runCronStage("campaigns", async () => {
           const accountsWithCampaigns = (await env.DB
             .prepare(
               `SELECT DISTINCT account_id FROM campaigns
@@ -349,21 +409,19 @@ export default {
           const accountIds = (accountsWithCampaigns.results || []).map(
             (r) => r.account_id
           );
-          if (accountIds.length > 0) {
-            const sent = await processScheduledCampaigns(env, {
-              accounts: accountIds.map((accountId) => ({ accountId })),
-            });
-            for (const s of sent) {
-              if (s.sent > 0 || s.failed > 0) {
-                console.log(
-                  `[Campaigns] ${s.campaignId}: ${s.sent} sent, ${s.failed} failed.`
-                );
-              }
+          if (accountIds.length === 0) return;
+
+          const sent = await processScheduledCampaigns(env, {
+            accounts: accountIds.map((accountId) => ({ accountId })),
+          });
+          for (const s of sent) {
+            if (s.sent > 0 || s.failed > 0) {
+              console.log(
+                `[Campaigns] ${s.campaignId}: ${s.sent} sent, ${s.failed} failed.`
+              );
             }
           }
-        } catch (err) {
-          console.error("[Cron Queue Critical Error]", err);
-        }
+        });
       })()
     );
   },
@@ -462,52 +520,78 @@ async function handleCommentEvent(
   }
 }
 
+/**
+ * Minimum gap between two AI replies on the same thread.
+ *
+ * A lead who sends "hi", "is this available", and "how much" in one burst is
+ * one conversation, not three. The clock is per (account, thread), so unrelated
+ * conversations are never throttled by each other.
+ */
+const AI_REPLY_COOLDOWN_SECONDS = 120;
+
 async function handleMessageEvent(
   event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "message" }>,
   env: Env
 ): Promise<void> {
-  // Human Takeover Detection — pause automation for 30 minutes on the
-  // thread that actually maps to a job's commenterUserId:
-  //  - Creator manually replied (echo from the account): the conversation
-  //    partner is the message recipient.
-  //  - User sent the account a DM: the conversation partner is the sender.
+  const account = await getAccountByInstagramId(env.DB, event.accountId);
+  if (!account) return;
+
+  // Human Takeover Detection.
+  //
+  // An `is_echo` message is ambiguous: it is either our own outbound DM coming
+  // back through the webhook, or the creator replying by hand. Only the second
+  // is a takeover signal. `message_mids` is what tells them apart — every DM we
+  // send records its mid, so an echo that we did not send is genuinely human.
   if (event.isEcho) {
-    if (event.recipientId && event.recipientId !== event.accountId) {
-      const account = await getAccountByInstagramId(env.DB, event.accountId);
-      if (account) {
-        await setHumanTakeoverPause(env.DB, account.id, event.recipientId, 1800);
-      }
+    if (!event.recipientId || event.recipientId === event.accountId) return;
+
+    if (await isOutboundMessage(env.DB, event.mid)) {
+      return; // our own message, not a human takeover
     }
+
+    // Record the human reply too, so a redelivered echo cannot re-pause.
+    await recordOutboundMessage(env.DB, account.id, event.recipientId, event.mid);
+    await setHumanTakeoverPause(env.DB, account.id, event.recipientId, 1800);
     return;
   }
 
-  const account = await getAccountByInstagramId(env.DB, event.accountId);
-  if (account) {
-    await setHumanTakeoverPause(env.DB, account.id, event.senderId, 1800);
-    // Anchor the 24h window + follow-up gate: this lead spoke last
-    await markLeadInbound(
+  // Meta retries webhooks. The mid ledger makes inbound processing
+  // exactly-once, so one DM cannot produce two AI replies.
+  if (event.mid) {
+    const firstDelivery = await claimInboundMessage(
       env.DB,
       account.id,
-      event.senderId as Parameters<typeof markLeadInbound>[2]
+      event.senderId,
+      event.mid
     );
-
-    // AI product-Q&A (plan.md §4.4). Wrapped so a failure here can never drop
-    // the webhook — the lead anchor above has already been written.
-    await handleAiProductQA(event, account, env).catch((err) => {
-      console.warn("[AI product-Q&A] skipped:", err);
-    });
+    if (!firstDelivery) return;
   }
+
+  // An inbound DM is NOT a takeover: the lead talking to us is the normal
+  // case. Setting a pause here used to suppress the very reply we wanted to
+  // send (and blocked the job queue on that thread for 30 minutes).
+  await markLeadInbound(
+    env.DB,
+    account.id,
+    event.senderId as Parameters<typeof markLeadInbound>[2]
+  );
+
+  // AI product-Q&A (plan.md §4.4). Wrapped so a failure here can never drop
+  // the webhook — the lead anchor above has already been written.
+  await handleAiProductQA(event, account, env).catch((err) => {
+    console.warn("[AI product-Q&A] skipped:", err);
+  });
 }
 
 /**
  * Answers an inbound DM from the account's own product catalog, or hands off.
  *
- * The human-takeover pause written just above is set for 30 minutes on every
- * inbound message, which would silently suppress the AI on the very thread we
- * want it to answer. That is correct for a human who has taken over, but it
- * would make the AI unreachable, so the pause is treated as a gate only when
- * the sender is genuinely frustrated — which is exactly what `decideAiReply`
- * decides.
+ * Two gates sit in front of the model:
+ *   - an active human takeover (the creator is handling this thread), and
+ *   - the per-thread cooldown, so a burst of messages gets one answer.
+ *
+ * Every message it sends is recorded in `message_mids`, which is what keeps the
+ * webhook echo from looking like a human takeover later.
  */
 async function handleAiProductQA(
   event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "message" }>,
@@ -518,6 +602,12 @@ async function handleAiProductQA(
   if (!text || text.length > 1000) return;
   if (!aiEnabledForPlan(account.plan)) return;
 
+  if (await isThreadPausedByHumanTakeover(env.DB, account.id, event.senderId)) return;
+
+  const lastAiReplyAt = await getLastAiReplyAt(env.DB, account.id, event.senderId);
+  const now = Math.floor(Date.now() / 1000);
+  if (lastAiReplyAt > 0 && now - lastAiReplyAt < AI_REPLY_COOLDOWN_SECONDS) return;
+
   const decision = await decideAiReply(text, {
     db: env.DB,
     env,
@@ -525,36 +615,44 @@ async function handleAiProductQA(
     plan: account.plan,
   });
 
-  // Frustrated thread: keep the pause the webhook just set and get out of the way.
-  if (decision.action === "silence") return;
-
-  if (decision.action === "handoff") {
-    await metaGraphClient.sendDirectMessage(
-      await decryptSecret(account.accessTokenEncrypted, getMasterKey(env)),
-      event.senderId,
-      { text: OWNER_HANDOFF_REPLY }
-    );
+  // Frustrated thread: stay out of the way for 30 minutes and let a human take
+  // it. This is the one place the AI itself sets the takeover pause — inbound
+  // DMs no longer pause the thread, so the intent has to be honoured here.
+  if (decision.action === "silence") {
+    if (decision.reason === "frustrated_thread") {
+      await setHumanTakeoverPause(env.DB, account.id, event.senderId, 1800);
+    }
     return;
   }
 
   const token = await decryptSecret(account.accessTokenEncrypted, getMasterKey(env));
+
+  const deliver = async (payload: { text?: string; attachment?: unknown }) => {
+    const res = await metaGraphClient.sendDirectMessage(token, event.senderId, payload);
+    await recordOutboundMessage(env.DB, account.id, event.senderId, res.message_id);
+    await markAiReplySent(env.DB, account.id, event.senderId);
+  };
+
+  if (decision.action === "handoff") {
+    await deliver({ text: OWNER_HANDOFF_REPLY });
+    return;
+  }
+
   if (decision.intent === "buying_intent" && decision.productId) {
     const product = await getProductById(env.DB, decision.productId, account.id);
     if (product) {
       const { card } = buildProductCardReply(product, env.PUBLIC_BASE_URL || "");
       if (card.buttons.length > 0) {
-        await metaGraphClient.sendDirectMessage(token, event.senderId, {
+        await deliver({
           attachment: {
             type: "template",
             payload: { template_type: "generic", elements: [card] },
           },
-        } as any);
+        });
         return;
       }
     }
   }
 
-  await metaGraphClient.sendDirectMessage(token, event.senderId, {
-    text: decision.replyText || OWNER_HANDOFF_REPLY,
-  });
+  await deliver({ text: decision.replyText || OWNER_HANDOFF_REPLY });
 }

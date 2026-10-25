@@ -8,14 +8,14 @@
  * value is written to <html data-theme="light|dark">, which is the single
  * switch every colour token in globals.css keys off.
  *
- * Dark ("Tide at night") is the default for visitors with no stored choice:
- * the product's design system is dark-first, while light ("Daylight Tide")
- * remains a first-class, fully supported alternate.
+ * Dark ("Tide at night") and light ("Daylight Tide") are both first-class.
+ * With no stored choice the page starts light, matching the pre-paint script in
+ * app/layout.tsx; "system" explicitly follows the OS instead.
  *
  * The inline script in app/layout.tsx runs before first paint and sets the
  * same attribute, so there is no flash and no server/client disagreement:
- * this provider's first render is always the dark default on both sides,
- * and it corrects itself in an effect once the browser is available.
+ * this provider's first render is always light on both sides, and it corrects
+ * itself in an effect once the browser is available.
  */
 
 import {
@@ -49,14 +49,14 @@ const ThemeCtx = createContext<{
 
 function systemTheme(): Theme {
   if (typeof window === "undefined") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function readChoice(): ThemeChoice {
   if (typeof window === "undefined") return "light";
   try {
     const v = window.localStorage.getItem(THEME_KEY);
-    return v === "light" || v === "light" || v === "system" ? v : "light";
+    return v === "light" || v === "dark" || v === "system" ? v : "light";
   } catch {
     return "light";
   }

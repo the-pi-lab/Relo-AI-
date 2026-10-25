@@ -14,7 +14,10 @@ import {
   recordWebhookAuditLog,
   insertFollowUpJob,
   hasLeadRepliedSince,
+  getLeadMessagingAnchor,
+  META_MESSAGING_WINDOW_SECONDS,
   getShortLinksForAutomation,
+  recordOutboundMessage,
 } from "../db/queries";
 import { createAutomationId, createCommentId, createJobId } from "../types/ids";
 import { decryptSecret } from "../crypto";
@@ -100,6 +103,20 @@ export async function processDueJobsBatch(
           result.skippedCount++;
           continue;
         }
+
+        // A follow-up is a standard DM (recipient.id), which Meta only allows
+        // while the 24-hour window is open. If it has closed, do not call the
+        // Graph API at all — record the skip instead of burning retries.
+        const anchor = await getLeadMessagingAnchor(
+          env.DB,
+          job.accountId,
+          job.commenterUserId
+        );
+        if (anchor <= 0 || anchor + META_MESSAGING_WINDOW_SECONDS < Math.floor(Date.now() / 1000)) {
+          await markJobCompleted(env.DB, job.id, "SKIPPED_WINDOW_CLOSED");
+          result.skippedCount++;
+          continue;
+        }
       }
 
       // 3. Fetch connected Instagram account
@@ -132,7 +149,12 @@ export async function processDueJobsBatch(
       // Skip when a previous attempt already posted it — re-dispatching would
       // create visible duplicate comments and spam-flag the account.
       let publicReplyId: string | undefined = job.publicReplyId;
-      if (!publicReplyId && automation.commentReplies && automation.commentReplies.length > 0) {
+      if (
+        !job.isFollowUp &&
+        !publicReplyId &&
+        automation.commentReplies &&
+        automation.commentReplies.length > 0
+      ) {
         try {
           const selectedReply = pickCommentReply(automation.commentReplies);
           const spunCommentText = spin(selectedReply).replace(
@@ -162,6 +184,11 @@ export async function processDueJobsBatch(
       }
 
       // 8. Construct & Dispatch Private Reply (Direct Message)
+      // A private reply targets the comment; a follow-up is a normal DM to the
+      // lead's IGSID inside the 24h window.
+      const recipient = job.isFollowUp
+        ? { id: job.commenterUserId }
+        : { comment_id: job.commentId };
       let dmPayload: OutgoingMessagePayload;
 
       if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
@@ -192,7 +219,7 @@ export async function processDueJobsBatch(
         const finalButtons = buttons.slice(0, 3) as typeof automation.templateCard.buttons;
 
         dmPayload = {
-          recipient: { comment_id: job.commentId },
+          recipient,
           message: {
             attachment: {
               type: "template",
@@ -213,7 +240,7 @@ export async function processDueJobsBatch(
       } else {
         // Fallback plain-text DM
         dmPayload = {
-          recipient: { comment_id: job.commentId },
+          recipient,
           message: {
             text: `Hey @${job.commenterUsername}! Here is your requested link! Check it out.`,
           },
@@ -221,6 +248,15 @@ export async function processDueJobsBatch(
       }
 
       const dmResponse = await metaGraphClient.sendPrivateReply(decryptedToken, dmPayload);
+
+      // Record the mid so the echo Meta sends back is recognized as our own
+      // message instead of being mistaken for the creator taking over.
+      await recordOutboundMessage(
+        env.DB,
+        job.accountId,
+        job.commenterUserId,
+        dmResponse.message_id
+      );
 
       // 9. Upsert Lead into Captured Leads Database.
       // Follower status is deliberately unknown: Meta exposes no follower
@@ -243,7 +279,6 @@ export async function processDueJobsBatch(
         await insertFollowUpJob(env.DB, {
           id: createJobId(crypto.randomUUID()),
           accountId: job.accountId,
-          commentId: job.commentId,
           commenterUserId: job.commenterUserId,
           commenterUsername: job.commenterUsername,
           postId: job.postId,

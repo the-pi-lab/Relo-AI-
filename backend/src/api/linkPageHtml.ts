@@ -8,8 +8,8 @@ import type { LinkPage, LinkBlock } from "../db/linkPage";
  * the dashboard bundle. All styling is inline — no external CSS, no fonts to
  * block first paint on a phone.
  *
- * Clicks go through /l/:id so they land in the same Sent → Clicked funnel the
- * DM buttons already feed.
+ * Clicks go through /c/:blockId on this same Worker, which counts the tap and
+ * then redirects to the creator's target URL.
  */
 
 const THEMES: Record<string, { bg: string; card: string; text: string; muted: string; ring: string }> = {
@@ -48,10 +48,10 @@ export function renderLinkPageHtml(
 
   const links = page.blocks
     .map((block) => {
-      const href = block.shortLinkId
-        ? `${origin}/l/${block.shortLinkId}`
-        : safeUrl(block.targetUrl);
-      if (!href) return "";
+      // Blocks always carry a server id and a validated http(s) target; the
+      // safeUrl check is a last line of defence if a row was written by hand.
+      if (!block.id || !safeUrl(block.targetUrl)) return "";
+      const href = `${origin}/c/${encodeURIComponent(block.id)}`;
       return `<a class="btn" href="${href}" rel="noopener nofollow">${esc(block.label)}</a>`;
     })
     .filter(Boolean)
@@ -82,7 +82,7 @@ export function renderLinkPageHtml(
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:type" content="profile">
-<link rel="canonical" href="${origin}/p/${esc(page.id)}">
+<link rel="canonical" href="${origin}${page.slug ? `/b/${esc(page.slug)}` : `/p/${esc(page.id)}`}">
 <script type="application/ld+json">${jsonLd}</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; }

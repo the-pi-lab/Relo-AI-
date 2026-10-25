@@ -10,7 +10,38 @@ CREATE TABLE IF NOT EXISTS users (
   created_at INTEGER DEFAULT (unixepoch()),
   -- Server-side admin flag. Admin access is never inferred from the UI or from
   -- a client-supplied claim; every /api/admin/* request re-reads this row.
-  is_admin INTEGER NOT NULL DEFAULT 0
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  -- Subscription lives on the USER, not on a connected Instagram account:
+  -- disconnecting (or reconnecting) an account must never reset a paid plan,
+  -- its credits, or the free-tier lifetime slot.
+  plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free', 'pro', 'studio')),
+  ai_credits_remaining INTEGER NOT NULL DEFAULT 3,
+  ai_credits_reset_at INTEGER NOT NULL DEFAULT 0,
+  free_reel_consumed INTEGER NOT NULL DEFAULT 0,
+  -- Unix timestamp at which a paid plan lapses. 0 means "no expiry recorded"
+  -- (comped/manual/grandfathered plan) and is never auto-downgraded by cron.
+  plan_expires_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- 1b. Server-side session ledger (JWT revocation).
+-- A JWT alone is valid until it expires; this table is what lets logout and
+-- "sign out everywhere" actually revoke one. `jti` is the token's unique id.
+CREATE TABLE IF NOT EXISTS sessions (
+  jti TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+-- 1c. Which SQL migration files have been applied. The runner in
+-- scripts/migrate.mjs reads this; fresh installs get it for free.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version TEXT PRIMARY KEY,
+  applied_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- 2. Connected Instagram Accounts (100% Meta Graph API v21.0 Compliant)
@@ -20,8 +51,15 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
   instagram_user_id TEXT UNIQUE NOT NULL,
   username TEXT NOT NULL,
   profile_picture_url TEXT,
-  access_token_encrypted TEXT NOT NULL, -- AES-GCM encrypted
+  access_token_encrypted TEXT NOT NULL, -- AES-GCM encrypted (page token)
   token_expires_at INTEGER NOT NULL, -- Unix timestamp (60 days)
+  -- Long-lived USER token, AES-GCM encrypted. The page token above is derived
+  -- from this one and cannot be renewed on its own: Meta's
+  -- `grant_type=fb_exchange_token` only accepts a user token. Kept so the cron
+  -- refresher can extend the user token and re-derive the page token instead of
+  -- sending an invalid exchange.
+  user_token_encrypted TEXT,
+  user_token_expires_at INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER DEFAULT 1,
   created_at INTEGER DEFAULT (unixepoch()),
   updated_at INTEGER DEFAULT (unixepoch()),
@@ -66,7 +104,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   commenter_username TEXT NOT NULL,
   comment_text TEXT NOT NULL,
   post_id TEXT NOT NULL,
-  matched_automation_id TEXT REFERENCES reel_automations(id),
+  matched_automation_id TEXT REFERENCES reel_automations(id) ON DELETE SET NULL,
   status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
   retry_count INTEGER DEFAULT 0,
   send_at INTEGER NOT NULL, -- Unix timestamp (now + 30-90s human anti-spam jitter)
@@ -110,6 +148,33 @@ CREATE TABLE IF NOT EXISTS human_takeovers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_takeover_lookup ON human_takeovers(account_id, thread_id, paused_until);
+-- One pause per thread. Without this, every inbound DM inserted another row and
+-- the table grew without bound. Writes now upsert on (account_id, thread_id).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_takeover_thread ON human_takeovers(account_id, thread_id);
+
+-- 6b. Message-id ledger. Meta retries webhooks, so an inbound message must be
+-- processed exactly once; and an `is_echo` message must only count as a human
+-- takeover when it is NOT one we sent ourselves.
+CREATE TABLE IF NOT EXISTS message_mids (
+  mid TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES connected_accounts(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK(direction IN ('in', 'out')),
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_mids_thread ON message_mids(account_id, thread_id, created_at DESC);
+
+-- 6c. Per-thread AI reply clock. The AI answers a conversation, not every
+-- individual message: consecutive DMs from one lead would otherwise produce a
+-- burst of bot replies. Also records the last inbound mid it acted on.
+CREATE TABLE IF NOT EXISTS ai_thread_state (
+  account_id TEXT NOT NULL REFERENCES connected_accounts(id) ON DELETE CASCADE,
+  thread_id TEXT NOT NULL,
+  last_ai_reply_at INTEGER NOT NULL DEFAULT 0,
+  last_inbound_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, thread_id)
+);
 
 -- 7. Webhook Audit & Delivery Logs
 CREATE TABLE IF NOT EXISTS webhook_logs (
@@ -123,6 +188,21 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_account ON webhook_logs(account_id, created_at DESC);
+
+-- 7b. Agency / custom-plan enquiries. Deliberately NOT stored in webhook_logs:
+-- that table is pruned after 7 days, which silently deleted sales leads before
+-- anyone followed up. This table is never touched by the retention purge.
+CREATE TABLE IF NOT EXISTS agency_enquiries (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  account_count INTEGER NOT NULL DEFAULT 0,
+  plan_interest TEXT NOT NULL DEFAULT 'custom',
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new', 'contacted', 'closed')),
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_agency_enquiries_created ON agency_enquiries(created_at DESC);
 
 
 -- 9. Short Links (Sent → Clicked tracking, plan.md §4.5)
@@ -171,7 +251,9 @@ CREATE INDEX IF NOT EXISTS idx_credit_ledger_account ON credit_ledger(account_id
 -- 11. Payments (Lemon Squeezy + manual UPI, plan.md §3)
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
-  account_id TEXT NOT NULL REFERENCES connected_accounts(id) ON DELETE CASCADE,
+  -- Kept for attribution and legacy rows; user_id is the durable owner.
+  account_id TEXT REFERENCES connected_accounts(id) ON DELETE SET NULL,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
   provider TEXT NOT NULL CHECK(provider IN ('lemon_squeezy', 'manual_upi')),
   external_ref TEXT, -- LS order id (when applicable)
   utr TEXT, -- UPI transaction reference (manual India flow)
@@ -183,6 +265,13 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_account ON payments(account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at DESC);
+-- One UPI reference can only ever be claimed once (race-safe at the DB level).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_utr ON payments(utr) WHERE utr IS NOT NULL;
+-- One provider order can only ever be activated once. Lemon Squeezy retries
+-- webhooks aggressively; this is what makes the handler idempotent at the DB.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_external_ref
+  ON payments(provider, external_ref) WHERE external_ref IS NOT NULL;
 
 -- 12. Campaigns (plan.md §4.3 / Phase 3) — Pro/Studio only
 -- A campaign re-engages every captured commenter of one reel, but ONLY those
@@ -314,7 +403,9 @@ CREATE INDEX IF NOT EXISTS idx_content_plans_account ON content_plans(account_id
 -- 8. Passwordless Email OTP Authentication (brute-force hardened)
 CREATE TABLE IF NOT EXISTS email_otps (
   email TEXT PRIMARY KEY,
-  code TEXT NOT NULL,
+  -- HMAC-SHA256(code, OTP_PEPPER), hex. Never the plaintext code: a leaked D1
+  -- snapshot must not hand an attacker a live login credential.
+  code_hash TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   created_at INTEGER DEFAULT (unixepoch()),
   attempts INTEGER NOT NULL DEFAULT 0, -- Failed verification attempts (5 = lockout)

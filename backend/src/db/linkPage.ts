@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
 import type { AccountId } from "../types/ids";
 import { createAccountId } from "../types/ids";
 
@@ -156,31 +156,71 @@ export async function replaceLinkBlocks(
   blocks: Array<{ id: string; shortLinkId?: string; productId?: string; targetUrl: string; label: string }>
 ): Promise<LinkBlock[]> {
   // Full replace keeps ordering simple; the block count is capped by the router
-  // so this is never a hot path.
-  await db.prepare(`DELETE FROM link_blocks WHERE page_id = ?`).bind(pageId).run();
+  // so this is never a hot path. Click counts are carried over for blocks whose
+  // id survived the save — losing them on every edit would silently reset the
+  // creator's only click history.
+  const previous = await getLinkBlocks(db, pageId);
+  const clicksById = new Map(previous.map((block) => [block.id, block.clickCount]));
+
+  const statements: D1PreparedStatement[] = [
+    db.prepare(`DELETE FROM link_blocks WHERE page_id = ?`).bind(pageId),
+  ];
 
   let position = 0;
   for (const block of blocks) {
-    await db
-      .prepare(
-        `INSERT INTO link_blocks
-           (id, page_id, short_link_id, product_id, target_url, label, position, click_count, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)`
-      )
-      .bind(
-        block.id,
-        pageId,
-        block.shortLinkId ?? null,
-        block.productId ?? null,
-        block.targetUrl,
-        block.label,
-        position++
-      )
-      .run();
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO link_blocks
+             (id, page_id, short_link_id, product_id, target_url, label, position, click_count, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+        )
+        .bind(
+          block.id,
+          pageId,
+          block.shortLinkId ?? null,
+          block.productId ?? null,
+          block.targetUrl,
+          block.label,
+          position++,
+          clicksById.get(block.id) ?? 0
+        )
+    );
   }
 
-  await db.prepare(`UPDATE link_pages SET updated_at = unixepoch() WHERE id = ?`).bind(pageId).run();
+  statements.push(
+    db.prepare(`UPDATE link_pages SET updated_at = unixepoch() WHERE id = ?`).bind(pageId)
+  );
+
+  await db.batch(statements);
   return getLinkBlocks(db, pageId);
+}
+
+/**
+ * Public click endpoint for a block. Clicks increment the block's own counter
+ * (not a short_links row — that table is scoped to automations) and then
+ * redirect to the creator's target URL.
+ */
+export async function getAndTrackLinkBlock(
+  db: D1Database,
+  blockId: string
+): Promise<{ targetUrl: string } | null> {
+  const row = (await db
+    .prepare(
+      `SELECT b.target_url
+         FROM link_blocks b
+         JOIN link_pages p ON p.id = b.page_id
+        WHERE b.id = ? AND b.is_active = 1 AND p.is_published = 1
+        LIMIT 1`
+    )
+    .bind(blockId)
+    .first()) as any;
+  if (!row) return null;
+  await db
+    .prepare(`UPDATE link_blocks SET click_count = click_count + 1 WHERE id = ?`)
+    .bind(blockId)
+    .run();
+  return { targetUrl: row.target_url };
 }
 
 /**

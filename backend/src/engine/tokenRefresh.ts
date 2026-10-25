@@ -59,11 +59,28 @@ export async function refreshExpiringTokens(
 
   for (const account of accounts) {
     try {
-      const pageToken = await decryptSecret(account.accessTokenEncrypted, masterKey);
+      // A page token cannot be renewed: Meta's `fb_exchange_token` grant only
+      // accepts a USER token. Refresh the user token first, then re-derive the
+      // page token from /me/accounts. Rows connected before that token was
+      // stored cannot be refreshed — sending the page token would be a
+      // guaranteed 400, so they are flagged for a reconnect instead.
+      if (!account.userTokenEncrypted) {
+        result.failed++;
+        await recordWebhookAuditLog(env.DB, {
+          accountId: account.id,
+          eventType: "token_refresh_attempt",
+          statusCode: 409,
+          errorMessage:
+            "No long-lived user token on file; the creator must reconnect this account.",
+        });
+        continue;
+      }
+
+      const userToken = await decryptSecret(account.userTokenEncrypted, masterKey);
       const renewed = await metaGraphClient.exchangeForLongLivedToken(
         env.META_APP_ID,
         env.META_APP_SECRET,
-        pageToken
+        userToken
       );
 
       if (!renewed.access_token) {
@@ -71,15 +88,35 @@ export async function refreshExpiringTokens(
       }
 
       const lifetime = Number(renewed.expires_in) || DEFAULT_TOKEN_LIFETIME_SECONDS;
-      const encrypted = await encryptSecret(renewed.access_token, masterKey);
-      await updateAccountToken(env.DB, account.id, encrypted, now + lifetime);
+      const expiresAt = now + lifetime;
+
+      // The fresh user token is re-exchanged into a fresh page token. Matching
+      // on the Instagram account id keeps multi-page grants honest.
+      const pages = await metaGraphClient.getConnectedAccounts(renewed.access_token);
+      const page = pages.find((p) => p.instagramAccountId === account.instagramUserId);
+      if (!page) {
+        throw new Error(
+          "The refreshed token no longer grants access to this Instagram account. Reconnect required."
+        );
+      }
+
+      const encryptedPage = await encryptSecret(page.pageAccessToken, masterKey);
+      const encryptedUser = await encryptSecret(renewed.access_token, masterKey);
+      await updateAccountToken(
+        env.DB,
+        account.id,
+        encryptedPage,
+        expiresAt,
+        encryptedUser,
+        expiresAt
+      );
       result.refreshed++;
 
       await recordWebhookAuditLog(env.DB, {
         accountId: account.id,
         eventType: "token_refresh_attempt",
         statusCode: 200,
-        payload: JSON.stringify({ expiresAt: now + lifetime, lifetime }),
+        payload: JSON.stringify({ expiresAt, lifetime }),
       });
     } catch (err) {
       result.failed++;

@@ -21,6 +21,9 @@ REQUIRE_CAPTCHA = "0"
 
 # Secrets — set with `wrangler secret put <NAME>`, never in this file:
 #   JWT_SECRET                 256-bit random string (required; the API fails closed without it)
+#   OTP_PEPPER                 256-bit random string for hashing login codes
+#                              (falls back to JWT_SECRET; a dedicated value is preferred)
+#   META_HUMAN_AGENT_APPROVED  set to "1" only after Meta approves the HUMAN_AGENT tag
 #   ENCRYPTION_MASTER_KEY      64 hex chars (AES-256-GCM vault key)
 #   META_APP_ID / META_APP_SECRET
 #   META_VERIFY_TOKEN
@@ -29,6 +32,10 @@ REQUIRE_CAPTCHA = "0"
 #   ADMIN_EMAILS               comma-separated admin emails
 #   TURNSTILE_SECRET_KEY       Cloudflare Turnstile secret
 #   MANUAL_UPI_ID / LEMON_SQUEEZY_CHECKOUT_URL
+#   LEMON_SQUEEZY_WEBHOOK_SECRET  Lemon Squeezy signing secret (POST /api/billing/lemonsqueezy)
+#   LEMON_SQUEEZY_PRO_VARIANT_ID / LEMON_SQUEEZY_STUDIO_VARIANT_ID
+#                              variant ids that map a purchase to Pro/Studio
+#   META_GRAPH_API_VERSION     optional override; defaults to the var above (v21.0)
 
 [[d1_databases]]
 binding = "DB"

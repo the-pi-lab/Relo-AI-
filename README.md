@@ -10,12 +10,12 @@ One product, one runtime: a **Cloudflare Workers edge engine** backed by **D1 (S
 
 ```
 ┌────────────────────────────┐
-│  React 19 + Vite SPA       │  Landing · Login (OTP) · Creator Studio
-│  (Vercel)                  │
+│  Next.js 16 + React 19     │  Landing · Login (OTP) · Creator Studio
+│  src/app  (Vercel)         │
 └─────────────┬──────────────┘
-              │ REST /api/*  (Bearer JWT)
+              │ REST /api/*  (Bearer JWT, revocable session)
 ┌─────────────▼──────────────┐
-│  Cloudflare Worker Engine  │  Auth · OAuth · Automations · Leads · Telemetry
+│  Cloudflare Worker Engine  │  Auth · OAuth · Automations · Leads · Billing
 │  backend/  (Workers + D1)  │
 └───────┬───────────┬────────┘
         │           │
@@ -35,8 +35,10 @@ One product, one runtime: a **Cloudflare Workers edge engine** backed by **D1 (S
 
 | Path | What it is |
 |---|---|
-| `src/` | React 19 SPA — landing, login, Creator Studio dashboard |
+| `src/app/` | Next.js App Router — landing, login, Creator Studio dashboard |
+| `src/components/`, `src/lib/` | UI system, RELO design tokens, API client |
 | `backend/` | Cloudflare Workers engine (TypeScript, D1, cron queue) |
+| `backend/migrations/` | Ordered, idempotent SQL upgrades (`npm run migrate`) |
 | `design-system/` | Brand & design tokens |
 | `docs/archive/` | Superseded planning documents |
 
@@ -44,10 +46,14 @@ One product, one runtime: a **Cloudflare Workers edge engine** backed by **D1 (S
 
 ## Security model
 
-- **Auth**: passwordless email OTP (6 digits, 10-minute expiry, 5-attempt lockout, 60-second resend throttle, per-IP rate limits) → HS256 JWT (7 days, mandatory `exp`, `alg` pinned).
-- **Authorization**: every account-scoped route passes through an ownership gate (`getOwnedAccount`) — cross-tenant access is structurally impossible.
+- **Auth**: passwordless email OTP (6 digits, 10-minute expiry, 5-attempt lockout, 60-second resend throttle, per-IP rate limits), stored as an HMAC hash rather than plaintext → HS256 JWT (7 days, mandatory `exp`, `alg` pinned, unique `jti`).
+- **Revocation**: every token needs a live `sessions` row. `POST /api/auth/logout` revokes one session; `/api/auth/logout-all` revokes every session for the user.
+- **Authorization**: every account-scoped route passes through an ownership gate (`getOwnedAccount`) — cross-tenant access is structurally impossible. Admin routes re-read `users.is_admin` server-side.
 - **Token vault**: Instagram page tokens encrypted with AES-256-GCM (HKDF-derived key, random IV per encryption, versioned envelopes for rotation). The master key is hard-required — no fallback to the JWT secret.
-- **Webhooks**: HMAC-SHA256 signature verification over the raw body with constant-time comparison; per-event fault isolation.
+- **Webhooks**: Meta and Lemon Squeezy signatures are HMAC-SHA256 verified over the raw body with constant-time comparison; per-event fault isolation.
+- **Billing**: plans live on the user, Lemon Squeezy orders activate exactly once (unique provider reference), and expired plans downgrade on cron. The client never grants a plan.
+- **Disconnect**: disconnecting an account is a soft delete — history survives, credentials are wiped, the plan slot is freed.
+- **AI**: replies are grounded in the creator's catalog, prices are audited against it, and customer text is passed as untrusted data. On any doubt the bot hands off to the creator instead of guessing.
 - **OAuth**: server-side code→token→long-lived-token exchange; Instagram bindings can never be stolen by a later connect.
 
 See `RELO_AI_COMPLETE_ARCHITECTURE_AND_SPECIFICATION.md` for the full system design.
@@ -57,18 +63,21 @@ See `RELO_AI_COMPLETE_ARCHITECTURE_AND_SPECIFICATION.md` for the full system des
 ## Development
 
 ```bash
-# Frontend
+# Frontend (Next.js)
 npm install
-npm run dev          # Vite dev server
-npm run build        # typecheck + production build
+npm run dev          # next dev on :3000
+npm run build        # production build
+npm run lint
 npm run test         # frontend unit tests
 
 # Engine
 cd backend
 npm install
 npm run typecheck    # tsc --noEmit
-npm test             # phases 3/4/5 + e2e integration (in-memory D1)
+npm test             # phases 3–14 + e2e (in-memory D1)
 npm run dev          # wrangler dev (local D1 + cron)
+npm run migrate:dry  # show pending SQL migrations
+npm run migrate      # apply pending migrations to remote D1
 ```
 
 ## Deployment

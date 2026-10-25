@@ -203,3 +203,49 @@ export function getMasterKey(env: { ENCRYPTION_MASTER_KEY?: string }): string {
   }
   return key;
 }
+
+/**
+ * Pepper used to hash login OTPs.
+ *
+ * A 6-digit code has only 900,000 possible values, so a plain hash is
+ * reversible in milliseconds. The pepper is what makes a stolen D1 snapshot
+ * useless: without it the stored digests cannot be matched to codes.
+ *
+ * `OTP_PEPPER` is preferred; `JWT_SECRET` is the fallback for deployments that
+ * have not set it yet. Both are required to be non-empty — a missing pepper
+ * fails closed rather than hashing with `undefined`.
+ */
+export function getOtpPepper(env: {
+  OTP_PEPPER?: string;
+  JWT_SECRET?: string;
+}): string {
+  const pepper = env.OTP_PEPPER || env.JWT_SECRET;
+  if (!pepper || pepper.trim().length === 0) {
+    throw new Error(
+      "[Auth] OTP_PEPPER (or JWT_SECRET) is not configured. Refusing to hash or verify login codes."
+    );
+  }
+  return pepper;
+}
+
+/**
+ * HMAC-SHA256(code, pepper) as lowercase hex.
+ *
+ * Used for at-rest storage of email OTPs. Never compare the raw code against a
+ * stored value; both sides go through this function so the comparison is over
+ * fixed-length digests.
+ */
+export async function hashOtp(code: string, pepper: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(pepper),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(code.trim()));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}

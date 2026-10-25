@@ -35,6 +35,11 @@ function createMockD1(sqlite: DatabaseSync): D1Database {
         },
       } as any;
     },
+    async batch(stmts: any[]) {
+      const results: any[] = [];
+      for (const stmt of stmts) results.push(await stmt.run());
+      return results;
+    },
   } as unknown as D1Database;
 }
 
@@ -169,6 +174,11 @@ async function runTests() {
       Math.floor(Date.now() / 1000),
       Math.floor(Date.now() / 1000)
     );
+  // Subscription is user-scoped now; the account row alone no longer decides
+  // the tier.
+  sqlite
+    .prepare(`UPDATE users SET plan = 'pro', ai_credits_remaining = 500 WHERE id = ?`)
+    .run(userProfile.id);
 
   // List accounts
   const listAccRes = await worker.fetch(

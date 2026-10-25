@@ -46,6 +46,11 @@ function createMockD1(sqlite: DatabaseSync): D1Database {
         },
       } as any;
     },
+    async batch(stmts: any[]) {
+      const results: any[] = [];
+      for (const stmt of stmts) results.push(await stmt.run());
+      return results;
+    },
   } as unknown as D1Database;
 }
 

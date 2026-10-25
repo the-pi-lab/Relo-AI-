@@ -30,6 +30,21 @@ Copy the `database_id` UUID from the output into `backend/wrangler.toml`, then a
 npx wrangler d1 execute relo-d1 --remote --file=./schema.sql
 ```
 
+**Already have a database?** Do not re-run `schema.sql`. The migration runner applies every file in order exactly once and records it in `schema_migrations`:
+
+```bash
+cd backend
+npm run migrate:dry     # show what is pending (no writes)
+npm run migrate         # apply to remote D1
+npm run migrate:local   # apply to the local wrangler database
+```
+
+The runner also detects a database that was created from `schema.sql` and baselines the ledger instead of replaying backfills. If you prefer to run files by hand, apply `migrations/001` … `007` in filename order with `wrangler d1 execute relo-d1 --remote --file=…`.
+
+Migration 005 clears `email_otps` (legacy plaintext codes cannot be re-hashed — every code expires within 10 minutes anyway) and adds the long-lived user-token columns, so **reconnect any already-linked Instagram account once** after deploying it.
+
+Migrations 006 and 007 add billing expiry and the session ledger. Deploying the code before those migrations are applied makes every authenticated request fail closed (401), and 007 invalidates tokens minted before it ran — **everyone signs in once after the upgrade**.
+
 ---
 
 ## Part 2 — Engine secrets (Cloudflare Workers)
@@ -43,6 +58,7 @@ npx wrangler secret put META_APP_SECRET
 npx wrangler secret put META_VERIFY_TOKEN
 npx wrangler secret put ENCRYPTION_MASTER_KEY   # 64 hex chars — see backend/.env.example
 npx wrangler secret put JWT_SECRET
+npx wrangler secret put OTP_PEPPER             # hashes login codes at rest (falls back to JWT_SECRET)
 npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put PUBLIC_BASE_URL         # e.g. https://api.relo.ai
 npx wrangler secret put PUBLIC_APP_URL          # e.g. https://app.relo.ai
@@ -57,8 +73,27 @@ npx wrangler secret put MANUAL_UPI_ID            # India UPI upgrades
 npx wrangler secret put NIM_API_KEY              # AI product Q&A in DMs
 npx wrangler secret put LEMON_SQUEEZY_CHECKOUT_URL
 npx wrangler secret put LEMON_SQUEEZY_WEBHOOK_SECRET
+npx wrangler secret put LEMON_SQUEEZY_PRO_VARIANT_ID
+npx wrangler secret put LEMON_SQUEEZY_STUDIO_VARIANT_ID
 npx wrangler secret put ADMIN_SECRET
+npx wrangler secret put META_HUMAN_AGENT_APPROVED  # "1" only after Meta approves the 7-day tag
 ```
+
+### Lemon Squeezy webhook
+
+In the Lemon Squeezy dashboard, point the webhook at:
+
+```
+https://<your-worker-origin>/api/billing/lemonsqueezy
+```
+
+Copy the signing secret into `LEMON_SQUEEZY_WEBHOOK_SECRET`, and paste the Pro/Studio
+variant ids into the two variant variables. Subscribe to `order_created`,
+`order_refunded`, `subscription_created`, `subscription_updated`,
+`subscription_resumed`, `subscription_cancelled`, `subscription_expired` and
+`subscription_paused`. The endpoint verifies `X-Signature` against the raw body,
+activates each order exactly once, and answers `200` for events it deliberately
+ignores so Lemon does not retry them forever.
 
 > **Never** skip `ENCRYPTION_MASTER_KEY` — the engine hard-fails without it.
 > Generate keys: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`

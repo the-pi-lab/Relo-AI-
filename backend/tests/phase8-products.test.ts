@@ -45,6 +45,11 @@ function createMockD1(sqlite: DatabaseSync): D1Database {
         },
       } as any;
     },
+    async batch(stmts: any[]) {
+      const results: any[] = [];
+      for (const stmt of stmts) results.push(await stmt.run());
+      return results;
+    },
   } as unknown as D1Database;
 }
 
@@ -68,7 +73,7 @@ async function runTests() {
     ADMIN_SECRET: "admin_test_secret",
   } as unknown as Env;
 
-  // ── seed: user + a Pro account and a Free account ──────────────
+  // ── seed: a Pro user and a separate Free user ──────────────────
   const email = "shop@relo.test";
   const otpSend = await worker.fetch(
     new Request(`${BASE}/api/auth/otp/send`, {
@@ -97,7 +102,33 @@ async function runTests() {
   const proAccountId = "acc_phase8_pro";
   const freeAccountId = "acc_phase8_free";
   const now = Math.floor(Date.now() / 1000);
-  const seedAccount = (id: string, igId: string, username: string, plan: string, credits: number) =>
+  const proUserId = verifyJson.data.user.id as string;
+
+  // The plan is user-scoped, so the Free tier needs its own user rather than a
+  // second account on the Pro user (that combination no longer exists).
+  const freeUserId = "user_phase8_free";
+  sqlite
+    .prepare(`INSERT INTO users (id, email) VALUES (?, ?)`)
+    .run(freeUserId, "free-shop@relo.test");
+  const freeJti = crypto.randomUUID();
+  const freeToken = await signJwt(
+    { sub: freeUserId, email: "free-shop@relo.test", jti: freeJti },
+    env.JWT_SECRET
+  );
+  // Tokens are only accepted while their session row is live.
+  sqlite
+    .prepare(`INSERT INTO sessions (jti, user_id, expires_at) VALUES (?, ?, ?)`)
+    .run(freeJti, freeUserId, now + 7 * 86400);
+  const freeAuth = { Authorization: `Bearer ${freeToken}` };
+
+  const seedAccount = (
+    id: string,
+    userId: string,
+    igId: string,
+    username: string,
+    plan: string,
+    credits: number
+  ) =>
     sqlite
       .prepare(
         `INSERT INTO connected_accounts
@@ -105,16 +136,19 @@ async function runTests() {
            access_token_encrypted, token_expires_at, is_active, created_at, updated_at, plan, ai_credits_remaining)
          VALUES (?, ?, ?, ?, NULL, 'enc', ?, 1, ?, ?, ?, ?)`
       )
-      .run(id, verifyJson.data.user.id, igId, username, now + 5184000, now, now, plan, credits);
-  seedAccount(proAccountId, "ig_shop_1", "pro.shop", "pro", 500);
-  seedAccount(freeAccountId, "ig_free_1", "free.creator", "free", 3);
+      .run(id, userId, igId, username, now + 5184000, now, now, plan, credits);
+  seedAccount(proAccountId, proUserId, "ig_shop_1", "pro.shop", "pro", 500);
+  seedAccount(freeAccountId, freeUserId, "ig_free_1", "free.creator", "free", 3);
+  sqlite
+    .prepare(`UPDATE users SET plan = 'pro', ai_credits_remaining = 500 WHERE id = ?`)
+    .run(proUserId);
 
   const req = (path: string, init: RequestInit = {}) =>
     worker.fetch(new Request(`${BASE}${path}`, init), env, {} as any);
 
   // ── 2. Free tier is locked out entirely ─────────────────────────
   console.log("\n[2] Free tier cannot read or write the products library...");
-  const freeGet = await req(`/api/products?accountId=${freeAccountId}`, { headers: auth });
+  const freeGet = await req(`/api/products?accountId=${freeAccountId}`, { headers: freeAuth });
   assert.strictEqual(freeGet.status, 403, "Free must get 403 on GET");
   const freeGetJson: any = await freeGet.json();
   assert.strictEqual(freeGetJson.success, false);
@@ -123,7 +157,7 @@ async function runTests() {
 
   const freePost = await req("/api/products", {
     method: "POST",
-    headers: { ...auth, "Content-Type": "application/json" },
+    headers: { ...freeAuth, "Content-Type": "application/json" },
     body: JSON.stringify({ accountId: freeAccountId, name: "Sneak" }),
   });
   assert.strictEqual(freePost.status, 403, "Free must get 403 on POST");
@@ -230,7 +264,7 @@ async function runTests() {
   // Free account's GET is blocked by tier, so probe isolation via delete
   const crossDelete = await req(
     `/api/products/${seededId}?accountId=${freeAccountId}`,
-    { method: "DELETE", headers: auth }
+    { method: "DELETE", headers: freeAuth }
   );
   // The delete is scoped by account_id, so it reports 404 — deliberately
   // opaque, rather than 403, which would confirm the row exists to an attacker.

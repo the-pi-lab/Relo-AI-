@@ -5,8 +5,33 @@ import type {
 } from "../types/meta";
 import { parseMetaError, MetaApiError } from "./errors";
 
-const META_GRAPH_VERSION = "v21.0";
-const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+const DEFAULT_META_GRAPH_VERSION = "v21.0";
+let metaBaseUrl = `https://graph.facebook.com/${DEFAULT_META_GRAPH_VERSION}`;
+
+/**
+ * Points the client at `META_GRAPH_API_VERSION` from the Worker env.
+ *
+ * The version used to be a hardcoded constant, so shipping a new Graph version
+ * required a code deploy. Only a well-formed `v<major>.<minor>` value is
+ * accepted: interpolating arbitrary config into a URL is how a typo becomes a
+ * 404 on every send.
+ */
+export function setMetaGraphVersion(version?: string): void {
+  const candidate = (version || "").trim();
+  if (!candidate) return;
+  if (!/^v\d+\.\d+$/.test(candidate)) {
+    console.warn(
+      `[Meta] Ignoring invalid META_GRAPH_API_VERSION "${candidate}" — expected e.g. v21.0.`
+    );
+    return;
+  }
+  metaBaseUrl = `https://graph.facebook.com/${candidate}`;
+}
+
+/** The version currently in use (exposed for diagnostics/tests). */
+export function getMetaGraphVersion(): string {
+  return metaBaseUrl.split("/").pop() || DEFAULT_META_GRAPH_VERSION;
+}
 
 export interface MetaClientConfig {
   defaultTimeoutMs?: number;
@@ -55,7 +80,7 @@ export class MetaGraphClient {
     const timeoutMs = options.timeoutMs || this.defaultTimeoutMs;
 
     const url = new URL(
-      endpoint.startsWith("http") ? endpoint : `${META_BASE_URL}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`
+      endpoint.startsWith("http") ? endpoint : `${metaBaseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`
     );
 
     if (options.queryParams) {

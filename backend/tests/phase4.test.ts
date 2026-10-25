@@ -37,6 +37,11 @@ function createMockD1(sqlite: DatabaseSync): D1Database {
         },
       } as any;
     },
+    async batch(stmts: any[]) {
+      const results: any[] = [];
+      for (const stmt of stmts) results.push(await stmt.run());
+      return results;
+    },
   } as unknown as D1Database;
 }
 
@@ -108,7 +113,7 @@ async function runTests() {
   const encryptedToken = await encryptSecret(rawToken, env.ENCRYPTION_MASTER_KEY!);
 
   // Insert user
-  sqlite.prepare(`INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)`).run(
+  sqlite.prepare(`INSERT INTO users (id, email, created_at, plan, ai_credits_remaining) VALUES (?, ?, ?, 'pro', 500)`).run(
     testUserId,
     "creator@chatflow.ai",
     Math.floor(Date.now() / 1000)

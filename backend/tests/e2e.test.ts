@@ -165,7 +165,9 @@ async function runE2ETests() {
       now,
       now
     );
-
+  sqlite
+    .prepare(`UPDATE users SET plan = 'pro', ai_credits_remaining = 500 WHERE id = ?`)
+    .run(user.id);
   const decryptedToken = await decryptSecret(encryptedToken, env.ENCRYPTION_MASTER_KEY);
   assert.strictEqual(decryptedToken, rawInstagramToken);
   console.log("✓ Instagram account connected. AES-256-GCM encryption verified.");

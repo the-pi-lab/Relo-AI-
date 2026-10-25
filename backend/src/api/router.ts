@@ -1,6 +1,11 @@
 import type { Env } from "../db";
 import {
   findOrCreateUserByEmail,
+  getUserByEmail,
+  createSession,
+  getActiveSession,
+  revokeSession,
+  revokeAllSessions,
   saveEmailOtp,
   verifyAndConsumeEmailOtp,
   getAccountsForUser,
@@ -24,6 +29,10 @@ import {
   getAccountClickStats,
   getAccountStorageRows,
   activatePlanForUser,
+  getUserBilling,
+  setPlanExpiry,
+  recordBillingPayment,
+  expirePlanForUserIfDue,
   getShortLinksForAutomation,
   getProductsForAccount,
   countProductsForAccount,
@@ -75,6 +84,21 @@ import { validateFlowGraph, createStarterGraph } from "../engine/flowGraph";
 
 /** Public site origin, used for shareable referral links. */
 const SITE_URL = "https://relo.ai";
+
+/**
+ * Origin of the Worker itself. Link-in-bio pages (/p/:id, /b/:slug) and short
+ * links (/l/:id) are served here, NOT by the Next app — using PUBLIC_APP_URL
+ * for them produces a URL that 404s.
+ */
+function publicBaseUrl(env: Env): string {
+  return (env.PUBLIC_BASE_URL || env.PUBLIC_APP_URL || SITE_URL).replace(/\/$/, "");
+}
+
+function publicPageUrl(env: Env, page: { id: string; slug?: string }): string {
+  return page.slug
+    ? `${publicBaseUrl(env)}/b/${page.slug}`
+    : `${publicBaseUrl(env)}/p/${page.id}`;
+}
 import {
   signJwt,
   verifyJwt,
@@ -82,9 +106,10 @@ import {
   sendOtpEmail,
   type JwtPayload,
 } from "../auth";
-import { encryptSecret, decryptSecret, getMasterKey } from "../crypto";
+import { encryptSecret, decryptSecret, getMasterKey, getOtpPepper, timingSafeEqualAsync } from "../crypto";
 import { metaGraphClient } from "../meta/client";
 import { validateReplyVariations } from "../engine/spintax";
+import { campaignWindowSeconds, normalizeCampaignCard } from "../engine/campaignWorker";
 import { createAccountId, createAutomationId, createMediaId } from "../types/ids";
 import type { ApiResponse, TemplateCardConfig } from "../types";
 import { withCors, preflightResponse, isDisallowedCrossOrigin } from "../security/cors";
@@ -143,7 +168,11 @@ export function jsonError(
 }
 
 /**
- * Authenticates user from Bearer JWT token in Authorization header
+ * Authenticates user from Bearer JWT token in Authorization header.
+ *
+ * Signature validity is not enough: the token's `jti` must still have a live
+ * row in `sessions`. That is the only way logout, "sign out everywhere" and an
+ * owner-initiated revocation actually take effect before the 7-day expiry.
  */
 export async function authenticateUser(
   request: Request,
@@ -154,7 +183,19 @@ export async function authenticateUser(
     return null;
   }
   const token = authHeader.slice(7).trim();
-  return verifyJwt(token, env.JWT_SECRET);
+  const payload = await verifyJwt(token, env.JWT_SECRET);
+  if (!payload) return null;
+
+  try {
+    const session = await getActiveSession(env.DB, payload.jti);
+    if (!session || session.userId !== payload.sub) return null;
+  } catch (error) {
+    // A database deployed ahead of migration 007 has no sessions table. Fail
+    // closed rather than accepting a token that cannot be revoked.
+    console.error("[Auth] Session lookup failed:", error);
+    return null;
+  }
+  return payload;
 }
 
 /**
@@ -251,6 +292,119 @@ async function requireOwnedAccount(
 }
 
 /**
+ * Lemon Squeezy signs the raw body with HMAC-SHA256 and sends the hex digest in
+ * `X-Signature`. The digest is compared in constant time; a malformed header is
+ * simply invalid, never a reason to process the payload.
+ */
+async function verifyLemonSignature(
+  rawBody: string,
+  header: string | null,
+  secret: string
+): Promise<boolean> {
+  const provided = (header || "").trim().replace(/^sha256=/i, "").toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(provided)) return false;
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+  const expected = Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return timingSafeEqualAsync(provided, expected);
+}
+
+interface LemonWebhookPayload {
+  meta?: {
+    event_name?: string;
+    custom_data?: Record<string, unknown> | null;
+  };
+  data?: {
+    id?: string | number;
+    type?: string;
+    attributes?: Record<string, any>;
+  };
+}
+
+function parseEpochSeconds(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    // Accept either seconds or milliseconds; LS uses ISO strings today, but
+    // guarding here keeps a future payload shape from becoming year 57000.
+    return Math.floor(value > 10_000_000_000 ? value / 1000 : value);
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return Math.floor(parsed / 1000);
+  }
+  return null;
+}
+
+/** Lemon reports money in the currency's minor unit (paise/cents). */
+function lemonAmountInr(attributes: Record<string, any>): number {
+  const total = Number(attributes?.total ?? 0);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return Math.max(0, Math.round(total / 100));
+}
+
+/**
+ * Maps a purchased variant to a tier. Explicit custom data wins (it is set by
+ * our own checkout link), then the two configured variant ids.
+ */
+function resolveLemonPlan(
+  env: Env,
+  variantId: unknown,
+  customData: Record<string, unknown> | null | undefined
+): "pro" | "studio" | null {
+  const claimed = String(customData?.plan || "").toLowerCase();
+  if (claimed === "pro" || claimed === "studio") return claimed;
+
+  const id = String(variantId ?? "").trim();
+  if (!id) return null;
+  if (id === String(env.LEMON_SQUEEZY_PRO_VARIANT_ID || "").trim()) return "pro";
+  if (id === String(env.LEMON_SQUEEZY_STUDIO_VARIANT_ID || "").trim()) return "studio";
+  return null;
+}
+
+/**
+ * Finds the buyer. A custom `user_id` is trusted only after it resolves to a
+ * real row; otherwise the email on the order is the identity. Creating the
+ * user is deferred to the caller so a cancellation for an unknown email cannot
+ * conjure an account.
+ */
+async function resolveLemonIdentity(
+  env: Env,
+  payload: LemonWebhookPayload
+): Promise<{ userId: string | null; email: string } | null> {
+  const custom = payload.meta?.custom_data || {};
+  const claimedId =
+    typeof custom.user_id === "string"
+      ? custom.user_id
+      : typeof custom.userId === "string"
+        ? custom.userId
+        : "";
+  if (claimedId) {
+    const row = (await env.DB
+      .prepare(`SELECT id, email FROM users WHERE id = ? LIMIT 1`)
+      .bind(claimedId)
+      .first()) as any;
+    if (row) return { userId: row.id, email: row.email };
+  }
+
+  const email = String(payload.data?.attributes?.user_email || "")
+    .trim()
+    .toLowerCase();
+  if (!EMAIL_PATTERN.test(email)) return null;
+
+  const existing = await getUserByEmail(env.DB, email);
+  return { userId: existing?.id ?? null, email };
+}
+
+/**
  * Main REST API Router for /api/* requests.
  *
  * The route table lives in `routeRequest`; this wrapper owns the two concerns
@@ -320,7 +474,34 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     }
 
     const code = generateOtpCode();
-    const saveResult = await saveEmailOtp(env.DB, email, code, 600);
+
+    // A missing pepper means we cannot hash the code. Fail before writing a row
+    // or sending an email, so the caller never sees a code that cannot verify.
+    let otpPepper: string;
+    try {
+      otpPepper = getOtpPepper(env);
+    } catch (error) {
+      console.error("[Auth] OTP pepper is not configured:", error);
+      return jsonError(
+        "SERVER_MISCONFIGURED",
+        "Sign-in is temporarily unavailable. Please try again later.",
+        503
+      );
+    }
+
+    // Without an email provider (and outside an explicit dev opt-in) there is no
+    // way to deliver the code. Report that honestly instead of pretending the
+    // mail went out and throttling the retry for 60 seconds.
+    const devMode = env.DEBUG_OTPS === "1" && env.ENVIRONMENT !== "production";
+    if (!env.RESEND_API_KEY && !devMode) {
+      return jsonError(
+        "EMAIL_NOT_CONFIGURED",
+        "Sign-in email is not configured on this deployment. Please contact support.",
+        503
+      );
+    }
+
+    const saveResult = await saveEmailOtp(env.DB, email, code, 600, otpPepper);
     if (!saveResult.ok) {
       return jsonError(
         "OTP_RESEND_THROTTLED",
@@ -330,9 +511,16 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       );
     }
 
-    const sendResult = await sendOtpEmail(email, code, env.RESEND_API_KEY);
+    const sendResult = await sendOtpEmail(email, code, env.RESEND_API_KEY, devMode);
     if (!sendResult.success) {
       console.error(`[Auth] OTP email delivery failed for ${email}: ${sendResult.error}`);
+      if (sendResult.error === "EMAIL_NOT_CONFIGURED") {
+        return jsonError(
+          "EMAIL_NOT_CONFIGURED",
+          "Sign-in email is not configured on this deployment. Please contact support.",
+          503
+        );
+      }
       return jsonError(
         "EMAIL_DELIVERY_FAILED",
         "We could not send the verification email right now. Please try again shortly.",
@@ -341,10 +529,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     }
 
     // Dev-only OTP echo: requires an explicit opt-in flag, never on by default.
-    const debugCode =
-      env.DEBUG_OTPS === "1" && env.ENVIRONMENT !== "production" && !env.RESEND_API_KEY
-        ? code
-        : undefined;
+    const debugCode = devMode && !env.RESEND_API_KEY ? code : undefined;
 
     return jsonSuccess({
       message: "Verification code sent to your email.",
@@ -387,7 +572,19 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       return jsonError(captcha.code || "CAPTCHA_FAILED", captcha.message || "Verification failed.", 403);
     }
 
-    const isValid = await verifyAndConsumeEmailOtp(env.DB, email, code);
+    let otpPepper: string;
+    try {
+      otpPepper = getOtpPepper(env);
+    } catch (error) {
+      console.error("[Auth] OTP pepper is not configured:", error);
+      return jsonError(
+        "SERVER_MISCONFIGURED",
+        "Sign-in is temporarily unavailable. Please try again later.",
+        503
+      );
+    }
+
+    const isValid = await verifyAndConsumeEmailOtp(env.DB, email, code, otpPepper);
     if (!isValid) {
       return jsonError("INVALID_OTP", "Invalid or expired verification code.", 401);
     }
@@ -397,13 +594,17 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
     // Issue signed 7-day JWT session. A deployment with no JWT_SECRET fails
     // closed here rather than issuing a token signed with a placeholder.
+    const ttlSeconds = 7 * 24 * 60 * 60;
+    const jti = crypto.randomUUID();
+    const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
     let token: string;
     try {
       token = await signJwt(
-        { sub: user.id as any, email: user.email },
+        { sub: user.id as any, email: user.email, jti },
         env.JWT_SECRET,
-        7 * 24 * 60 * 60
+        ttlSeconds
       );
+      await createSession(env.DB, jti, user.id, expiresAt);
     } catch (error) {
       console.error("[Auth] Cannot mint a session token:", error);
       return jsonError(
@@ -420,6 +621,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         createdAt: user.createdAt,
       },
       token,
+      expiresAt,
     });
   }
 
@@ -465,13 +667,10 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
     await env.DB
       .prepare(
-        `INSERT INTO webhook_logs (id, account_id, event_type, status_code, payload)
-         VALUES (?, NULL, 'agency_contact', 202, ?)`
+        `INSERT INTO agency_enquiries (id, email, account_count, plan_interest, notes, status)
+         VALUES (?, ?, ?, ?, ?, 'new')`
       )
-      .bind(
-        crypto.randomUUID(),
-        JSON.stringify({ email, accountCount, planInterest, notes })
-      )
+      .bind(crypto.randomUUID(), email, accountCount, planInterest, notes || null)
       .run();
 
     return jsonSuccess({
@@ -480,11 +679,207 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
   }
 
   // =========================================================================
+  // 2b. LEMON SQUEEZY WEBHOOK (public, signature-verified)
+  //
+  // Lemon retries non-2xx aggressively, so the contract is:
+  //   - bad signature / missing config → non-2xx (a real failure)
+  //   - unknown event, unmapped variant, unknown cancellation → 200 + ignored
+  //   - duplicate order → 200, but never a second month
+  // Activation and revocation both happen here; the client never grants a plan.
+  // =========================================================================
+  if (path === "/api/billing/lemonsqueezy" && method === "POST") {
+    const secret = env.LEMON_SQUEEZY_WEBHOOK_SECRET || "";
+    if (!secret) {
+      console.error("[Billing] LEMON_SQUEEZY_WEBHOOK_SECRET is not configured.");
+      return jsonError(
+        "WEBHOOK_NOT_CONFIGURED",
+        "Billing webhooks are not configured on this deployment.",
+        503
+      );
+    }
+
+    const rawBody = await request.text();
+    if (rawBody.length > 1_000_000) {
+      return jsonError("PAYLOAD_TOO_LARGE", "Webhook payload is too large.", 413);
+    }
+
+    const validSignature = await verifyLemonSignature(
+      rawBody,
+      request.headers.get("x-signature"),
+      secret
+    );
+    if (!validSignature) {
+      console.warn("[Billing] Rejected a Lemon Squeezy webhook with an invalid signature.");
+      return jsonError("INVALID_SIGNATURE", "Webhook signature verification failed.", 401);
+    }
+
+    let payload: LemonWebhookPayload;
+    try {
+      payload = JSON.parse(rawBody) as LemonWebhookPayload;
+    } catch {
+      return jsonError("INVALID_PAYLOAD", "Webhook body is not valid JSON.", 400);
+    }
+
+    const eventName = String(payload.meta?.event_name || "");
+    const attributes = payload.data?.attributes || {};
+    const dataId = String(payload.data?.id ?? "").trim();
+    const now = Math.floor(Date.now() / 1000);
+
+    const ACTIVATION = new Set(["order_created", "subscription_created"]);
+    const RENEWAL = new Set([
+      "subscription_resumed",
+      "subscription_updated",
+      "subscription_payment_success",
+    ]);
+    const END = new Set([
+      "subscription_cancelled",
+      "subscription_expired",
+      "subscription_paused",
+      "order_refunded",
+    ]);
+
+    if (!ACTIVATION.has(eventName) && !RENEWAL.has(eventName) && !END.has(eventName)) {
+      return jsonSuccess({ received: true, ignored: true, event: eventName });
+    }
+
+    try {
+      const identity = await resolveLemonIdentity(env, payload);
+      if (!identity) {
+        return jsonSuccess({ received: true, ignored: true, reason: "no_identity" });
+      }
+
+      const variantId =
+        attributes.variant_id ?? attributes.first_order_item?.variant_id ?? null;
+      const plan = resolveLemonPlan(env, variantId, payload.meta?.custom_data);
+      if (!plan) {
+        // Configuration, not a transient failure: retrying cannot fix it.
+        console.warn(
+          `[Billing] Lemon event ${eventName} has an unmapped variant (${variantId ?? "none"}).`
+        );
+        return jsonSuccess({ received: true, ignored: true, reason: "unmapped_variant" });
+      }
+
+      let userId = identity.userId;
+      if (!userId) {
+        if (END.has(eventName)) {
+          return jsonSuccess({ received: true, ignored: true, reason: "unknown_user" });
+        }
+        // A paid buyer must be able to sign in with the email they paid with.
+        const created = await findOrCreateUserByEmail(env.DB, identity.email);
+        userId = created.id;
+      }
+
+      if (eventName === "order_created") {
+        const status = String(attributes.status || "").toLowerCase();
+        if (status && status !== "paid") {
+          return jsonSuccess({ received: true, ignored: true, reason: "order_not_paid" });
+        }
+      }
+
+      if (ACTIVATION.has(eventName)) {
+        if (!dataId) {
+          return jsonSuccess({ received: true, ignored: true, reason: "missing_order_id" });
+        }
+        const accounts = await getAccountsForUser(env.DB, userId);
+        // The UNIQUE (provider, external_ref) index is what makes a retried
+        // webhook a no-op instead of a second free month.
+        const recorded = await recordBillingPayment(env.DB, {
+          userId,
+          accountId: accounts[0]?.id ?? null,
+          provider: "lemon_squeezy",
+          externalRef: dataId,
+          plan,
+          amountInr: lemonAmountInr(attributes),
+        });
+
+        const renewsAt = parseEpochSeconds(attributes.renews_at);
+        const expiresAt = renewsAt && renewsAt > now ? renewsAt : now + 30 * 86400;
+        const current = await getUserBilling(env.DB, userId);
+
+        if (recorded.inserted) {
+          await activatePlanForUser(env.DB, userId, plan, expiresAt);
+          // Referrals only earn a reward when the referred user actually pays.
+          const qualified = await qualifyReferralsForUser(env.DB, userId);
+          if (qualified > 0) await rewardQualifiedReferrals(env.DB, userId);
+        } else if (!current || current.plan !== plan || current.planExpiresAt <= now) {
+          // Re-delivery after a lapse, or an upgrade: grant the plan again.
+          await activatePlanForUser(env.DB, userId, plan, expiresAt);
+        }
+
+        return jsonSuccess({
+          received: true,
+          activated: true,
+          plan,
+          duplicate: !recorded.inserted,
+        });
+      }
+
+      if (END.has(eventName)) {
+        const endsAt = parseEpochSeconds(attributes.ends_at);
+        if (eventName === "order_refunded" || eventName === "subscription_expired") {
+          await setPlanExpiry(env.DB, userId, now);
+          await expirePlanForUserIfDue(env.DB, userId);
+          return jsonSuccess({ received: true, planEnded: true });
+        }
+
+        // Cancelled/paused: the creator keeps what they already paid for until
+        // the period actually ends. No immediate downgrade.
+        const expiry = endsAt && endsAt > now ? endsAt : now;
+        await setPlanExpiry(env.DB, userId, expiry);
+        if (expiry <= now) await expirePlanForUserIfDue(env.DB, userId);
+        return jsonSuccess({ received: true, planEndsAt: expiry });
+      }
+
+      // RENEWAL events. A subscription update can also mean "cancelled",
+      // "past_due" or "paused"; those must not extend access.
+      const status = String(attributes.status || "").toLowerCase();
+      if (["cancelled", "expired", "paused", "past_due", "unpaid"].includes(status)) {
+        const endsAt = parseEpochSeconds(attributes.ends_at);
+        const expiry = endsAt && endsAt > now ? endsAt : now;
+        await setPlanExpiry(env.DB, userId, expiry);
+        if (expiry <= now) await expirePlanForUserIfDue(env.DB, userId);
+        return jsonSuccess({ received: true, planEndsAt: expiry });
+      }
+
+      const renewsAt = parseEpochSeconds(attributes.renews_at);
+      const expiresAt = renewsAt && renewsAt > now ? renewsAt : now + 30 * 86400;
+      const current = await getUserBilling(env.DB, userId);
+      if (!current || current.plan !== plan || current.planExpiresAt <= now) {
+        // First activation, an upgrade, or a plan that lapsed between events.
+        await activatePlanForUser(env.DB, userId, plan, expiresAt);
+      } else {
+        // A routine renewal/metadata change extends the period without
+        // refilling the credit balance a second time in the same month.
+        await setPlanExpiry(env.DB, userId, expiresAt);
+      }
+      return jsonSuccess({ received: true, plan, planExpiresAt: expiresAt });
+    } catch (error) {
+      // A real processing failure must be retried by Lemon.
+      console.error("[Billing] Lemon Squeezy webhook failed:", error);
+      return jsonError("WEBHOOK_FAILED", "Could not process the billing event.", 500);
+    }
+  }
+
+  // =========================================================================
   // AUTHENTICATION GUARD FOR PROTECTED ENDPOINTS
   // =========================================================================
   const user = await authenticateUser(request, env);
   if (!user) {
     return jsonError("UNAUTHORIZED", "Missing or invalid authorization token.", 401);
+  }
+
+  // -------------------------------------------------------------------------
+  // SESSION LIFECYCLE
+  // A signed token is revocable only while these routes can reach its row.
+  // -------------------------------------------------------------------------
+  if (path === "/api/auth/logout" && method === "POST") {
+    await revokeSession(env.DB, user.jti, user.sub);
+    return jsonSuccess({ loggedOut: true });
+  }
+
+  if (path === "/api/auth/logout-all" && method === "POST") {
+    const revoked = await revokeAllSessions(env.DB, user.sub);
+    return jsonSuccess({ loggedOut: true, sessionsRevoked: revoked });
   }
 
   // -------------------------------------------------------------------------
@@ -626,6 +1021,10 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       }
 
       const masterKey = getMasterKey(env);
+      // The long-lived USER token is kept alongside the page token: it is the
+      // only credential Meta will re-exchange, so without it the account can
+      // never be renewed and silently dies after ~60 days.
+      const encryptedUserToken = await encryptSecret(longLivedToken, masterKey);
       const connectedResults: Array<{
         id: string;
         instagramUserId: string;
@@ -657,6 +1056,8 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
           profilePictureUrl: acc.profilePictureUrl,
           accessTokenEncrypted: encryptedToken,
           tokenExpiresAt,
+          userTokenEncrypted: encryptedUserToken,
+          userTokenExpiresAt: tokenExpiresAt,
         });
 
         connectedResults.push({
@@ -792,8 +1193,25 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     if (!owned.account) return owned.error;
     const plan = owned.account.plan;
 
+    // ── UPDATE GUARD ─────────────────────────────────────────────
+    // A client-supplied id is honoured only as an idempotent create key or as
+    // an update to this account's own rule. Create-vs-update is decided by the
+    // database, never by the presence of `id` in the request body — otherwise a
+    // client could send any id and skip the free-tier slot check below.
+    const existingAutomation = body?.id
+      ? await getAutomationById(env.DB, createAutomationId(String(body.id)))
+      : null;
+
+    if (existingAutomation && existingAutomation.accountId !== accountId) {
+      return jsonError(
+        "AUTOMATION_NOT_OWNED",
+        "The automation you are trying to update does not belong to this account.",
+        403
+      );
+    }
+    const isNew = !existingAutomation;
+
     // ── TIER LIMITS (plan.md §3) ─────────────────────────────────
-    const isNew = !body?.id;
     if (plan === "free") {
       // Lifetime 1-reel rule: deleting an automation never frees the slot.
       const activeCount = await countActiveAutomations(env.DB, accountId);
@@ -822,20 +1240,6 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
     // Buttons: Free = 1–2 own (RELO button appended at dispatch), Pro/Studio = 1–3
     const maxButtons = plan === "free" ? 2 : 3;
-
-    // UPDATE GUARD: a client-supplied id must reference an automation that
-    // already belongs to this account — otherwise the upsert would silently
-    // overwrite someone else's rule.
-    if (body?.id) {
-      const existing = await getAutomationById(env.DB, createAutomationId(String(body.id)));
-      if (existing && existing.accountId !== accountId) {
-        return jsonError(
-          "AUTOMATION_NOT_OWNED",
-          "The automation you are trying to update does not belong to this account.",
-          403
-        );
-      }
-    }
 
     if (triggerKeywords.length === 0) {
       return jsonError(
@@ -896,9 +1300,13 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    const automationId = body?.id
-      ? createAutomationId(String(body.id))
-      : createAutomationId(crypto.randomUUID());
+    // Creates keep a client-supplied id when one was sent (idempotent create);
+    // otherwise the id is generated server-side.
+    const automationId = existingAutomation?.id
+      ? createAutomationId(String(existingAutomation.id))
+      : body?.id
+        ? createAutomationId(String(body.id))
+        : createAutomationId(crypto.randomUUID());
 
     // Follow-up DMs are a Pro/Studio feature (plan.md §4.2)
     const followUpEnabled = plan !== "free" && Boolean(body?.followUpEnabled);
@@ -1096,22 +1504,28 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
   // GET /api/billing — current plan, credits, payment history
   if (path === "/api/billing" && method === "GET") {
-    const accounts = await getAccountsForUser(env.DB, user.sub);
-    const owned = accounts[0] ? await getOwnedAccount(env.DB, accounts[0].id, user.sub) : null;
+    // Reflect a lapsed plan immediately rather than waiting for the next cron
+    // tick; the write is idempotent and scoped to this user.
+    await expirePlanForUserIfDue(env.DB, user.sub).catch((error) => {
+      console.warn("[Billing] Could not evaluate plan expiry:", error);
+    });
+    const billing = await getUserBilling(env.DB, user.sub);
     const { results } = await env.DB
       .prepare(
         `SELECT id, provider, plan, amount_inr, status, utr, created_at, verified_at
-         FROM payments WHERE account_id = ? ORDER BY created_at DESC LIMIT 20`
+         FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`
       )
-      .bind(owned?.id || "")
+      .bind(user.sub)
       .all();
     return jsonSuccess({
-      plan: owned?.plan || "free",
-      aiCreditsRemaining: owned?.aiCreditsRemaining ?? 0,
+      plan: billing?.plan || "free",
+      aiCreditsRemaining: billing?.aiCreditsRemaining ?? 0,
+      planExpiresAt: billing?.planExpiresAt ?? 0,
       payments: results || [],
       checkout: {
         lemonSqueezyUrl: env.LEMON_SQUEEZY_CHECKOUT_URL || null,
         upiId: env.MANUAL_UPI_ID || null,
+        provider: env.LEMON_SQUEEZY_WEBHOOK_SECRET ? "lemon_squeezy" : null,
       },
     });
   }
@@ -1148,13 +1562,27 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     if (duplicate) {
       return jsonError("DUPLICATE_UTR", "This transaction reference was already submitted.", 409);
     }
-    await env.DB
-      .prepare(
-        `INSERT INTO payments (id, account_id, provider, plan, amount_inr, utr, status)
-         VALUES (?, ?, 'manual_upi', ?, ?, ?, 'pending')`
-      )
-      .bind(crypto.randomUUID(), accounts[0].id, plan, amountInr, utr.toUpperCase())
-      .run();
+    try {
+      await env.DB
+        .prepare(
+          `INSERT INTO payments (id, account_id, user_id, provider, plan, amount_inr, utr, status)
+           VALUES (?, ?, ?, 'manual_upi', ?, ?, ?, 'pending')`
+        )
+        .bind(crypto.randomUUID(), accounts[0].id, user.sub, plan, amountInr, utr.toUpperCase())
+        .run();
+    } catch (insertErr) {
+      // The UNIQUE index on utr is the real guard; two requests can pass the
+      // SELECT above at the same time.
+      const message = insertErr instanceof Error ? insertErr.message : String(insertErr);
+      if (/UNIQUE|constraint/i.test(message)) {
+        return jsonError(
+          "DUPLICATE_UTR",
+          "This transaction reference was already submitted.",
+          409
+        );
+      }
+      throw insertErr;
+    }
     return jsonSuccess({
       message: "Payment recorded. Verification usually completes within a few hours.",
     });
@@ -1323,6 +1751,8 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
     // Payload: { kind: 'text' | 'card', text?, card? } — the same shape the
     // Canvas "send message" node produces, so a campaign can be a flow node.
+    // A card is normalized and validated here: Meta rejects an over-long title
+    // or a fourth button per recipient, at cron time, where nobody is watching.
     const rawKind = body.kind === "card" ? "card" : "text";
     const text = (body.text || "").trim().slice(0, 1000);
     const card = body.card ?? null;
@@ -1333,15 +1763,30 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       return jsonError("MISSING_CARD", "A card campaign needs card content.", 400);
     }
 
+    let campaignPayload: CampaignInput["payload"];
+    if (rawKind === "card") {
+      const normalized = normalizeCampaignCard(card);
+      if (!normalized.ok) {
+        return jsonError("INVALID_CARD", normalized.message, 400);
+      }
+      campaignPayload = { kind: "card", card: normalized.card };
+    } else {
+      campaignPayload = { kind: "text", text };
+    }
+
     const patch: CampaignInput = {
       mediaId,
-      payload: rawKind === "text" ? { kind: "text", text } : { kind: "card", card },
+      payload: campaignPayload,
       status: body.status === "scheduled" ? "scheduled" : "draft",
       scheduledAt: Number(body.scheduledAt || 0),
       // The HUMAN_AGENT tag extends Meta's window to 7 days (plan.md §4.3).
       // It is opt-in per campaign and only meaningful while the 7-day tag is approved.
       usesHumanAgentTag: body.usesHumanAgentTag === true,
     };
+
+    // The tag widens the window only when Meta has actually approved it. An
+    // unapproved tag makes Meta reject the send, so reachability stays at 24h.
+    const windowSeconds = campaignWindowSeconds(patch, env);
 
     const existingId = body.id || "";
     if (existingId) {
@@ -1353,13 +1798,23 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         return jsonError("CAMPAIGN_IN_FLIGHT", "This campaign is already sending.", 409);
       }
       const updated = await updateCampaign(env.DB, existingId, owned.account.id, patch);
-      const reach = await fanOutCampaignTargets(env.DB, existingId, owned.account.id);
+      const reach = await fanOutCampaignTargets(
+        env.DB,
+        existingId,
+        owned.account.id,
+        windowSeconds
+      );
       return jsonSuccess({ campaign: updated, reachability: reach });
     }
 
     const campaignId = crypto.randomUUID();
     const created = await insertCampaign(env.DB, campaignId, owned.account.id, patch);
-    const reach = await fanOutCampaignTargets(env.DB, campaignId, owned.account.id);
+    const reach = await fanOutCampaignTargets(
+      env.DB,
+      campaignId,
+      owned.account.id,
+      windowSeconds
+    );
     return jsonSuccess({ campaign: created, reachability: reach }, 201);
   }
 
@@ -1584,7 +2039,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         link: p.link ?? null,
         imageUrl: p.imageUrl ?? null,
       })),
-      publicUrl: page ? `${(env.PUBLIC_APP_URL || "https://relo.ai").replace(/\/$/, "")}/p/${page.id}` : null,
+      publicUrl: page ? publicPageUrl(env, page) : null,
     });
   }
 
@@ -1626,6 +2081,14 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       label: string;
     }> = [];
 
+    // Only ids that already belong to THIS page may be reused. Everything else
+    // gets a fresh server-generated id, so a caller cannot collide with (or
+    // probe for) another tenant's block. Reuse is what keeps click history.
+    const currentPage = await getLinkPageForAccount(env.DB, owned.account.id);
+    const reusableBlockIds = new Set(
+      (currentPage ? await getLinkBlocks(env.DB, currentPage.id) : []).map((block) => block.id)
+    );
+
     for (const raw of rawBlocks) {
       const label = cleanText(raw.label, 60);
       const productId = cleanText(raw.productId, 64);
@@ -1650,10 +2113,10 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       }
 
       blocks.push({
-        // Block ids are generated server-side: a client-supplied id is a
-        // primary key, and accepting one would let a caller collide with (or
-        // probe for) a row belonging to another tenant's page.
-        id: crypto.randomUUID(),
+        // Block ids are generated server-side unless the id already belongs to
+        // this page (see reusableBlockIds above).
+        id:
+          raw.id && reusableBlockIds.has(raw.id) ? raw.id : crypto.randomUUID(),
         productId: productId || undefined,
         targetUrl: safeTarget,
         label,
@@ -1688,7 +2151,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     return jsonSuccess({
       page,
       blocks: saved,
-      publicUrl: `${(env.PUBLIC_APP_URL || "https://relo.ai").replace(/\/$/, "")}/p/${page.id}`,
+      publicUrl: publicPageUrl(env, page),
     });
   }
 
@@ -1884,11 +2347,17 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     }
     const now = Math.floor(Date.now() / 1000);
     if (approve) {
-      const ownerRow = (await env.DB
-        .prepare(`SELECT user_id FROM connected_accounts WHERE id = ? LIMIT 1`)
-        .bind(payment.account_id)
-        .first()) as any;
-      if (!ownerRow?.user_id) {
+      // Payments carry the user id now; fall back to the account binding for
+      // rows written before the migration.
+      const paymentUserId =
+        payment.user_id ||
+        ((
+          (await env.DB
+            .prepare(`SELECT user_id FROM connected_accounts WHERE id = ? LIMIT 1`)
+            .bind(payment.account_id)
+            .first()) as any
+        )?.user_id as string | undefined);
+      if (!paymentUserId) {
         await recordAdminAudit(env.DB, {
           actor: adminActor,
           action: "payment.activate",
@@ -1900,17 +2369,30 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         });
         return jsonError("NOT_FOUND", "Payment account no longer exists.", 404);
       }
-      const activatedPlan = payment.plan === "studio" ? "studio" : "pro";
-      await activatePlanForUser(env.DB, ownerRow.user_id, activatedPlan);
-      await env.DB
-        .prepare(`UPDATE payments SET status = 'verified', verified_at = ? WHERE id = ?`)
-        .bind(now, paymentId)
+
+      // Claim the payment atomically: only one approval can win, so a double
+      // click cannot grant the plan (and credits) twice.
+      const claim = await env.DB
+        .prepare(
+          `UPDATE payments
+              SET status = 'verified', verified_at = ?, user_id = COALESCE(user_id, ?)
+            WHERE id = ? AND status = 'pending'`
+        )
+        .bind(now, paymentUserId, paymentId)
         .run();
+      if ((claim.meta?.changes ?? 0) === 0) {
+        return jsonError("ALREADY_PROCESSED", "This payment was already reviewed.", 409);
+      }
+
+      const activatedPlan = payment.plan === "studio" ? "studio" : "pro";
+      // Owner-verified payments grant one month from approval, then lapse
+      // automatically. Cron downgrades them; nobody has to remember.
+      await activatePlanForUser(env.DB, paymentUserId, activatedPlan, now + 30 * 86400);
 
       // Referral loop (plan.md §7): the reward is only earned once the referred
       // person has actually paid, so this is the only place referrals qualify.
-      const qualified = await qualifyReferralsForUser(env.DB, ownerRow.user_id);
-      const rewarded = qualified > 0 ? await rewardQualifiedReferrals(env.DB, ownerRow.user_id) : 0;
+      const qualified = await qualifyReferralsForUser(env.DB, paymentUserId);
+      const rewarded = qualified > 0 ? await rewardQualifiedReferrals(env.DB, paymentUserId) : 0;
 
       await recordAdminAudit(env.DB, {
         actor: adminActor,
@@ -1921,7 +2403,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         metadata: {
           plan: payment.plan,
           accountId: payment.account_id,
-          userId: ownerRow.user_id,
+          userId: paymentUserId,
           referralsRewarded: rewarded,
         },
         ip: clientIp(request),
@@ -1929,10 +2411,15 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
       return jsonSuccess({ activated: true, plan: payment.plan, referralsRewarded: rewarded });
     }
-    await env.DB
-      .prepare(`UPDATE payments SET status = 'rejected', verified_at = ? WHERE id = ?`)
+    const rejected = await env.DB
+      .prepare(
+        `UPDATE payments SET status = 'rejected', verified_at = ? WHERE id = ? AND status = 'pending'`
+      )
       .bind(now, paymentId)
       .run();
+    if ((rejected.meta?.changes ?? 0) === 0) {
+      return jsonError("ALREADY_PROCESSED", "This payment was already reviewed.", 409);
+    }
 
     await recordAdminAudit(env.DB, {
       actor: adminActor,

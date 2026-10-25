@@ -52,6 +52,11 @@ function createMockD1(sqlite: DatabaseSync): D1Database {
         },
       } as any;
     },
+    async batch(stmts: any[]) {
+      const results: any[] = [];
+      for (const stmt of stmts) results.push(await stmt.run());
+      return results;
+    },
   } as unknown as D1Database;
 }
 
@@ -681,7 +686,9 @@ async function runTests() {
     "the confirmation names the address the owner will reply to"
   );
   const logged = sqlite
-    .prepare(`SELECT COUNT(*) AS n FROM webhook_logs WHERE event_type = 'agency_contact'`)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM agency_enquiries WHERE email = 'studio.owner@relo.test'`
+    )
     .get() as any;
   assert.strictEqual(Number(logged.n), 1, "the enquiry is recorded for the owner to work");
 

@@ -4,6 +4,11 @@ import { createUserId } from "./types/ids";
 export interface JwtPayload {
   sub: UserId;
   email: string;
+  /**
+   * Unique session id. The API only accepts a token whose `jti` still has a
+   * live row in `sessions`, which is what makes logout a real revocation.
+   */
+  jti: string;
   iat: number;
   exp: number;
 }
@@ -156,10 +161,15 @@ export async function verifyJwt(
       // Issued in the future beyond clock-skew tolerance
       return null;
     }
+    // A token with no session id cannot be revoked, so it is not accepted.
+    if (typeof payload.jti !== "string" || payload.jti.length === 0) {
+      return null;
+    }
 
     return {
       sub: createUserId(payload.sub),
       email: payload.email,
+      jti: payload.jti,
       iat: payload.iat,
       exp: payload.exp,
     };
@@ -182,13 +192,23 @@ export function generateOtpCode(): string {
  * Sends a 6-digit login OTP code via Resend Email API.
  * Failures propagate to the caller so the API never reports success when
  * no email went out — and the raw code is NEVER returned to HTTP clients.
+ *
+ * `devMode` is the ONLY path allowed to run without an API key: it logs the
+ * code so local development works. Without it a missing `RESEND_API_KEY` is a
+ * hard failure, because the previous behaviour ("success", code written to the
+ * Worker log, email never sent) meant a misconfigured production deployment
+ * silently locked every user out while reporting that a code had been sent.
  */
 export async function sendOtpEmail(
   email: string,
   code: string,
-  resendApiKey?: string
+  resendApiKey?: string,
+  devMode = false
 ): Promise<{ success: boolean; error?: string }> {
   if (!resendApiKey) {
+    if (!devMode) {
+      return { success: false, error: "EMAIL_NOT_CONFIGURED" };
+    }
     console.log(`[Auth Dev Mode] Generated OTP for ${email}: ${code}`);
     return { success: true };
   }

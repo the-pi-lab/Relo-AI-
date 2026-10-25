@@ -78,8 +78,8 @@ export const TENANT_POLICY: Readonly<Record<string, TenantPolicy>> = {
     rule: "Scoped by account_id; append-only.",
   },
   payments: {
-    owner: "account_id",
-    rule: "Scoped by account_id; admin activation is the only cross-tenant writer, and it is audited.",
+    owner: "user_id",
+    rule: "Scoped by user_id (billing reads) — account_id is kept for attribution only. Admin activation is the only cross-tenant writer, and it is audited.",
   },
   campaigns: {
     owner: "account_id",
@@ -126,6 +126,11 @@ export const TENANT_POLICY: Readonly<Record<string, TenantPolicy>> = {
     parentColumn: "actor_id",
     rule: "Owner-only (admin) read; append-only, never exposed to a normal user session.",
   },
+  agency_enquiries: {
+    owner: "parent",
+    parentColumn: "email",
+    rule: "Written by the public contact form; read only by an admin. Never joined to a tenant account.",
+  },
 } as const;
 
 /**
@@ -155,6 +160,7 @@ const REQUIRED_TABLES = [
   "email_otps",
   "rate_limits",
   "admin_audit_log",
+  "agency_enquiries",
 ] as const;
 
 let policiesChecked = false;
