@@ -2,19 +2,20 @@ name = "relo-engine"
 main = "src/index.ts"
 compatibility_date = "2025-01-15"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
 [vars]
 ENVIRONMENT = "production"
 META_GRAPH_API_VERSION = "v21.0"
 # Worker origin used for short links (/l/:id) - set to your deployed URL
-PUBLIC_BASE_URL = "https://relo-engine.YOUR-SUBDOMAIN.workers.dev"
+PUBLIC_BASE_URL = "https://relo-engine.empty-smoke-5043.workers.dev"
 # Frontend origin used by the RELO branding button redirect (/r/:accountId)
-PUBLIC_APP_URL = "https://YOUR-APP.vercel.app"
+PUBLIC_APP_URL = "https://relo-nu.vercel.app"
 # CORS allowlist. Comma-separated origins, scheme included, no trailing slash and
 # NO wildcard. `PUBLIC_APP_URL` above is allowed automatically; list any extra
 # origins (staging dashboard, custom domain) here. Localhost is added
 # automatically whenever ENVIRONMENT is not "production".
-ALLOWED_ORIGINS = "https://YOUR-APP.vercel.app"
+ALLOWED_ORIGINS = "https://relo-nu.vercel.app"
 # Flip to "1" only after TURNSTILE_SECRET_KEY is set as a secret: makes a
 # missing CAPTCHA secret a hard failure instead of a logged warning.
 REQUIRE_CAPTCHA = "0"
@@ -41,7 +42,7 @@ REQUIRE_CAPTCHA = "0"
 binding = "DB"
 database_name = "relo-d1"
 # Replace with the UUID emitted by `wrangler d1 create relo-d1`
-database_id = "REPLACE_WITH_D1_DATABASE_UUID"
+database_id = "c4542572-e227-4d6d-8327-5bc24db3eabb"
 
 [triggers]
 crons = ["* * * * *"] # Executes every 1 minute for Cron-as-Queue batch processing
