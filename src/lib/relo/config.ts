@@ -77,8 +77,6 @@ export function metaOAuthUrl(state: string): string {
     response_type: "code",
     scope: META_SCOPES,
     state,
-    enable_fb_login: "0",
-    force_authentication: "1",
   });
   return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
 }
