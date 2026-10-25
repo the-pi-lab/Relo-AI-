@@ -116,6 +116,23 @@ The Worker only answers browser requests from `ALLOWED_ORIGINS` plus `PUBLIC_APP
 2. **Facebook Login for Business → Settings → Valid OAuth Redirect URIs** → add the exact redirect URI used by the frontend: `https://<your-frontend>/auth/meta/callback`. It must match `NEXT_PUBLIC_META_REDIRECT_URI` byte-for-byte, including the trailing path.
 3. **App Review** → request `instagram_basic`, `instagram_manage_comments`, `instagram_manage_messages`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`. Until review passes, only users with a role on the Meta app can connect an account.
 
+### Why an automation can look armed and still never fire
+
+There are two independent subscriptions. Both must be true or no comment ever reaches the Worker:
+
+1. **App → Instagram object** (Meta App Dashboard): callback URL `<worker-url>/webhook`, verify token = `META_VERIFY_TOKEN`, and the `comments` field ticked. Without this, Meta never calls the Worker at all.
+2. **Instagram account → app** (Graph `POST /{ig-id}/subscribed_apps`): RELO does this automatically on connect and on every automation save. Comment fields go on the Instagram node; `messages`/`messaging_postbacks` go on the Page node (Facebook Login) or the Instagram node (Instagram Login). They are deliberately never mixed in one request — Meta rejects the whole request if one field is invalid for that node, which used to silently kill the comment subscription too.
+
+To see which boundary is broken, call the read-only diagnosis endpoint with a signed-in session:
+
+```
+GET /api/accounts/<accountId>/health
+```
+
+The response carries `diagnosis[]` with severity, e.g. `COMMENTS_NOT_SUBSCRIBED`, `NO_WEBHOOK_EVER`, `CRON_NEVER_RAN`, `KEYWORD_NO_MATCH`, `COMMENT_ON_WRONG_REEL`, `WEBHOOK_ACCOUNT_MISMATCH`, plus `cron.lastRunAt`, `jobs` counts and the last inbound webhook outcome. `healthy: false` means the Reel cannot fire right now.
+
+If comments arrive but nothing is sent, check in this order: the comment must be on the **exact Reel** with an active automation, it must contain one of that automation's trigger keywords (whole-word, case/accent-insensitive), the job must leave the anti-spam jitter (10–25s), and the cron trigger must be deployed (`wrangler deploy` registers the `* * * * *` cron from `wrangler.toml`). The worker refuses to reply outside Meta's 24-hour messaging window and while a human takeover pause is active; those show up as `SKIPPED_*` in `jobs.response_mid`.
+
 ---
 
 ## Part 3 — Frontend (Vercel)

@@ -33,6 +33,31 @@ export function getMetaGraphVersion(): string {
   return metaBaseUrl.split("/").pop() || DEFAULT_META_GRAPH_VERSION;
 }
 
+/**
+ * Webhook fields, split by the Graph node that accepts them.
+ *
+ * Meta validates the *entire* `subscribed_fields` list against the node and
+ * rejects the request if one entry is not valid there. Sending comment and
+ * messaging fields together is therefore all-or-nothing: one bad field means
+ * no subscription at all, including comments.
+ */
+export const COMMENT_WEBHOOK_FIELDS = ["comments"];
+export const MESSAGING_WEBHOOK_FIELDS = ["messages", "messaging_postbacks"];
+
+export interface WebhookSubscriptionResult {
+  /** True when the comment subscription (the Reel automation path) worked. */
+  success: boolean;
+  commentsReady: boolean;
+  messagingReady: boolean;
+  /** What Meta reports as subscribed, read back after the write. */
+  verifiedComments: boolean;
+  verifiedMessaging: boolean;
+  subscribedFields: string[];
+  pageId: string | null;
+  /** Per-node failures, so a creator can be told exactly what Meta refused. */
+  errors: Array<{ node: string; fields: string[]; message: string }>;
+}
+
 export interface MetaClientConfig {
   defaultTimeoutMs?: number;
 }
@@ -247,6 +272,271 @@ export class MetaGraphClient {
         message: payload,
       },
     });
+  }
+
+  /**
+   * A single Graph call with a short timeout. Subscription bookkeeping is never
+   * allowed to hold a request open — a hung Meta call used to stall the whole
+   * connect/automation-save request behind a 10s default timeout.
+   */
+  private async graphCall(
+    url: URL,
+    method: "GET" | "POST"
+  ): Promise<{ ok: boolean; status: number; data: any }> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(url.toString(), {
+        method,
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: { message: text } };
+      }
+      return { ok: res.ok, status: res.status, data };
+    } catch (error: any) {
+      return {
+        ok: false,
+        status: 0,
+        data: {
+          error: {
+            message:
+              error?.name === "AbortError"
+                ? "Request timed out after 8000ms"
+                : error?.message || "Network failure",
+          },
+        },
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * POST /{node}/subscribed_apps.
+   *
+   * Meta answers a successful subscribe with `{ success: true }`. A 200 that
+   * carries `{ data: [] }` is an *empty listing*, not a success — the old
+   * `data.success || data.data` check read the empty array as truthy and
+   * reported success while nothing had been subscribed. Only an explicit
+   * `success === true`, or a non-empty `data` array, counts here.
+   */
+  private async subscribeFieldsOnNode(
+    accessToken: string,
+    nodeId: string,
+    fields: string[],
+    host: "graph.facebook.com" | "graph.instagram.com"
+  ): Promise<{ ok: boolean; data: any }> {
+    const url = new URL(`https://${host}/${getMetaGraphVersion()}/${nodeId}/subscribed_apps`);
+    url.searchParams.set("subscribed_fields", fields.join(","));
+    url.searchParams.set("access_token", accessToken);
+    const res = await this.graphCall(url, "POST");
+    const success =
+      res.ok &&
+      (res.data?.success === true ||
+        (Array.isArray(res.data?.data) && res.data.data.length > 0));
+    return { ok: success, data: res.data };
+  }
+
+  /**
+   * The page that owns this token, when one exists.
+   *
+   * Facebook Login returns a Page token, and Meta scopes *messaging* webhook
+   * fields to the Page node. Instagram Business Login has no page at all, so
+   * this returns null and the caller keeps messaging fields on the IG node.
+   * Best effort: a failure here must not block the comment subscription.
+   */
+  async getPageIdForToken(accessToken: string): Promise<string | null> {
+    const url = new URL(`https://graph.facebook.com/${getMetaGraphVersion()}/me`);
+    url.searchParams.set("fields", "id");
+    url.searchParams.set("access_token", accessToken);
+    const res = await this.graphCall(url, "GET");
+    const id = res.ok ? String(res.data?.id || "").trim() : "";
+    return id && /^\d{5,}$/.test(id) ? id : null;
+  }
+
+  /**
+   * Reads back what Meta says is actually subscribed. `GET` returns
+   * `{ data: [{ subscribed_fields: [...] }] }`; anything else means "unknown",
+   * which is reported as an empty list rather than guessed at.
+   */
+  async getSubscribedApps(
+    accessToken: string,
+    instagramAccountId: string,
+    pageId?: string | null
+  ): Promise<string[]> {
+    const nodes: Array<{ id: string; host: "graph.facebook.com" | "graph.instagram.com" }> = [
+      { id: instagramAccountId, host: "graph.facebook.com" },
+      { id: instagramAccountId, host: "graph.instagram.com" },
+    ];
+    if (pageId) nodes.push({ id: pageId, host: "graph.facebook.com" });
+
+    const fields = new Set<string>();
+    for (const node of nodes) {
+      const url = new URL(
+        `https://${node.host}/${getMetaGraphVersion()}/${node.id}/subscribed_apps`
+      );
+      url.searchParams.set("access_token", accessToken);
+      const res = await this.graphCall(url, "GET");
+      if (!res.ok || !Array.isArray(res.data?.data)) continue;
+      for (const entry of res.data.data) {
+        const list = entry?.subscribed_fields;
+        if (Array.isArray(list)) for (const f of list) fields.add(String(f));
+      }
+    }
+    return Array.from(fields);
+  }
+
+  /**
+   * Read-only view of webhook readiness for the health endpoint.
+   *
+   * Deliberately does not subscribe: a GET must never mutate Meta state. It
+   * reports what Meta says is live so the dashboard can show "comments not
+   * subscribed" instead of a green "connected" badge over a dead pipeline.
+   */
+  async getWebhookReadiness(
+    accessToken: string,
+    instagramAccountId: string
+  ): Promise<{
+    pageId: string | null;
+    subscribedFields: string[];
+    commentsReady: boolean;
+    messagingReady: boolean;
+  }> {
+    const pageId = await this.getPageIdForToken(accessToken);
+    const subscribedFields = await this.getSubscribedApps(
+      accessToken,
+      instagramAccountId,
+      pageId
+    );
+    return {
+      pageId,
+      subscribedFields,
+      commentsReady: subscribedFields.includes("comments"),
+      messagingReady: subscribedFields.includes("messages"),
+    };
+  }
+
+  /**
+   * Subscribes the account to the webhook fields RELO actually needs.
+   *
+   * Two things used to break real deployments while every test passed:
+   *
+   *  1. `comments`, `messages` and `messaging_postbacks` were sent as ONE
+   *     `subscribed_fields` value on ONE node. Meta rejects the whole request
+   *     when any field is invalid for that node — so a messaging field the
+   *     account cannot use also killed the comment subscription, and no
+   *     comment webhook was ever delivered. Fields are now grouped by node.
+   *  2. The failure was logged with `console.warn` and swallowed, so the
+   *     dashboard happily said "connected" while nothing was subscribed.
+   *     The caller now gets a structured result it can show the creator.
+   *
+   * `success` reflects the comment subscription, because that is the path the
+   * Reel automation depends on; messaging readiness is reported separately.
+   */
+  async subscribeAppToInstagram(
+    accessToken: string,
+    instagramAccountId: string,
+    pageIdHint?: string | null
+  ): Promise<WebhookSubscriptionResult> {
+    const errors: WebhookSubscriptionResult["errors"] = [];
+
+    // 1. Comment webhooks live on the Instagram account node. Facebook Login
+    //    tokens need graph.facebook.com; Instagram Login tokens need
+    //    graph.instagram.com. Try both, first success wins.
+    let commentsReady = false;
+    for (const host of ["graph.facebook.com", "graph.instagram.com"] as const) {
+      const attempt = await this.subscribeFieldsOnNode(
+        accessToken,
+        instagramAccountId,
+        COMMENT_WEBHOOK_FIELDS,
+        host
+      );
+      if (attempt.ok) {
+        commentsReady = true;
+        break;
+      }
+      errors.push({
+        node: `${host}/${instagramAccountId}`,
+        fields: COMMENT_WEBHOOK_FIELDS,
+        message: String(attempt.data?.error?.message || "subscribe failed"),
+      });
+    }
+
+    // 2. Messaging webhooks live on the Page node for Facebook Login (the page
+    //    token knows its page) and on the IG node for Instagram Login. A hint
+    //    equal to the IG id is the IG Login case, not a page.
+    const hint =
+      pageIdHint && String(pageIdHint).trim() !== String(instagramAccountId).trim()
+        ? String(pageIdHint).trim()
+        : null;
+    const pageId = hint || (await this.getPageIdForToken(accessToken));
+    let messagingReady = false;
+    const messagingNodes: Array<{
+      id: string;
+      host: "graph.facebook.com" | "graph.instagram.com";
+    }> = pageId
+      ? [{ id: pageId, host: "graph.facebook.com" }]
+      : [
+          { id: instagramAccountId, host: "graph.facebook.com" },
+          { id: instagramAccountId, host: "graph.instagram.com" },
+        ];
+
+    for (const node of messagingNodes) {
+      const attempt = await this.subscribeFieldsOnNode(
+        accessToken,
+        node.id,
+        MESSAGING_WEBHOOK_FIELDS,
+        node.host
+      );
+      if (attempt.ok) {
+        messagingReady = true;
+        break;
+      }
+      errors.push({
+        node: `${node.host}/${node.id}`,
+        fields: MESSAGING_WEBHOOK_FIELDS,
+        message: String(attempt.data?.error?.message || "subscribe failed"),
+      });
+    }
+
+    // 3. Read back the truth. This is what the health view renders, so a
+    //    creator can see `comments` missing instead of guessing why nothing
+    //    fires.
+    const subscribedFields = await this.getSubscribedApps(
+      accessToken,
+      instagramAccountId,
+      pageId
+    );
+    const verifiedComments =
+      subscribedFields.length === 0 ? commentsReady : subscribedFields.includes("comments");
+    const verifiedMessaging =
+      subscribedFields.length === 0
+        ? messagingReady
+        : subscribedFields.includes("messages");
+
+    if (!commentsReady) {
+      console.warn(
+        `[Meta] Could not subscribe @${instagramAccountId} to comment webhooks:`,
+        errors
+      );
+    }
+
+    return {
+      success: commentsReady,
+      commentsReady,
+      messagingReady,
+      verifiedComments,
+      verifiedMessaging,
+      subscribedFields,
+      pageId,
+      errors,
+    };
   }
 
   /**

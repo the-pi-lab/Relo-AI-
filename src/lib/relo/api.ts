@@ -369,6 +369,9 @@ export const getAccounts = (): Promise<{ accounts: Account[] }> =>
 export const disconnectAccount = (accountId: string): Promise<{ deleted: boolean }> =>
   request(`/api/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" });
 
+export const subscribeWebhooks = (): Promise<{ subscriptions: any[] }> =>
+  request("/api/accounts/subscribe-webhooks", { method: "POST" });
+
 /* ── reels ────────────────────────────────────────────────────────────── */
 
 export const getReels = (accountId: string): Promise<{ reels: Reel[] }> =>

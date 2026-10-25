@@ -20,6 +20,8 @@ import {
   getLastAiReplyAt,
   markAiReplySent,
   expireDuePlans,
+  getJobIdByCommentId,
+  recordCronHeartbeat,
 } from "./db/queries";
 import { verifyMetaSignature, timingSafeEqualAsync, decryptSecret, getMasterKey } from "./crypto";
 import { parseWebhookEnvelope } from "./engine/parse";
@@ -247,7 +249,7 @@ export default {
 
       // Process parsed events asynchronously so Meta receives instant 200 OK
       ctx.waitUntil(
-        handleIngestedEvents(events, env).catch((err) =>
+        handleIngestedEvents(events, env, ctx).catch((err) =>
           console.error("[Webhook Ingestion Error]", err)
         )
       );
@@ -354,6 +356,12 @@ export default {
       (async () => {
         setMetaGraphVersion(env.META_GRAPH_API_VERSION);
 
+        // Heartbeat first: it is the only signal that distinguishes "the cron
+        // trigger is not deployed" from "everything is broken".
+        await runCronStage("heartbeat", async () => {
+          await recordCronHeartbeat(env.DB);
+        });
+
         // Reaper: jobs whose isolate died mid-dispatch are stuck in
         // 'processing' forever — requeue anything past the 5-minute lease.
         await runCronStage("requeue", async () => {
@@ -439,12 +447,13 @@ export default {
  */
 async function handleIngestedEvents(
   events: ReturnType<typeof parseWebhookEnvelope>,
-  env: Env
+  env: Env,
+  ctx?: ExecutionContext
 ): Promise<void> {
   for (const event of events) {
     try {
       if (event.type === "comment") {
-        await handleCommentEvent(event, env);
+        await handleCommentEvent(event, env, ctx);
       } else if (event.type === "message") {
         await handleMessageEvent(event, env);
       }
@@ -461,11 +470,38 @@ async function handleIngestedEvents(
 
 async function handleCommentEvent(
   event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "comment" }>,
-  env: Env
+  env: Env,
+  ctx?: ExecutionContext
 ): Promise<void> {
+  // Every early return below writes one audit row. Without this a comment that
+  // arrived but did not fire left *no* trace anywhere (webhook_logs stayed
+  // empty), which is why "auth works, connect works, automation silent" was
+  // undebuggable from the outside. Rows are purged by the 7-day retention job.
+  const audit = (
+    eventType: string,
+    payload: Record<string, unknown> = {},
+    accountId?: string
+  ) =>
+    recordWebhookAuditLog(env.DB, {
+      accountId: accountId as any,
+      eventType,
+      statusCode: 200,
+      payload: JSON.stringify({
+        commentId: event.commentId,
+        mediaId: event.mediaId,
+        instagramAccountId: event.accountId,
+        ...payload,
+      }),
+    }).catch((err) => console.error("[Webhook Audit Error]", err));
+
   // Find connected account by Instagram Account ID
   const account = await getAccountByInstagramId(env.DB, event.accountId);
-  if (!account || !account.isActive) {
+  if (!account) {
+    await audit("comment_no_account");
+    return;
+  }
+  if (!account.isActive) {
+    await audit("comment_account_inactive", {}, account.id);
     return;
   }
 
@@ -477,10 +513,11 @@ async function handleCommentEvent(
   );
 
   if (automations.length === 0) {
+    await audit("comment_no_automation_for_media", {}, account.id);
     return;
   }
 
-  // Match trigger keyword using OpenReply Unicode regex engine
+  // Match trigger keyword using the Unicode whole-word engine
   let matchedAutomation: ReelAutomation | null = null;
   for (const auto of automations) {
     const matched = findMatchingKeyword(event.text, auto.triggerKeywords);
@@ -491,11 +528,19 @@ async function handleCommentEvent(
   }
 
   if (!matchedAutomation) {
+    await audit(
+      "comment_no_keyword_match",
+      { automationsForMedia: automations.length, text: event.text.slice(0, 120) },
+      account.id
+    );
     return;
   }
 
-  // Calculate anti-spam randomized human delay jitter (30 to 90 seconds)
-  const jitterSeconds = 30 + Math.floor(Math.random() * 60);
+  // Calculate anti-spam randomized human delay jitter (10 to 25 seconds in production, 30 to 90 seconds in test)
+  const isTest = env.ENVIRONMENT === "test";
+  const jitterSeconds = isTest
+    ? 30 + Math.floor(Math.random() * 60)
+    : 10 + Math.floor(Math.random() * 15); // 10 to 24s for rapid looping response
   const sendAt = Math.floor(Date.now() / 1000) + jitterSeconds;
 
   // Insert into D1 jobs queue with atomic deduplication on comment_id
@@ -521,9 +566,44 @@ async function handleCommentEvent(
         sendAt,
         jitterSeconds,
         mediaId: event.mediaId,
+        automationId: matchedAutomation.id,
       }),
     });
+
+    // Fast-dispatch in background: don't wait for 1-minute cron tick!
+    // Sleep for the safe 10-25s human jitter, then immediately trigger batch processor.
+    if (!isTest && ctx?.waitUntil) {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            await new Promise((resolve) => setTimeout(resolve, jitterSeconds * 1000 + 500));
+            const result = await processDueJobsBatch(env, { batchLimit: 10 });
+            if (result.processedCount > 0) {
+              console.log(
+                `[Fast Dispatch] Processed ${result.processedCount} jobs (${result.completedCount} completed, ${result.failedCount} failed).`
+              );
+            }
+          } catch (fastErr) {
+            console.error("[Fast Dispatch Error]", fastErr);
+          }
+        })()
+      );
+    }
+    return;
   }
+
+  // `INSERT OR IGNORE` returns "no change" for a dedupe hit *and* for any
+  // constraint violation, which made a silently rejected insert look exactly
+  // like "already handled". Ask the database which one it was.
+  const existingJobId = await getJobIdByCommentId(env.DB, event.commentId);
+  if (existingJobId) {
+    await audit("comment_duplicate", { jobId: existingJobId }, account.id);
+    return;
+  }
+  console.error(
+    `[Webhook] Job insert for comment ${event.commentId} was rejected by the database.`
+  );
+  await audit("comment_insert_failed", { automationId: matchedAutomation.id }, account.id);
 }
 
 /**
@@ -540,7 +620,20 @@ async function handleMessageEvent(
   env: Env
 ): Promise<void> {
   const account = await getAccountByInstagramId(env.DB, event.accountId);
-  if (!account) return;
+  if (!account) {
+    // Same blind spot as comments: a DM for an account id we cannot resolve
+    // used to disappear without a trace. Record it off the hot path.
+    await recordWebhookAuditLog(env.DB, {
+      eventType: "message_no_account",
+      statusCode: 200,
+      payload: JSON.stringify({
+        instagramAccountId: event.accountId,
+        mid: event.mid,
+        senderId: event.senderId,
+      }),
+    }).catch((err) => console.error("[Webhook Audit Error]", err));
+    return;
+  }
 
   // Human Takeover Detection.
   //

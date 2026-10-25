@@ -11,6 +11,7 @@ import {
   Plus,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
   Unplug,
   Zap,
@@ -638,6 +639,27 @@ export function SettingsView() {
   const metaReady = isMetaConfigured();
   const atAccountLimit = accounts.length >= limits.maxAccounts;
 
+  const [syncingWebhooks, setSyncingWebhooks] = useState(false);
+
+  const syncWebhooks = async () => {
+    try {
+      setSyncingWebhooks(true);
+      const res = await api.subscribeWebhooks();
+      const allOk = res?.subscriptions?.every(
+        (s: any) => (s.commentsReady !== undefined ? s.commentsReady : s.success !== false)
+      );
+      if (allOk) {
+        toast.success("Webhooks connected & subscribed to Instagram successfully!");
+      } else {
+        toast.error("Webhook subscription warning: please check account permissions.");
+      }
+    } catch (err: any) {
+      toast.error(api.errorMessage(err));
+    } finally {
+      setSyncingWebhooks(false);
+    }
+  };
+
   const connect = () => {
     window.dispatchEvent(new CustomEvent("relo:open-connect"));
   };
@@ -785,6 +807,14 @@ export function SettingsView() {
                   </Pill>
 
                   <div className="flex items-center gap-1.5">
+                    <Button variant="ghost" size="sm" onClick={() => void syncWebhooks()} disabled={syncingWebhooks}>
+                      {syncingWebhooks ? (
+                        <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden />
+                      ) : (
+                        <ShieldCheck className="size-3.5 text-signal" strokeWidth={1.75} aria-hidden />
+                      )}
+                      {syncingWebhooks ? "Syncing..." : "Sync Webhook"}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={connect}>
                       <RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />
                       Reconnect

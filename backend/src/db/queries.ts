@@ -64,6 +64,25 @@ export async function insertJobIfNew(
 }
 
 /**
+ * 1b. Resolve the job created for a comment, if any.
+ *
+ * `INSERT OR IGNORE` cannot tell a dedupe hit from a rejected insert (a CHECK
+ * or FK failure also reports zero changes). The webhook handler uses this to
+ * distinguish "we already handled this comment" from "the database refused the
+ * job", which used to be invisible.
+ */
+export async function getJobIdByCommentId(
+  db: D1Database,
+  commentId: CommentId
+): Promise<string | null> {
+  const row = (await db
+    .prepare(`SELECT id FROM jobs WHERE comment_id = ? LIMIT 1`)
+    .bind(commentId)
+    .first()) as any;
+  return row?.id ?? null;
+}
+
+/**
  * 2. Fetch due pending jobs for the 1-minute Cron batch worker.
  * Leverages partial index `idx_jobs_cron_poll`.
  *
@@ -3063,4 +3082,145 @@ export async function isUserAdmin(db: D1Database, userId: string): Promise<boole
   } catch {
     return false;
   }
+}
+
+
+// ===========================================================================
+// 44. PIPELINE HEALTH (diagnostics)
+//
+// "Auth works, connect works, automation does nothing" has exactly three
+// boundaries: Meta never delivered the webhook, we delivered it but matched
+// nothing, or we enqueued it and the cron never drained the queue. These
+// helpers let the API answer that from data instead of guesswork.
+// ===========================================================================
+
+/** Fixed bucket so the heartbeat is one row, not one row per minute. */
+const CRON_HEARTBEAT_BUCKET = "cron:heartbeat";
+
+/**
+ * Records that the scheduled handler ran. Written every tick and read by the
+ * health endpoint; a stale timestamp is the difference between "the engine is
+ * broken" and "the cron trigger was never deployed".
+ */
+export async function recordCronHeartbeat(db: D1Database): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO rate_limits (bucket, window_start, count)
+       VALUES (?, ?, 1)
+       ON CONFLICT (bucket) DO UPDATE SET
+         window_start = excluded.window_start,
+         count = rate_limits.count + 1`
+    )
+    .bind(CRON_HEARTBEAT_BUCKET, now)
+    .run();
+}
+
+export async function getCronHeartbeat(
+  db: D1Database
+): Promise<{ lastRunAt: number; ticks: number }> {
+  try {
+    const row = (await db
+      .prepare(
+        `SELECT window_start, count FROM rate_limits WHERE bucket = ? LIMIT 1`
+      )
+      .bind(CRON_HEARTBEAT_BUCKET)
+      .first()) as any;
+    if (!row) return { lastRunAt: 0, ticks: 0 };
+    return {
+      lastRunAt: Number(row.window_start ?? 0),
+      ticks: Number(row.count ?? 0),
+    };
+  } catch {
+    return { lastRunAt: 0, ticks: 0 };
+  }
+}
+
+/** Job counts by status for one account (drives the queue diagnosis). */
+export async function getJobStatusCounts(
+  db: D1Database,
+  accountId: AccountId
+): Promise<Record<string, number>> {
+  const { results } = await db
+    .prepare(
+      `SELECT status, COUNT(*) AS n FROM jobs
+        WHERE account_id = ?
+        GROUP BY status`
+    )
+    .bind(accountId)
+    .all();
+  const counts: Record<string, number> = {
+    pending: 0,
+    processing: 0,
+    completed: 0,
+    failed: 0,
+  };
+  for (const row of results || []) {
+    counts[String((row as any).status)] = Number((row as any).n ?? 0);
+  }
+  return counts;
+}
+
+/** The most recent inbound webhook outcome for an account, if any. */
+export async function getLastWebhookActivity(
+  db: D1Database,
+  accountId: AccountId
+): Promise<{ eventType: string; createdAt: number; errorMessage: string | null } | null> {
+  const row = (await db
+    .prepare(
+      `SELECT event_type, created_at, error_message
+         FROM webhook_logs
+        WHERE account_id = ?
+        ORDER BY created_at DESC, rowid DESC
+        LIMIT 1`
+    )
+    .bind(accountId)
+    .first()) as any;
+  if (!row) return null;
+  return {
+    eventType: String(row.event_type),
+    createdAt: Number(row.created_at ?? 0),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+  };
+}
+
+/** The most recent failed job for an account, to surface the real Graph error. */
+export async function getLastJobFailure(
+  db: D1Database,
+  accountId: AccountId
+): Promise<{ jobId: string; message: string; updatedAt: number } | null> {
+  const row = (await db
+    .prepare(
+      `SELECT id, error_message, updated_at FROM jobs
+        WHERE account_id = ? AND status = 'failed'
+        ORDER BY updated_at DESC, rowid DESC
+        LIMIT 1`
+    )
+    .bind(accountId)
+    .first()) as any;
+  if (!row) return null;
+  return {
+    jobId: String(row.id),
+    message: String(row.error_message || "unknown error"),
+    updatedAt: Number(row.updated_at ?? 0),
+  };
+}
+
+/** Automation counts by active state, plus the Reels that are armed. */
+export async function getAutomationHealth(
+  db: D1Database,
+  accountId: AccountId
+): Promise<{ total: number; active: number; mediaIds: string[] }> {
+  const { results } = await db
+    .prepare(
+      `SELECT instagram_media_id, is_active FROM reel_automations WHERE account_id = ?`
+    )
+    .bind(accountId)
+    .all();
+  const rows = (results || []) as Array<{ instagram_media_id: string; is_active: number }>;
+  return {
+    total: rows.length,
+    active: rows.filter((r) => Number(r.is_active) === 1).length,
+    mediaIds: rows.filter((r) => Number(r.is_active) === 1).map((r) => String(r.instagram_media_id)),
+  };
 }

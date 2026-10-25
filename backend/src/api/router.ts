@@ -11,6 +11,7 @@ import {
   getAccountsForUser,
   getOwnedAccount,
   getAccountOwnership,
+  getAccountById,
   upsertConnectedAccount,
   deleteConnectedAccount,
   getAutomationsForAccount,
@@ -60,6 +61,11 @@ import {
   qualifyReferralsForUser,
   rewardQualifiedReferrals,
   isUserAdmin,
+  getAutomationHealth,
+  getJobStatusCounts,
+  getCronHeartbeat,
+  getLastWebhookActivity,
+  getLastJobFailure,
 } from "../db/queries";
 import { limitsFor, planSatisfies } from "../tiers";
 import {
@@ -861,6 +867,44 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     }
   }
 
+  // Webhook subscription sync endpoint (called with secret query param or x-secret header)
+  if (path === "/api/webhooks/subscribe-all" && (method === "GET" || method === "POST")) {
+    const secret = url.searchParams.get("secret") || request.headers.get("x-secret") || "";
+    const isAuthorized =
+      (env.META_VERIFY_TOKEN && (await timingSafeEqualAsync(secret, env.META_VERIFY_TOKEN))) ||
+      (env.ADMIN_SECRET && (await timingSafeEqualAsync(secret, env.ADMIN_SECRET)));
+    if (!isAuthorized) {
+      return jsonError("UNAUTHORIZED", "Invalid secret.", 403);
+    }
+    const accounts = (await env.DB.prepare(
+      "SELECT id, user_id, instagram_user_id, username, access_token_encrypted FROM connected_accounts WHERE is_active = 1"
+    ).all()) as { results?: Array<any> };
+
+    const results = [];
+    const masterKey = getMasterKey(env);
+    for (const acc of accounts.results || []) {
+      try {
+        const token = await decryptSecret(acc.access_token_encrypted, masterKey);
+        const subResult = await metaGraphClient.subscribeAppToInstagram(token, acc.instagram_user_id);
+        results.push({
+          id: acc.id,
+          username: acc.username,
+          instagramUserId: acc.instagram_user_id,
+          ...subResult,
+        });
+      } catch (err: any) {
+        results.push({
+          id: acc.id,
+          username: acc.username,
+          instagramUserId: acc.instagram_user_id,
+          success: false,
+          error: err?.message || String(err),
+        });
+      }
+    }
+    return jsonSuccess({ subscriptions: results });
+  }
+
   // =========================================================================
   // AUTHENTICATION GUARD FOR PROTECTED ENDPOINTS
   // =========================================================================
@@ -1133,6 +1177,25 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
           username: acc.instagramUsername,
           profilePictureUrl: acc.profilePictureUrl,
         });
+
+        // Automatically subscribe account to Meta webhooks (comments, messages).
+        // `acc.pageId` is a Facebook Page for FB Login and the IG id for IG
+        // Login; the client filters that case itself.
+        try {
+          const sub = await metaGraphClient.subscribeAppToInstagram(
+            acc.pageAccessToken,
+            acc.instagramAccountId,
+            acc.pageId
+          );
+          if (!sub.commentsReady) {
+            console.error(
+              `[Meta] Comment webhooks are NOT subscribed for @${acc.instagramUsername}. Reel automations will not fire until this succeeds.`,
+              sub.errors
+            );
+          }
+        } catch (subErr) {
+          console.warn("[Meta] Auto-subscription warning:", subErr);
+        }
       }
 
       return jsonSuccess({ connectedAccounts: connectedResults });
@@ -1144,6 +1207,294 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         502
       );
     }
+  }
+
+  // POST /api/accounts/subscribe-webhooks (Subscribes all user's accounts to Meta webhooks)
+  if (path === "/api/accounts/subscribe-webhooks" && method === "POST") {
+    const userAccounts = await getAccountsForUser(env.DB, user.sub);
+    if (userAccounts.length === 0) {
+      return jsonError("NO_ACCOUNT", "No connected Instagram accounts found.", 404);
+    }
+    const masterKey = getMasterKey(env);
+    const results = [];
+    for (const acc of userAccounts) {
+      try {
+        const fullAccount = await getAccountById(env.DB, acc.id);
+        if (!fullAccount) continue;
+        const token = await decryptSecret(fullAccount.accessTokenEncrypted, masterKey);
+        const subResult = await metaGraphClient.subscribeAppToInstagram(
+          token,
+          acc.instagramUserId
+        );
+        results.push({
+          id: acc.id,
+          username: acc.username,
+          instagramUserId: acc.instagramUserId,
+          ...subResult,
+        });
+      } catch (err: any) {
+        results.push({
+          id: acc.id,
+          username: acc.username,
+          instagramUserId: acc.instagramUserId,
+          success: false,
+          error: err?.message || String(err),
+        });
+      }
+    }
+    return jsonSuccess({ subscriptions: results });
+  }
+
+  // =========================================================================
+  // 2b. PIPELINE HEALTH — "why is my automation not firing?"
+  //
+  // Walks the same three boundaries the engine does and reports which one is
+  // broken, with concrete evidence: the last inbound webhook outcome, the cron
+  // heartbeat, queue counts and Meta's live subscription fields. Read-only —
+  // it never subscribes, never sends, and never mutates a job.
+  // =========================================================================
+  const healthMatch = path.match(/^\/api\/accounts\/([^/]+)\/health$/);
+  if (healthMatch && method === "GET") {
+    const owned = await requireOwnedAccount(env.DB, healthMatch[1], user);
+    if (!owned.account) return owned.error;
+    const account = owned.account;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const [automationsHealth, jobCounts, heartbeat, lastWebhook, lastFailure] =
+      await Promise.all([
+        getAutomationHealth(env.DB, account.id),
+        getJobStatusCounts(env.DB, account.id),
+        getCronHeartbeat(env.DB),
+        getLastWebhookActivity(env.DB, account.id),
+        getLastJobFailure(env.DB, account.id),
+      ]);
+
+    // The live Graph read is an external call, so it gets its own budget.
+    // `webhook === null` means "unknown", never "healthy".
+    let webhook: Awaited<ReturnType<typeof metaGraphClient.getWebhookReadiness>> | null =
+      null;
+    let webhookError: string | null = null;
+    const graphLimit = await enforceRateLimit(
+      env,
+      `graph:health:${user.sub}`,
+      RATE_LIMITS.expensive
+    );
+    if (graphLimit.limited) {
+      webhookError = "Rate limited — retry in a minute.";
+    } else {
+      try {
+        const token = await decryptSecret(
+          account.accessTokenEncrypted,
+          getMasterKey(env)
+        );
+        webhook = await metaGraphClient.getWebhookReadiness(
+          token,
+          String(account.instagramUserId)
+        );
+      } catch (err: any) {
+        webhookError = err?.message || String(err);
+      }
+    }
+
+    const cronAgeSeconds = heartbeat.lastRunAt > 0 ? nowSec - heartbeat.lastRunAt : null;
+    const webhookAgeSeconds = lastWebhook ? nowSec - lastWebhook.createdAt : null;
+
+    // Ordered by what actually blocks the pipeline: `critical` means the Reel
+    // cannot fire at all right now, `warning` means it is degraded.
+    const diagnosis: Array<{
+      code: string;
+      severity: "critical" | "warning" | "info";
+      message: string;
+      fix?: string;
+    }> = [];
+
+    if (!account.isActive) {
+      diagnosis.push({
+        code: "ACCOUNT_INACTIVE",
+        severity: "critical",
+        message: "This Instagram account is disconnected, so no webhook can match it.",
+        fix: "Reconnect the account from Settings.",
+      });
+    }
+
+    if (account.tokenExpiresAt > 0 && account.tokenExpiresAt < nowSec) {
+      diagnosis.push({
+        code: "TOKEN_EXPIRED",
+        severity: "critical",
+        message: "The stored Meta token has expired; every Graph call will fail.",
+        fix: "Reconnect the account to mint a fresh token.",
+      });
+    } else if (account.tokenExpiresAt > 0 && account.tokenExpiresAt - nowSec < 7 * 86400) {
+      diagnosis.push({
+        code: "TOKEN_EXPIRING",
+        severity: "warning",
+        message: "The Meta token expires in under 7 days.",
+        fix: "The token-refresh cron should renew it; reconnect if it does not.",
+      });
+    }
+
+    if (automationsHealth.active === 0) {
+      diagnosis.push({
+        code: "NO_ACTIVE_AUTOMATION",
+        severity: "critical",
+        message:
+          automationsHealth.total === 0
+            ? "No automation exists for this account."
+            : "All automations are paused, so every comment is dropped.",
+        fix: "Arm an automation on a Reel.",
+      });
+    }
+
+    if (webhook && !webhook.commentsReady) {
+      diagnosis.push({
+        code: "COMMENTS_NOT_SUBSCRIBED",
+        severity: "critical",
+        message:
+          "Meta has not subscribed this account to the `comments` webhook, so comments never reach RELO.",
+        fix: "POST /api/accounts/subscribe-webhooks, then confirm Meta App Dashboard → Webhooks → Instagram → comments.",
+      });
+    }
+
+    if (webhookError) {
+      diagnosis.push({
+        code: "SUBSCRIPTION_UNVERIFIED",
+        severity: "warning",
+        message: `Could not read the live webhook subscription from Meta: ${webhookError}`,
+      });
+    }
+
+    if (cronAgeSeconds === null) {
+      diagnosis.push({
+        code: "CRON_NEVER_RAN",
+        severity: "critical",
+        message:
+          "The 1-minute cron has never run on this deployment, so queued jobs are never sent.",
+        fix: "Deploy the Worker so the cron trigger in wrangler.toml is registered, then wait 1–2 minutes.",
+      });
+    } else if (cronAgeSeconds > 180) {
+      diagnosis.push({
+        code: "CRON_STALE",
+        severity: "critical",
+        message: `The cron last ran ${Math.round(cronAgeSeconds / 60)} minute(s) ago.`,
+        fix: "Check the Worker's cron trigger and recent logs.",
+      });
+    }
+
+    if (webhookAgeSeconds === null) {
+      diagnosis.push({
+        code: "NO_WEBHOOK_EVER",
+        severity: "critical",
+        message:
+          "No webhook has ever been received for this account. The break is Meta → RELO, not matching or queueing.",
+        fix: "Verify the Meta App Dashboard callback URL + verify token, and that the app is subscribed to the Instagram `comments` field.",
+      });
+    } else if (lastWebhook?.eventType === "comment_no_account") {
+      diagnosis.push({
+        code: "WEBHOOK_ACCOUNT_MISMATCH",
+        severity: "critical",
+        message:
+          "Comments arrive with an Instagram account id that no connected account matches.",
+        fix: "Reconnect the account so instagram_user_id is refreshed.",
+      });
+    } else if (lastWebhook?.eventType === "comment_account_inactive") {
+      diagnosis.push({
+        code: "WEBHOOK_ACCOUNT_INACTIVE",
+        severity: "critical",
+        message: "Comments arrive for an account that is soft-disconnected in RELO.",
+        fix: "Reconnect the account.",
+      });
+    } else if (lastWebhook?.eventType === "comment_no_automation_for_media") {
+      diagnosis.push({
+        code: "COMMENT_ON_WRONG_REEL",
+        severity: "critical",
+        message: "The last comment arrived for a Reel that has no active automation.",
+        fix: "Arm an automation for the exact Reel that received the comment.",
+      });
+    } else if (lastWebhook?.eventType === "comment_no_keyword_match") {
+      diagnosis.push({
+        code: "KEYWORD_NO_MATCH",
+        severity: "critical",
+        message:
+          "The last comment arrived and matched an automation, but not its trigger keyword.",
+        fix: "Add the exact word the viewer used as a trigger keyword.",
+      });
+    } else if (lastWebhook?.eventType === "comment_insert_failed") {
+      diagnosis.push({
+        code: "JOB_INSERT_FAILED",
+        severity: "critical",
+        message:
+          "The last matched comment could not be written to the jobs queue (database constraint).",
+        fix: "Check the Worker logs for the D1 error on the jobs insert.",
+      });
+    } else if (lastWebhook?.eventType === "comment_duplicate") {
+      diagnosis.push({
+        code: "COMMENT_ALREADY_HANDLED",
+        severity: "info",
+        message: "The last comment was a duplicate of one already queued (dedupe is working).",
+      });
+    } else if (lastWebhook?.eventType === "comment_enqueued") {
+      diagnosis.push({
+        code: "COMMENT_ENQUEUED",
+        severity: "info",
+        message:
+          "The last comment was matched and queued. If no DM arrived, the queue/cron is the remaining suspect.",
+      });
+    } else if (lastWebhook?.eventType === "webhook_signature_failed") {
+      diagnosis.push({
+        code: "SIGNATURE_MISMATCH",
+        severity: "critical",
+        message:
+          "Meta is delivering webhooks but every signature check fails, so they are rejected with 401.",
+        fix: "META_APP_SECRET does not match the app that owns the webhook.",
+      });
+    }
+
+    if (jobCounts.failed > 0) {
+      diagnosis.push({
+        code: "JOBS_FAILED",
+        severity: "warning",
+        message: `${jobCounts.failed} job(s) failed. Last error: ${lastFailure?.message ?? "unknown"}`,
+      });
+    }
+
+    if (jobCounts.pending > 0 && cronAgeSeconds !== null && cronAgeSeconds <= 180) {
+      diagnosis.push({
+        code: "QUEUE_DRAINING",
+        severity: "info",
+        message: `${jobCounts.pending} job(s) are waiting for their anti-spam jitter to elapse; the cron is running.`,
+      });
+    }
+
+    return jsonSuccess({
+      account: {
+        id: account.id,
+        username: account.username,
+        instagramUserId: account.instagramUserId,
+        isActive: account.isActive,
+        plan: account.plan,
+        tokenExpiresAt: account.tokenExpiresAt,
+        tokenDaysRemaining:
+          account.tokenExpiresAt > 0
+            ? Math.max(0, Math.floor((account.tokenExpiresAt - nowSec) / 86400))
+            : null,
+      },
+      automations: automationsHealth,
+      jobs: jobCounts,
+      lastJobFailure: lastFailure,
+      cron: {
+        lastRunAt: heartbeat.lastRunAt,
+        ageSeconds: cronAgeSeconds,
+        ticks: heartbeat.ticks,
+      },
+      webhook: {
+        lastEvent: lastWebhook,
+        ageSeconds: webhookAgeSeconds,
+        subscription: webhook,
+        error: webhookError,
+      },
+      diagnosis,
+      healthy: !diagnosis.some((d) => d.severity === "critical"),
+    });
   }
 
   // =========================================================================
@@ -1425,6 +1776,33 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       await markFreeReelConsumed(env.DB, accountId);
     }
 
+    // Ensure the account is subscribed to Meta webhooks. This is the step that
+    // decides whether a comment ever reaches this Worker, so its result is
+    // returned to the caller instead of being logged and dropped.
+    let webhookSubscription: Awaited<
+      ReturnType<typeof metaGraphClient.subscribeAppToInstagram>
+    > | null = null;
+    if (body?.isActive !== false) {
+      try {
+        const fullAccount = await getAccountById(env.DB, accountId);
+        if (fullAccount) {
+          const token = await decryptSecret(fullAccount.accessTokenEncrypted, getMasterKey(env));
+          webhookSubscription = await metaGraphClient.subscribeAppToInstagram(
+            token,
+            fullAccount.instagramUserId
+          );
+          if (!webhookSubscription.commentsReady) {
+            console.error(
+              `[Meta] Comment webhook subscription FAILED for account ${accountId}. Comments will not trigger this automation.`,
+              webhookSubscription.errors
+            );
+          }
+        }
+      } catch (subErr) {
+        console.warn("[Meta] Auto-subscription on automation save warning:", subErr);
+      }
+    }
+
     return jsonSuccess({
       automation: {
         id: automationId,
@@ -1439,6 +1817,13 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         followUpDelayMinutes,
         followGateEnabled,
       },
+      /**
+       * `commentsReady: false` means Meta refused the subscription: nothing will
+       * ever arrive at /webhook for this account, so the Reel will look armed
+       * but never fire. The dashboard surfaces this rather than pretending the
+       * automation is live.
+       */
+      webhookSubscription,
     });
   }
 

@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "npx tsx tests/phase3.test.ts && npx tsx tests/phase4.test.ts && npx tsx tests/phase5.test.ts && npx tsx tests/phase8-products.test.ts && npx tsx tests/phase9-power-scale.test.ts && npx tsx tests/phase10-growth-engine.test.ts && npx tsx tests/phase11-content-planner.test.ts && npx tsx tests/phase12-bugfixes.test.ts && npx tsx tests/phase13-security-hardening.test.ts && npx tsx tests/phase14-billing-lifecycle.test.ts && npx tsx tests/e2e.test.ts",
+    "test": "npx tsx tests/phase3.test.ts && npx tsx tests/phase4.test.ts && npx tsx tests/phase5.test.ts && npx tsx tests/phase8-products.test.ts && npx tsx tests/phase9-power-scale.test.ts && npx tsx tests/phase10-growth-engine.test.ts && npx tsx tests/phase11-content-planner.test.ts && npx tsx tests/phase12-bugfixes.test.ts && npx tsx tests/phase13-security-hardening.test.ts && npx tsx tests/phase14-billing-lifecycle.test.ts && npx tsx tests/phase15-pipeline-audit.test.ts && npx tsx tests/e2e.test.ts",
     "d1:migrate": "wrangler d1 execute relo-d1 --file=./schema.sql",
     "d1:migrate:local": "wrangler d1 execute relo-d1 --local --file=./schema.sql",
     "migrate": "node scripts/migrate.mjs --remote",
