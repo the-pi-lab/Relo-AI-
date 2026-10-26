@@ -650,10 +650,10 @@ export async function getAccountByInstagramId(
     .prepare(
       `SELECT id, instagram_user_id, username, access_token_encrypted, token_expires_at, is_active, plan
        FROM connected_accounts
-       WHERE instagram_user_id = ? AND is_active = 1
+       WHERE (instagram_user_id = ? OR id = ?) AND is_active = 1
        LIMIT 1`
     )
-    .bind(igUserId)
+    .bind(igUserId, igUserId)
     .first()) as any;
 
   if (!row) return null;

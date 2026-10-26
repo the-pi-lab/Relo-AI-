@@ -21,7 +21,7 @@ const getEnv = (key: string, viteKey: string, fallback = ""): string => {
       // @ts-ignore
       return import.meta.env[viteKey];
     }
-  } catch (_) {}
+  } catch (_) { }
   return fallback;
 };
 

@@ -179,56 +179,68 @@ export class MetaGraphClient {
    * Publishes a public reply comment to an Instagram Reel comment.
    * Supports both graph.instagram.com and graph.facebook.com endpoints.
    */
+  /**
+   * 1. Public Comment Reply:
+   * Publishes a public reply comment to an Instagram Reel comment.
+   * Supports both graph.instagram.com (Direct IG Login) and graph.facebook.com endpoints.
+   */
   async sendCommentReply(
     pageAccessToken: string,
     commentId: string,
     messageText: string
   ): Promise<{ id: string }> {
-    try {
-      const igUrl = new URL(`https://graph.instagram.com/v21.0/${commentId}/replies`);
+    const isDirectIg = pageAccessToken.startsWith("IGAA") || pageAccessToken.startsWith("IG");
+
+    if (isDirectIg) {
+      const igUrl = new URL(`https://graph.instagram.com/${getMetaGraphVersion()}/${commentId}/replies`);
+      igUrl.searchParams.set("message", messageText);
       igUrl.searchParams.set("access_token", pageAccessToken);
       const res = await fetch(igUrl.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ message: messageText }),
+        headers: { Accept: "application/json" },
       });
       const data = (await res.json()) as any;
       if (res.ok && data?.id) {
         return data;
       }
-    } catch (_) {}
+      throw parseMetaError(res.status, data);
+    }
 
     return this.request<{ id: string }>(`/${commentId}/replies`, {
       method: "POST",
       token: pageAccessToken,
-      body: {
-        message: messageText,
-      },
+      queryParams: { message: messageText },
     });
   }
 
   /**
    * 2. Private Reply to Comment (Direct Message):
    * Dispatches an Instagram Direct Message replying to a specific comment.
-   * Supports both graph.instagram.com and graph.facebook.com endpoints.
+   * Supports both graph.instagram.com (Direct IG Login) and graph.facebook.com endpoints.
    */
   async sendPrivateReply(
     pageAccessToken: string,
     payload: OutgoingMessagePayload
   ): Promise<{ recipient_id: string; message_id: string }> {
-    try {
-      const igUrl = new URL(`https://graph.instagram.com/v21.0/me/messages`);
-      igUrl.searchParams.set("access_token", pageAccessToken);
+    const isDirectIg = pageAccessToken.startsWith("IGAA") || pageAccessToken.startsWith("IG");
+
+    if (isDirectIg) {
+      const igUrl = new URL(`https://graph.instagram.com/${getMetaGraphVersion()}/me/messages`);
       const res = await fetch(igUrl.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${pageAccessToken}`,
+        },
         body: JSON.stringify(payload),
       });
       const data = (await res.json()) as any;
       if (res.ok && data?.message_id) {
         return data;
       }
-    } catch (_) {}
+      throw parseMetaError(res.status, data);
+    }
 
     return this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
       method: "POST",
@@ -240,19 +252,24 @@ export class MetaGraphClient {
   /**
    * 3. Standard Direct Message:
    * Sends a standard DM to an Instagram user ID (within the 24h interaction window).
-   * Supports both graph.instagram.com and graph.facebook.com endpoints.
+   * Supports both graph.instagram.com (Direct IG Login) and graph.facebook.com endpoints.
    */
   async sendDirectMessage(
     pageAccessToken: string,
     recipientId: string,
     payload: { text?: string; attachment?: unknown }
   ): Promise<{ recipient_id: string; message_id: string }> {
-    try {
-      const igUrl = new URL(`https://graph.instagram.com/v21.0/me/messages`);
-      igUrl.searchParams.set("access_token", pageAccessToken);
+    const isDirectIg = pageAccessToken.startsWith("IGAA") || pageAccessToken.startsWith("IG");
+
+    if (isDirectIg) {
+      const igUrl = new URL(`https://graph.instagram.com/${getMetaGraphVersion()}/me/messages`);
       const res = await fetch(igUrl.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${pageAccessToken}`,
+        },
         body: JSON.stringify({
           recipient: { id: recipientId },
           message: payload,
@@ -262,7 +279,8 @@ export class MetaGraphClient {
       if (res.ok && data?.message_id) {
         return data;
       }
-    } catch (_) {}
+      throw parseMetaError(res.status, data);
+    }
 
     return this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
       method: "POST",
@@ -386,7 +404,11 @@ export class MetaGraphClient {
       if (!res.ok || !Array.isArray(res.data?.data)) continue;
       for (const entry of res.data.data) {
         const list = entry?.subscribed_fields;
-        if (Array.isArray(list)) for (const f of list) fields.add(String(f));
+        if (Array.isArray(list)) {
+          for (const f of list) fields.add(String(f));
+        } else if (typeof list === "string") {
+          for (const f of list.split(/[\s,]+/)) if (f) fields.add(f);
+        }
       }
     }
     return Array.from(fields);
@@ -424,20 +446,6 @@ export class MetaGraphClient {
 
   /**
    * Subscribes the account to the webhook fields RELO actually needs.
-   *
-   * Two things used to break real deployments while every test passed:
-   *
-   *  1. `comments`, `messages` and `messaging_postbacks` were sent as ONE
-   *     `subscribed_fields` value on ONE node. Meta rejects the whole request
-   *     when any field is invalid for that node — so a messaging field the
-   *     account cannot use also killed the comment subscription, and no
-   *     comment webhook was ever delivered. Fields are now grouped by node.
-   *  2. The failure was logged with `console.warn` and swallowed, so the
-   *     dashboard happily said "connected" while nothing was subscribed.
-   *     The caller now gets a structured result it can show the creator.
-   *
-   * `success` reflects the comment subscription, because that is the path the
-   * Reel automation depends on; messaging readiness is reported separately.
    */
   async subscribeAppToInstagram(
     accessToken: string,
@@ -446,68 +454,86 @@ export class MetaGraphClient {
   ): Promise<WebhookSubscriptionResult> {
     const errors: WebhookSubscriptionResult["errors"] = [];
 
-    // 1. Comment webhooks live on the Instagram account node. Facebook Login
-    //    tokens need graph.facebook.com; Instagram Login tokens need
-    //    graph.instagram.com. Try both, first success wins.
-    let commentsReady = false;
-    for (const host of ["graph.facebook.com", "graph.instagram.com"] as const) {
-      const attempt = await this.subscribeFieldsOnNode(
-        accessToken,
-        instagramAccountId,
-        COMMENT_WEBHOOK_FIELDS,
-        host
-      );
-      if (attempt.ok) {
-        commentsReady = true;
-        break;
-      }
-      errors.push({
-        node: `${host}/${instagramAccountId}`,
-        fields: COMMENT_WEBHOOK_FIELDS,
-        message: String(attempt.data?.error?.message || "subscribe failed"),
-      });
-    }
-
-    // 2. Messaging webhooks live on the Page node for Facebook Login (the page
-    //    token knows its page) and on the IG node for Instagram Login. A hint
-    //    equal to the IG id is the IG Login case, not a page.
     const hint =
       pageIdHint && String(pageIdHint).trim() !== String(instagramAccountId).trim()
         ? String(pageIdHint).trim()
         : null;
     const pageId = hint || (await this.getPageIdForToken(accessToken));
-    let messagingReady = false;
-    const messagingNodes: Array<{
-      id: string;
-      host: "graph.facebook.com" | "graph.instagram.com";
-    }> = pageId
-      ? [{ id: pageId, host: "graph.facebook.com" }]
-      : [
-          { id: instagramAccountId, host: "graph.facebook.com" },
-          { id: instagramAccountId, host: "graph.instagram.com" },
-        ];
 
-    for (const node of messagingNodes) {
+    let commentsReady = false;
+    let messagingReady = false;
+
+    if (!pageId) {
+      // DIRECT INSTAGRAM LOGIN (graph.instagram.com):
+      // Both comment and messaging webhooks live on the same Instagram account node.
+      // Meta's POST /subscribed_apps replaces all fields on that node, so we MUST
+      // subscribe all required fields together in one call so they do not overwrite each other.
+      const allDirectFields = ["comments", "messages", "messaging_postbacks"];
       const attempt = await this.subscribeFieldsOnNode(
         accessToken,
-        node.id,
-        MESSAGING_WEBHOOK_FIELDS,
-        node.host
+        instagramAccountId,
+        allDirectFields,
+        "graph.instagram.com"
       );
       if (attempt.ok) {
+        commentsReady = true;
         messagingReady = true;
-        break;
+      } else {
+        errors.push({
+          node: `graph.instagram.com/${instagramAccountId}`,
+          fields: allDirectFields,
+          message: String(attempt.data?.error?.message || "direct subscribe failed"),
+        });
+        // Fallback: try comments alone
+        const commentAttempt = await this.subscribeFieldsOnNode(
+          accessToken,
+          instagramAccountId,
+          COMMENT_WEBHOOK_FIELDS,
+          "graph.instagram.com"
+        );
+        if (commentAttempt.ok) commentsReady = true;
       }
-      errors.push({
-        node: `${node.host}/${node.id}`,
-        fields: MESSAGING_WEBHOOK_FIELDS,
-        message: String(attempt.data?.error?.message || "subscribe failed"),
-      });
+    } else {
+      // FACEBOOK PAGE LOGIN (graph.facebook.com):
+      // Comments live on the Instagram Account node; messaging lives on the Page node.
+      // 1. Comment webhooks on Instagram Account node
+      for (const host of ["graph.facebook.com", "graph.instagram.com"] as const) {
+        const attempt = await this.subscribeFieldsOnNode(
+          accessToken,
+          instagramAccountId,
+          COMMENT_WEBHOOK_FIELDS,
+          host
+        );
+        if (attempt.ok) {
+          commentsReady = true;
+          break;
+        }
+        errors.push({
+          node: `${host}/${instagramAccountId}`,
+          fields: COMMENT_WEBHOOK_FIELDS,
+          message: String(attempt.data?.error?.message || "subscribe failed"),
+        });
+      }
+
+      // 2. Messaging webhooks on Page node
+      const pageAttempt = await this.subscribeFieldsOnNode(
+        accessToken,
+        pageId,
+        MESSAGING_WEBHOOK_FIELDS,
+        "graph.facebook.com"
+      );
+      if (pageAttempt.ok) {
+        messagingReady = true;
+      } else {
+        errors.push({
+          node: `graph.facebook.com/${pageId}`,
+          fields: MESSAGING_WEBHOOK_FIELDS,
+          message: String(pageAttempt.data?.error?.message || "page subscribe failed"),
+        });
+      }
     }
 
-    // 3. Read back the truth. This is what the health view renders, so a
-    //    creator can see `comments` missing instead of guessing why nothing
-    //    fires.
+    // 3. Read back verified state from Meta
     const subscribedFields = await this.getSubscribedApps(
       accessToken,
       instagramAccountId,
@@ -753,7 +779,7 @@ export class MetaGraphClient {
     const url = new URL(
       userId ? `https://graph.instagram.com/v21.0/${userId}` : "https://graph.instagram.com/v21.0/me"
     );
-    url.searchParams.set("fields", "id,username,profile_picture_url");
+    url.searchParams.set("fields", "id,user_id,username,profile_picture_url");
     url.searchParams.set("access_token", token);
 
     let res = await fetch(url.toString(), {
@@ -763,14 +789,14 @@ export class MetaGraphClient {
     let data = (await res.json()) as any;
     if (!res.ok || data.error) {
       const fallbackUrl = new URL("https://graph.instagram.com/me");
-      fallbackUrl.searchParams.set("fields", "id,username,profile_picture_url");
+      fallbackUrl.searchParams.set("fields", "id,user_id,username,profile_picture_url");
       fallbackUrl.searchParams.set("access_token", token);
       const fallbackRes = await fetch(fallbackUrl.toString(), {
         headers: { Accept: "application/json" },
       });
       data = (await fallbackRes.json()) as any;
     }
-    const resolvedId = String(data.id || data.user_id || userId || "ig_user");
+    const resolvedId = String(data.user_id || data.id || userId || "ig_user");
     const resolvedUsername = data.username || `ig_${resolvedId.slice(-6)}`;
     return {
       id: resolvedId,

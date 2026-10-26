@@ -536,11 +536,11 @@ async function handleCommentEvent(
     return;
   }
 
-  // Calculate anti-spam randomized human delay jitter (10 to 25 seconds in production, 30 to 90 seconds in test)
+  // Calculate anti-spam randomized human delay jitter (2 to 4 seconds for instant rapid response)
   const isTest = env.ENVIRONMENT === "test";
   const jitterSeconds = isTest
     ? 30 + Math.floor(Math.random() * 60)
-    : 10 + Math.floor(Math.random() * 15); // 10 to 24s for rapid looping response
+    : 2 + Math.floor(Math.random() * 3); // 2 to 4s for rapid looping response
   const sendAt = Math.floor(Date.now() / 1000) + jitterSeconds;
 
   // Insert into D1 jobs queue with atomic deduplication on comment_id
@@ -571,12 +571,12 @@ async function handleCommentEvent(
     });
 
     // Fast-dispatch in background: don't wait for 1-minute cron tick!
-    // Sleep for the safe 10-25s human jitter, then immediately trigger batch processor.
+    // Sleep for the ultra-rapid 2-4s human jitter, then immediately trigger batch processor.
     if (!isTest && ctx?.waitUntil) {
       ctx.waitUntil(
         (async () => {
           try {
-            await new Promise((resolve) => setTimeout(resolve, jitterSeconds * 1000 + 500));
+            await new Promise((resolve) => setTimeout(resolve, jitterSeconds * 1000));
             const result = await processDueJobsBatch(env, { batchLimit: 10 });
             if (result.processedCount > 0) {
               console.log(

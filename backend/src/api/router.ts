@@ -886,6 +886,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       try {
         const token = await decryptSecret(acc.access_token_encrypted, masterKey);
         const subResult = await metaGraphClient.subscribeAppToInstagram(token, acc.instagram_user_id);
+
         results.push({
           id: acc.id,
           username: acc.username,
