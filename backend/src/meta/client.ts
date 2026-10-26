@@ -356,14 +356,44 @@ export class MetaGraphClient {
       throw parseMetaError(res.status, data);
     }
 
-    return this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
-      method: "POST",
-      token: pageAccessToken,
-      body: {
-        recipient: { id: recipientId },
-        message: payload,
-      },
-    });
+    try {
+      return await this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
+        method: "POST",
+        token: pageAccessToken,
+        body: {
+          recipient: { id: recipientId },
+          message: payload,
+        },
+      });
+    } catch (fbErr: any) {
+      const attachmentPayload = (payload.attachment as any)?.payload;
+      if (
+        attachmentPayload?.template_type === "generic" &&
+        Array.isArray(attachmentPayload?.elements) &&
+        attachmentPayload.elements[0]?.buttons?.length > 0
+      ) {
+        const el = attachmentPayload.elements[0];
+        const buttonFallback = {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "button",
+              text: el.title || "Hey! Tap below to get access 👇",
+              buttons: el.buttons,
+            },
+          },
+        };
+        return await this.request<{ recipient_id: string; message_id: string }>(`/me/messages`, {
+          method: "POST",
+          token: pageAccessToken,
+          body: {
+            recipient: { id: recipientId },
+            message: buttonFallback,
+          },
+        });
+      }
+      throw fbErr;
+    }
   }
 
   /**
@@ -920,6 +950,64 @@ export class MetaGraphClient {
     }
 
     return accounts;
+  }
+
+  /**
+   * 8. Check if an Instagram user (by IGSID) is following the connected business account.
+   * Calls Meta's User Profile API: GET /{igsid}?fields=name,username,is_user_follow_business
+   */
+  async checkUserFollowsBusiness(
+    token: string,
+    igsid: string
+  ): Promise<{
+    id: string;
+    username?: string;
+    name?: string;
+    isFollowing: boolean;
+  }> {
+    const isDirectIg = token.startsWith("IGAA") || token.startsWith("IG");
+    const fields = "name,username,is_user_follow_business";
+
+    const endpoints = isDirectIg
+      ? [
+          `https://graph.instagram.com/${getMetaGraphVersion()}/${igsid}`,
+          `https://graph.facebook.com/${getMetaGraphVersion()}/${igsid}`,
+        ]
+      : [
+          `https://graph.facebook.com/${getMetaGraphVersion()}/${igsid}`,
+          `https://graph.instagram.com/${getMetaGraphVersion()}/${igsid}`,
+        ];
+
+    let lastError: any = null;
+
+    for (const urlStr of endpoints) {
+      try {
+        const url = new URL(urlStr);
+        url.searchParams.set("fields", fields);
+        url.searchParams.set("access_token", token);
+
+        const res = await fetch(url.toString(), {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        });
+
+        const data = (await res.json()) as any;
+        if (res.ok && data?.id) {
+          return {
+            id: String(data.id),
+            username: data.username,
+            name: data.name,
+            isFollowing: Boolean(data.is_user_follow_business),
+          };
+        }
+
+        lastError = parseMetaError(res.status, data);
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error(`Unable to fetch Instagram user profile for ${igsid}`);
   }
 }
 

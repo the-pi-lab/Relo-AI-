@@ -22,6 +22,7 @@ import {
   expireDuePlans,
   getJobIdByCommentId,
   recordCronHeartbeat,
+  upsertCapturedLead,
 } from "./db/queries";
 import { verifyMetaSignature, timingSafeEqualAsync, decryptSecret, getMasterKey } from "./crypto";
 import { parseWebhookEnvelope } from "./engine/parse";
@@ -30,6 +31,7 @@ import {
   processDueJobsBatch,
   buildDeliveryCardPayload,
   buildFollowGatePayload,
+  buildNotFollowingPayload,
 } from "./engine/processor";
 import { processScheduledCampaigns } from "./engine/campaignWorker";
 import { refreshExpiringTokens } from "./engine/tokenRefresh";
@@ -678,11 +680,12 @@ async function handleMessageEvent(
   // 1. Funnel Actions (Opt-in button tap & Follow-Gate confirmation tap)
   const quickReplyPayload = event.quickReplyPayload || "";
   const rawText = (event.text || "").trim();
+  const lowerText = rawText.toLowerCase();
 
   // Funnel: User tapped the Opt-in CTA button (Step 1 -> Step 2 or Step 3)
   if (
     quickReplyPayload.startsWith("RELO_OPTIN:") ||
-    rawText.toLowerCase() === "send me the access"
+    lowerText === "send me the access"
   ) {
     const rawAutoId = quickReplyPayload.replace("RELO_OPTIN:", "").trim();
     const handled = await handleFunnelOptIn(event, account, rawAutoId, env).catch((err) => {
@@ -692,12 +695,16 @@ async function handleMessageEvent(
     if (handled) return;
   }
 
-  // Funnel: User confirmed they followed (Step 2 -> Step 3)
-  if (
+  // Funnel: User claimed they followed (Step 2 -> Step 3)
+  const isFollowingConfirmation =
     quickReplyPayload.startsWith("RELO_FOLLOWED:") ||
-    rawText.includes("I'm following") ||
-    rawText.toLowerCase() === "following"
-  ) {
+    lowerText.includes("i'm following") ||
+    lowerText.includes("i am following") ||
+    lowerText.includes("im following") ||
+    lowerText === "following" ||
+    lowerText === "followed";
+
+  if (isFollowingConfirmation) {
     const rawAutoId = quickReplyPayload.replace("RELO_FOLLOWED:", "").trim();
     const handled = await handleFunnelFollowed(event, account, rawAutoId, env).catch((err) => {
       console.warn("[Funnel Followed] skipped:", err);
@@ -715,8 +722,11 @@ async function handleMessageEvent(
 
 /**
  * Handles viewer tapping the Opt-in button in DM ("Send me the access").
- * If Follow-Gate is enabled, sends the Follow-Gate card with creator profile link.
- * If Follow-Gate is disabled, sends the Final Delivery Card directly.
+ * If Follow-Gate is enabled:
+ *   - Checks if user is ALREADY following via Meta Graph API.
+ *   - If already following: skips follow-gate and delivers resources directly!
+ *   - If not following: sends the Follow-Gate card with creator profile link.
+ * If Follow-Gate is disabled: sends the Final Delivery Card directly.
  */
 async function handleFunnelOptIn(
   event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "message" }>,
@@ -737,7 +747,39 @@ async function handleFunnelOptIn(
   const token = await decryptSecret(account.accessTokenEncrypted, getMasterKey(env));
 
   if (automation.followGateEnabled) {
-    // Send Follow-Gate Card (Funnel Step 2)
+    // Check if the user is ALREADY following!
+    try {
+      const followInfo = await metaGraphClient.checkUserFollowsBusiness(token, event.senderId);
+      if (followInfo.isFollowing) {
+        console.log(`[Follow-Gate OptIn] User ${event.senderId} already follows @${account.username}! Delivering directly.`);
+        await upsertCapturedLead(env.DB, {
+          accountId: account.id,
+          instagramScopedId: event.senderId as any,
+          username: followInfo.username,
+          isFollower: true,
+        }).catch((err) => console.warn("[Lead Record Error]", err));
+
+        const deliveryPayload = await buildDeliveryCardPayload(
+          env,
+          account,
+          automation,
+          { id: event.senderId }
+        );
+        const res = await metaGraphClient.sendDirectMessage(
+          token,
+          event.senderId,
+          deliveryPayload.message as any
+        );
+        if (res?.message_id) {
+          await recordOutboundMessage(env.DB, account.id, event.senderId, res.message_id);
+        }
+        return true;
+      }
+    } catch (checkErr) {
+      console.warn("[Follow-Gate OptIn Check Error]", checkErr);
+    }
+
+    // User is NOT following yet: Send Follow-Gate Card (Funnel Step 2)
     const followGatePayload = buildFollowGatePayload(account, automation, { id: event.senderId });
     const res = await metaGraphClient.sendDirectMessage(
       token,
@@ -769,8 +811,10 @@ async function handleFunnelOptIn(
 }
 
 /**
- * Handles viewer tapping "I'm following ✅" on the Follow-Gate card.
- * Directly delivers the final resource card with the 1-3 links.
+ * Handles viewer tapping "I'm following ✅" on the Follow-Gate card (or sending "I am following").
+ * Strictly checks with Meta Graph API whether the user actually follows the creator.
+ * If not following: blocks delivery and re-prompts to follow.
+ * If following: delivers the final resource card with the 1-3 links.
  */
 async function handleFunnelFollowed(
   event: Extract<ReturnType<typeof parseWebhookEnvelope>[number], { type: "message" }>,
@@ -790,7 +834,57 @@ async function handleFunnelFollowed(
 
   const token = await decryptSecret(account.accessTokenEncrypted, getMasterKey(env));
 
-  // Send Final Delivery Card (Funnel Step 3)
+  // If follow-gate is enabled, verify with Meta Graph API that user ACTUALLY follows!
+  if (automation.followGateEnabled) {
+    let isFollowing = false;
+    let username: string | undefined;
+
+    try {
+      const followInfo = await metaGraphClient.checkUserFollowsBusiness(token, event.senderId);
+      isFollowing = followInfo.isFollowing;
+      username = followInfo.username;
+      console.log(`[Follow-Gate] Verified follow status for ${event.senderId} (@${username || "unknown"}): isFollowing = ${isFollowing}`);
+    } catch (checkErr: any) {
+      console.warn("[Follow-Gate Verification Error]", checkErr?.message || checkErr);
+      isFollowing = false;
+    }
+
+    if (!isFollowing) {
+      // User is NOT following! Block delivery and re-send the follow warning card
+      console.log(`[Follow-Gate] Blocked non-follower ${event.senderId} from accessing gated resources.`);
+      await upsertCapturedLead(env.DB, {
+        accountId: account.id,
+        instagramScopedId: event.senderId as any,
+        username,
+        isFollower: false,
+      }).catch((err) => console.warn("[Lead Record Error]", err));
+
+      const notFollowingPayload = buildNotFollowingPayload(
+        account,
+        automation,
+        { id: event.senderId }
+      );
+      const res = await metaGraphClient.sendDirectMessage(
+        token,
+        event.senderId,
+        notFollowingPayload.message as any
+      );
+      if (res?.message_id) {
+        await recordOutboundMessage(env.DB, account.id, event.senderId, res.message_id);
+      }
+      return true;
+    }
+
+    // User is confirmed following! Record lead as verified follower
+    await upsertCapturedLead(env.DB, {
+      accountId: account.id,
+      instagramScopedId: event.senderId as any,
+      username,
+      isFollower: true,
+    }).catch((err) => console.warn("[Lead Record Error]", err));
+  }
+
+  // User confirmed following (or follow-gate disabled): Send Final Delivery Card (Funnel Step 3)
   const deliveryPayload = await buildDeliveryCardPayload(
     env,
     account,

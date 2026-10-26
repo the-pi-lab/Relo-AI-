@@ -398,6 +398,49 @@ export function buildFollowGatePayload(
 }
 
 /**
+ * Builds the Follow-Gate Warning Card when user claims to follow without actually following.
+ */
+export function buildNotFollowingPayload(
+  account: { username?: string; instagramUsername?: string },
+  automation: ReelAutomation,
+  recipient: { id: string }
+): OutgoingMessagePayload {
+  const name = account.username || account.instagramUsername;
+  const handle = name ? `@${name}` : "our profile";
+  const profileUrl = name ? `https://instagram.com/${name}` : "https://instagram.com";
+
+  return {
+    recipient,
+    message: {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "generic",
+          elements: [
+            {
+              title: `❌ You're not following ${handle} yet!`.slice(0, 80),
+              subtitle: `Please tap Visit Profile to follow, then tap I'm following to get instant access.`.slice(0, 80),
+              buttons: [
+                {
+                  type: "web_url",
+                  title: "Visit Profile 👤",
+                  url: profileUrl,
+                },
+                {
+                  type: "postback",
+                  title: "I'm following ✅",
+                  payload: `RELO_FOLLOWED:${automation.id}`,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+/**
  * Builds the Final Resource Delivery Card (Funnel Step 3)
  */
 export async function buildDeliveryCardPayload(
