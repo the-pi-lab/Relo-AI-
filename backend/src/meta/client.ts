@@ -239,6 +239,43 @@ export class MetaGraphClient {
       if (res.ok && data?.message_id) {
         return data;
       }
+
+      // If generic template failed, attempt button template fallback
+      const attachmentPayload = (payload as any).message?.attachment?.payload;
+      if (
+        attachmentPayload?.template_type === "generic" &&
+        Array.isArray(attachmentPayload?.elements) &&
+        attachmentPayload.elements[0]?.buttons?.length > 0
+      ) {
+        const el = attachmentPayload.elements[0];
+        const buttonFallbackPayload = {
+          recipient: payload.recipient,
+          message: {
+            attachment: {
+              type: "template",
+              payload: {
+                template_type: "button",
+                text: el.title || "Hey! Tap below to get access 👇",
+                buttons: el.buttons,
+              },
+            },
+          },
+        };
+        const fbRes = await fetch(igUrl.toString(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Authorization: `Bearer ${pageAccessToken}`,
+          },
+          body: JSON.stringify(buttonFallbackPayload),
+        });
+        const fbData = (await fbRes.json()) as any;
+        if (fbRes.ok && fbData?.message_id) {
+          return fbData;
+        }
+      }
+
       throw parseMetaError(res.status, data);
     }
 
@@ -279,6 +316,43 @@ export class MetaGraphClient {
       if (res.ok && data?.message_id) {
         return data;
       }
+
+      // If generic template failed, attempt button template fallback
+      const attachmentPayload = (payload.attachment as any)?.payload;
+      if (
+        attachmentPayload?.template_type === "generic" &&
+        Array.isArray(attachmentPayload?.elements) &&
+        attachmentPayload.elements[0]?.buttons?.length > 0
+      ) {
+        const el = attachmentPayload.elements[0];
+        const buttonFallback = {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "button",
+              text: el.title || "Hey! Tap below to get access 👇",
+              buttons: el.buttons,
+            },
+          },
+        };
+        const fbRes = await fetch(igUrl.toString(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Authorization: `Bearer ${pageAccessToken}`,
+          },
+          body: JSON.stringify({
+            recipient: { id: recipientId },
+            message: buttonFallback,
+          }),
+        });
+        const fbData = (await fbRes.json()) as any;
+        if (fbRes.ok && fbData?.message_id) {
+          return fbData;
+        }
+      }
+
       throw parseMetaError(res.status, data);
     }
 

@@ -191,8 +191,8 @@ export async function processDueJobsBatch(
         : { comment_id: job.commentId };
       let dmPayload: OutgoingMessagePayload;
 
-      if (!job.isFollowUp && automation.templateCard?.optInButtonText) {
-        // High-converting funnel: Send Opt-in Card with 1 action button
+      if (!job.isFollowUp && automation.followGateEnabled && automation.templateCard?.optInButtonText) {
+        // High-converting funnel: Send Opt-in Card with 1 action button (when follow-gate is enabled)
         dmPayload = buildOptInCardPayload(automation, recipient);
       } else if (automation.templateCard && automation.templateCard.buttons?.length > 0) {
         // Direct Delivery Card (or follow-up)
@@ -207,7 +207,21 @@ export async function processDueJobsBatch(
         };
       }
 
-      const dmResponse = await metaGraphClient.sendPrivateReply(decryptedToken, dmPayload);
+      let dmResponse: { recipient_id: string; message_id: string };
+      try {
+        dmResponse = await metaGraphClient.sendPrivateReply(decryptedToken, dmPayload);
+      } catch (dmErr: any) {
+        // Fallback: If private reply by comment_id fails (e.g. comment already replied to),
+        // try direct message by commenter user ID within 24h window
+        if (!job.isFollowUp && job.commenterUserId) {
+          dmResponse = await metaGraphClient.sendPrivateReply(decryptedToken, {
+            ...dmPayload,
+            recipient: { id: job.commenterUserId },
+          });
+        } else {
+          throw dmErr;
+        }
+      }
 
       // Record the mid so the echo Meta sends back is recognized as our own
       // message instead of being mistaken for the creator taking over.
@@ -306,6 +320,26 @@ export function buildOptInCardPayload(
     automation.templateCard.title || "Click below to receive your access & resources!"
   ).slice(0, 80);
 
+  const element: Record<string, unknown> = {
+    title: optInTitle,
+    buttons: [
+      {
+        type: "postback",
+        title: optInButtonTitle,
+        payload: `RELO_OPTIN:${automation.id}`,
+      },
+    ],
+  };
+
+  if (subtitle?.trim()) {
+    element.subtitle = subtitle.trim().slice(0, 80);
+  }
+
+  const rawImg = automation.templateCard.imageUrl?.trim();
+  if (rawImg && rawImg.startsWith("http")) {
+    element.image_url = rawImg;
+  }
+
   return {
     recipient,
     message: {
@@ -313,20 +347,7 @@ export function buildOptInCardPayload(
         type: "template",
         payload: {
           template_type: "generic",
-          elements: [
-            {
-              title: optInTitle,
-              subtitle,
-              image_url: automation.templateCard.imageUrl,
-              buttons: [
-                {
-                  type: "postback",
-                  title: optInButtonTitle,
-                  payload: `RELO_OPTIN:${automation.id}`,
-                },
-              ],
-            },
-          ],
+          elements: [element],
         },
       },
     },
@@ -404,7 +425,28 @@ export async function buildDeliveryCardPayload(
       { type: "web_url" as const, title: "⚡ Automated by RELO", url: brandingUrl },
     ];
   }
-  const finalButtons = buttons.slice(0, 3) as typeof automation.templateCard.buttons;
+  const finalButtons = buttons
+    .filter((b) => b.title && (b.type === "postback" || (b.type === "web_url" && b.url)))
+    .map((b) => ({
+      ...b,
+      title: b.title.slice(0, 20),
+    }))
+    .slice(0, 3) as typeof automation.templateCard.buttons;
+
+  const element: Record<string, unknown> = {
+    title: (automation.templateCard.title || "Your Access").slice(0, 80),
+    buttons: finalButtons,
+  };
+
+  const rawSubtitle = automation.templateCard.subtitle?.trim();
+  if (rawSubtitle) {
+    element.subtitle = rawSubtitle.slice(0, 80);
+  }
+
+  const rawImg = automation.templateCard.imageUrl?.trim();
+  if (rawImg && rawImg.startsWith("http")) {
+    element.image_url = rawImg;
+  }
 
   return {
     recipient,
@@ -413,14 +455,7 @@ export async function buildDeliveryCardPayload(
         type: "template",
         payload: {
           template_type: "generic",
-          elements: [
-            {
-              title: (automation.templateCard.title || "Your Access").slice(0, 80),
-              subtitle: automation.templateCard.subtitle?.slice(0, 80),
-              image_url: automation.templateCard.imageUrl,
-              buttons: finalButtons,
-            },
-          ],
+          elements: [element],
         },
       },
     },
